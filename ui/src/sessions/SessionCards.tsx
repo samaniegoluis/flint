@@ -48,7 +48,8 @@ export function SessionCard({ tab, active, split, onEditHost }: {
             <div className="col grow" style={{ gap: 4 }}><h2 className="prompt-t">{t('session_cards.session_ended')}</h2>
               <span className="muted" style={{ fontSize: 'var(--fs-sm)' }}>{tab.end.exit_code >= 0
                 ? tr('session_cards.shell_exited_status', { alias: <span className="mono">{tab.alias}</span>, status: <span className="mono">{tab.end.exit_code}</span> })
-                : tr('session_cards.shell_exited_signal', { alias: <span className="mono">{tab.alias}</span> })}</span></div></div>
+                : tr('session_cards.shell_exited_signal', { alias: <span className="mono">{tab.alias}</span> })}</span>
+              {tab.leftBroadcast && <span className="hint" data-left-broadcast>{t('session_cards.left_broadcast')}</span>}</div></div>
           <div className="row" style={{ gap: 'var(--sp-2)' }}>
             <button className="btn btn-ghost" onClick={() => sessions.close(tab.id)}>{split ? t('session_cards.close_pane') : t('session_cards.close_tab')}<Kbd action="closeTab" /></button>
             <span className="grow" />
@@ -108,7 +109,8 @@ export function SessionCard({ tab, active, split, onEditHost }: {
         <div className="card prompt" role="alert" style={{ width: 460 }} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); sessions.reconnect(tab.id); } if (e.key === 'Escape') { e.preventDefault(); sessions.close(tab.id); } }}>
           <div className="prompt-h"><span className="prompt-ic danger"><Icon name={tab.end.code === 'host_key' ? 'shield' : 'wifi-off'} /></span>
             <div className="col grow" style={{ gap: 4 }}><h2 className="prompt-t">{lost ? t('session_cards.connection_lost') : t('session_cards.could_not_connect_to_alias', { alias: tab.alias })}</h2>
-              <span className="mono muted" style={{ fontSize: 'var(--fs-xs)' }}>{coreText(tab.end)}</span></div></div>
+              <span className="mono muted" style={{ fontSize: 'var(--fs-xs)' }}>{coreText(tab.end)}</span>
+              {tab.leftBroadcast && <span className="hint" data-left-broadcast>{t('session_cards.left_broadcast')}</span>}</div></div>
           <div className="row" style={{ gap: 'var(--sp-2)' }}>
             <button className="btn btn-ghost" onClick={() => sessions.close(tab.id)}>{split ? t('session_cards.close_pane') : t('session_cards.close_tab')}<Kbd action="closeTab" /></button>
             <span className="grow" />

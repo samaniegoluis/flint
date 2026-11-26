@@ -13,7 +13,7 @@ import { colorStyle } from '../lib/colors';
 import { dividers, edges, moveDivider, placement, template, type Divider } from '../lib/layout';
 import { Icon } from '../ui/Icon';
 import { sessions, statusLabel, type Pane, type Tab } from './store';
-import { TerminalView } from './TerminalView';
+import { focusTerminal, TerminalView } from './TerminalView';
 import { SessionCard } from './SessionCards';
 import { EmptyPane } from './EmptyPane';
 import { t } from '../i18n';
@@ -26,8 +26,11 @@ function offset(at: number, k: number, index: number): string {
   return `calc(${GAP}px + (100% - ${2 * GAP + (k - 1) * GAP}px) * ${at.toFixed(4)} + ${index * GAP}px)`;
 }
 
-export function SplitView({ tab, panes, shown, active, fontSize, onEditHost }: {
+export function SplitView({ tab, panes, shown, active, fontSize, onEditHost, choosing = false, onChosen }: {
   tab: Tab;
+  /** Choose panes (the broadcast bar): the header toggles stand out until one is used. */
+  choosing?: boolean;
+  onChosen?: () => void;
   panes: Pane[];
   /** The sessions area is on screen (not Keys, Credentials or Settings). */
   shown: boolean;
@@ -42,6 +45,7 @@ export function SplitView({ tab, panes, shown, active, fontSize, onEditHost }: {
   const n = tab.panes.length;
   const multi = n > 1;
   const byId = new Map(panes.map((p) => [p.id, p]));
+  const fi = tab.panes.indexOf(tab.focus);
 
   const startDrag = (d: Divider, e: React.PointerEvent<HTMLDivElement>) => {
     const el = grid.current;
@@ -69,7 +73,7 @@ export function SplitView({ tab, panes, shown, active, fontSize, onEditHost }: {
   };
 
   return (
-    <div ref={grid} className={'splits' + (multi ? ' multi' : '')}
+    <div ref={grid} className={'splits' + (multi ? ' multi' : '') + (choosing ? ' bc-choosing' : '')}
       style={{ gridTemplateColumns: template(tab.cols), gridTemplateRows: template(tab.rows) }}>
       {tab.panes.map((id, i) => {
         const p = byId.get(id);
@@ -79,12 +83,18 @@ export function SplitView({ tab, panes, shown, active, fontSize, onEditHost }: {
         const c = colorStyle(host?.color ?? '');
         const st = statusLabel(p);
         const empty = p.status === 'empty';
+        // Broadcast (milestone 73, 28b1): in the set, or dropped out of it (28b3).
+        const bc = tab.broadcast.includes(id);
+        const canBc = p.kind === 'ssh' && p.status === 'ready';
+        // The way here from the focused pane: ⌘] to the next, ⌘[ to the previous.
+        const step = (i - fi + n) % n;
+        const go = !focused && !empty && multi ? (step === 1 ? 'focusNextPane' : step === n - 1 ? 'focusPrevPane' : null) : null;
         const fromNo = empty && p.from ? tab.panes.indexOf(p.from) + 1 : 0;
         const label = empty
           ? t(focused && multi ? 'split_view.pane_empty_focused' : 'split_view.pane_empty', { n: i + 1 })
-          : multi ? t(focused ? 'split_view.pane_focused' : 'split_view.pane', { n: i + 1, alias: p.alias }) : t('split_view.terminal_alias', { alias: p.alias });
+          : multi ? t(focused ? (bc ? 'split_view.pane_focused_receiving' : 'split_view.pane_focused') : (bc ? 'split_view.pane_receiving' : 'split_view.pane'), { n: i + 1, alias: p.alias }) : t('split_view.terminal_alias', { alias: p.alias });
         return (
-          <section key={id} className={'spane' + (multi && focused ? ' focus' : '') + (empty ? ' is-empty' : '')} style={placement(tab.layout, n, i)}
+          <section key={id} className={'spane' + (multi && focused ? ' focus' : '') + (empty ? ' is-empty' : '') + (bc ? ' bc' : '')} style={placement(tab.layout, n, i)}
             role="region" aria-label={label}
             data-pane={id} data-status={p.status} onMouseDownCapture={() => { if (!focused) sessions.focusPane(id); }}>
             {multi && (
@@ -93,7 +103,20 @@ export function SplitView({ tab, panes, shown, active, fontSize, onEditHost }: {
                 {empty ? <span className="grow sp-empty">{t('split_view.empty_pane')}</span> : <>
                   <span className={'sp-dot ' + c.className} style={c.style} />
                   <span className="mono grow trunc" style={{ color: 'inherit' }}>{p.alias}</span>
+                  {bc && <span className="bc-tag" data-bc-tag><Icon name="broadcast" />{t('split_view.receiving')}</span>}
+                  {!bc && p.leftBroadcast && <span className="bc-tag left" data-bc-left><Icon name="broadcast" />{t('split_view.left_broadcast')}</span>}
                   {st.meta && <span className={st.metaClass} style={{ fontSize: 'var(--fs-2xs)' }}>{st.meta}</span>}
+                  {go && <span className="kbd sp-go" title={t('split_view.go_here', { chord: chordLabel(go, os) })}>{chordLabel(go, os)}</span>}
+                  {(canBc || bc) && (
+                    <button className="bc-tog" data-bc-toggle aria-pressed={bc} aria-label={t('split_view.pane_receives_broadcast', { n: i + 1 })}
+                      title={bc ? t('split_view.stop_receiving') : t('split_view.receive_typed_input')}
+                      onMouseDown={(e) => e.stopPropagation()} onClick={() => {
+                        sessions.toggleBroadcast(id);
+                        onChosen?.();
+                        // The keys go back to the focused terminal, not to the toggle.
+                        setTimeout(() => focusTerminal(sessions.tab(tab.id)?.focus ?? null), 0);
+                      }}><Icon name="broadcast" /></button>
+                  )}
                   <span className={'st ' + st.dot} role="img" aria-label={p.status} />
                 </>}
                 <button className="sp-x" aria-label={focused ? t('split_view.close_pane_chord', { n: i + 1, chord: chordLabel('closeTab', os) }) : t('split_view.close_pane', { n: i + 1 })}

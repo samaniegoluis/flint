@@ -364,6 +364,9 @@ export function Shell() {
       case 'splitDown': split('down'); break;
       case 'focusNextPane': sessions.cycleFocus(1); break;
       case 'focusPrevPane': sessions.cycleFocus(-1); break;
+      // The keys go back to the focused terminal, from the menu or the palette.
+      case 'broadcastAll': sessions.broadcastAll(sessions.get().active); setTimeout(() => focusTerminal(sessions.focused()?.id ?? null), 0); break;
+      case 'stopBroadcast': sessions.stopBroadcast(sessions.get().active); setTimeout(() => focusTerminal(sessions.focused()?.id ?? null), 0); break;
       case 'layout1': case 'layout2': case 'layout3': case 'layout4': sessions.setLayout(LAYOUTS[Number(a.slice(6)) - 1]); break;
       case 'toggleSidebar': if (SIDE_VIEWS.includes(view)) setSidebarCollapsed((c) => !c); else { setView('hosts'); setSidebarCollapsed(false); } break;
       // The Files view follows the active tab (⌘E, the toolbar's Files button).

@@ -51,6 +51,8 @@ export function SessionArea({ shown, fontSize, onPalette, onEditHost, onManageTu
   useEffect(() => listenTyped((text, kind) => { notify(text, kind); }), [notify]);
   const tablist = useRef<HTMLDivElement>(null);
   const [menu, setMenu] = useState(false);
+  // Choose panes (the broadcast bar, milestone 73): the header toggles stand out.
+  const [choosing, setChoosing] = useState(false);
   // The RDP statistics overlay (milestone 34), for every RDP tab while it is on.
   const [stats, setStats] = useState(false);
   // The tab's context menu (design 22b4a): the tab and where it was opened.
@@ -142,6 +144,7 @@ export function SessionArea({ shown, fontSize, onPalette, onEditHost, onManageTu
               <HostTypeIcon type={fp.kind} />
               {fp.alias || t('split_view.empty_pane')}
               {fp.alias && <TunnelMark host={fp.alias} />}
+              {tabItem.broadcast.length > 0 && <span className="tab-bc" data-tab-bc title={t('session_area.broadcast_is_on')}><Icon name="broadcast" /></span>}
               {n > 1 && <span className="tab-split" title={`${n} panes`}><LayoutIcon layout={tabItem.layout} small />{n}</span>}
               {st.meta && <span className={'tab-meta ' + st.metaClass}>{st.meta}</span>}
               {on ? (
@@ -228,6 +231,22 @@ export function SessionArea({ shown, fontSize, onPalette, onEditHost, onManageTu
           </span>
         </div>
       )}
+      {activeTab && activeTab.broadcast.length > 0 && (() => {
+        // Typing into N panes (28b1), and the panes that dropped out of it (28b3).
+        const into = activeTab.broadcast.map((id) => panes.find((p) => p.id === id)).filter((p) => !!p);
+        const left = panes.filter((p) => p.tab === activeTab.id && p.leftBroadcast);
+        return (
+          <div className="bc-bar" role="status" aria-live="polite" data-bc-bar>
+            <Icon name="broadcast" />
+            <span className="strong" data-bc-count>{t('session_area.typing_into_n_panes', { count: into.length })}</span>
+            <span className="bc-hosts trunc">{into.map((p) => p.alias).join(' · ')}</span>
+            {left.map((p) => <span key={p.id} className="hint" data-bc-left-note>{t(p.status === 'ended' ? 'session_area.alias_left_broadcast' : 'session_area.alias_left', { alias: p.alias })}</span>)}
+            <span className="grow" />
+            <button className="btn btn-ghost btn-sm" data-bc-choose aria-pressed={choosing} onClick={() => setChoosing((c) => !c)}>{t('session_area.choose_panes')}</button>
+            <button className="btn btn-bc btn-sm" data-bc-stop onClick={() => { setChoosing(false); sessions.stopBroadcast(activeTab.id); }}><Icon name="x" size="sm" />{t('session_area.stop')}</button>
+          </div>
+        );
+      })()}
       <div className="pane" ref={paneArea}>
         {tabs.map((t) => {
           const own = panes.filter((p) => p.tab === t.id);
@@ -236,7 +255,8 @@ export function SessionArea({ shown, fontSize, onPalette, onEditHost, onManageTu
             <div key={t.id} style={{ position: 'absolute', inset: 0, display: t.id === active ? 'block' : 'none' }}>
               {rdp
                 ? <RdpView pane={rdp} active={shown && t.id === active} showStats={stats} onEditHost={onEditHost} onKnownHosts={onKnownHosts} />
-                : <SplitView tab={t} panes={own} shown={shown} active={t.id === active} fontSize={fontSize} onEditHost={onEditHost} />}
+                : <SplitView tab={t} panes={own} shown={shown} active={t.id === active} fontSize={fontSize} onEditHost={onEditHost}
+                  choosing={choosing && t.id === active && t.broadcast.length > 0} onChosen={() => setChoosing(false)} />}
             </div>
           );
         })}

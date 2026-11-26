@@ -52,7 +52,7 @@ const LANGUAGE_WORDS = 'language idioma lenguaje'; // i18n-ignore
 const THEME_WORDS = 'theme tema appearance apariencia'; // i18n-ignore
 
 // What an RDP tab cannot do (design 21d2): files, tunnels and panes are SSH's.
-const SSH_ONLY_ACTIONS: Action[] = ['viewFiles', 'viewTunnels', 'splitRight', 'splitDown', 'focusNextPane', 'layout1', 'layout2', 'layout3', 'layout4', 'duplicate'];
+const SSH_ONLY_ACTIONS: Action[] = ['viewFiles', 'viewTunnels', 'splitRight', 'splitDown', 'focusNextPane', 'layout1', 'layout2', 'layout3', 'layout4', 'duplicate', 'broadcastAll'];
 
 const PALETTE_ACTIONS: { action: Action; icon: IconName }[] = [
   { action: 'newHost', icon: 'plus' },
@@ -63,6 +63,8 @@ const PALETTE_ACTIONS: { action: Action; icon: IconName }[] = [
   { action: 'splitRight', icon: 'split' },
   { action: 'splitDown', icon: 'split' },
   { action: 'focusNextPane', icon: 'split' },
+  { action: 'broadcastAll', icon: 'broadcast' },
+  { action: 'stopBroadcast', icon: 'broadcast' },
   { action: 'layout1', icon: 'split' },
   { action: 'layout2', icon: 'split' },
   { action: 'layout3', icon: 'split' },
@@ -156,6 +158,9 @@ export function CommandPalette({ hostsOnly, newSession = false, pickToEdit = fal
   const monitorsView = useMonitors().view;
   const monitorsReason = monitorsView ? monitorsView.reason : t('command_palette.only_one_monitor');
   const canSplit = !!activeTab && activeTab.panes.length < MAX_PANES && !rdpTab;
+  // Milestone 73: Broadcast to all panes while it is off, Stop broadcast while it is on.
+  const broadcastOn = (activeTab?.broadcast.length ?? 0) > 0;
+  const upPanes = activeTab ? panes.filter((p) => p.tab === activeTab.id && p.kind === 'ssh' && p.status === 'ready').length : 0;
   const paneNo = activeTab ? activeTab.panes.indexOf(activeTab.focus) + 1 : 0;
   const [q, setQ] = useState('');
   const [group, setGroup] = useState<Group>(hostsOnly ? 'hosts' : 'all');
@@ -286,6 +291,7 @@ export function CommandPalette({ hostsOnly, newSession = false, pickToEdit = fal
       for (const a of PALETTE_ACTIONS) {
         // The sync's commands follow the vault's server (milestone 44).
         if (!syncShows(a.action, sync)) continue;
+        if ((a.action === 'broadcastAll' && broadcastOn) || (a.action === 'stopBroadcast' && !broadcastOn)) continue;
         const title = actionTitle(a.action);
         const m = search(q, [{ name: 'title', text: title, primary: true }]);
         if (!m) continue;
@@ -293,7 +299,7 @@ export function CommandPalette({ hostsOnly, newSession = false, pickToEdit = fal
           group: 'actions', key: 'a:' + a.action, score: m.score + 1000,
           render: () => (<><Icon name={a.icon} size="sm" /><span className="grow"><Hl text={title} positions={m.positions.title ?? []} /></span>{a.action === 'newSshHost' && <HostTypeIcon type="ssh" size="md" />}{a.action === 'newRdpHost' && <HostTypeIcon type="rdp" size="md" />}{a.action === 'checkUpdates' && update.status && <span className="hint" data-palette-update>{updatePaletteHint(update.status, update.now)}</span>}{a.action === 'whatsNew' && update.status?.current && <span className="hint">{update.status.current}</span>}{a.action === 'aboutFlint' && update.status?.current && <span className="hint">v{update.status.current}</span>}{chordLabel(a.action, os) && <span className="kbd">{chordLabel(a.action, os)}</span>}</>),
           run: () => onAction(a.action),
-          disabled: rdpTab && SSH_ONLY_ACTIONS.includes(a.action) ? t('command_palette.ssh_hosts_only') : !rdpTab && (a.action === 'fullscreen' || a.action === 'fullscreenAll') ? t('command_palette.rdp_tabs_only') : a.action === 'fullscreenAll' && monitorsReason ? monitorsReason : undefined,
+          disabled: rdpTab && SSH_ONLY_ACTIONS.includes(a.action) ? t('command_palette.ssh_hosts_only') : a.action === 'broadcastAll' && upPanes < 2 ? t('command_palette.broadcast_needs_two') : !rdpTab && (a.action === 'fullscreen' || a.action === 'fullscreenAll') ? t('command_palette.rdp_tabs_only') : a.action === 'fullscreenAll' && monitorsReason ? monitorsReason : undefined,
         });
       }
       // Only while searching: the empty list keeps to the actions (D-144).
@@ -338,7 +344,7 @@ export function CommandPalette({ hostsOnly, newSession = false, pickToEdit = fal
       }
     }
     return out;
-  }, [catalog.hosts, tabs, panes, tun.list, canSplit, rdpTab, monitorsReason, paneNo, activeTab, q, hostsOnly, newSession, pickToEdit, os, recents, vault, onConnect, onConnectWithTunnels, onManageTunnels, onSplit, onEdit, onAction, switchTo, fail, sync, update, settings, saveSettings]);
+  }, [catalog.hosts, tabs, panes, tun.list, canSplit, rdpTab, broadcastOn, upPanes, monitorsReason, paneNo, activeTab, q, hostsOnly, newSession, pickToEdit, os, recents, vault, onConnect, onConnectWithTunnels, onManageTunnels, onSplit, onEdit, onAction, switchTo, fail, sync, update, settings, saveSettings]);
 
   const counts = { hosts: 0, actions: 0, vaults: 0 };
   for (const it of items) counts[it.group === 'tunnels' ? 'actions' : it.group]++;

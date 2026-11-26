@@ -263,7 +263,9 @@ leaves the others alone.
 
 The **focused pane** has an ember border and a tinted header. Click a pane to focus it, or
 press <kbd>⌘]</kbd> and <kbd>⌘[</kbd> for the next and previous one
-(<kbd>Ctrl+Shift+]</kbd> and <kbd>[</kbd> on Linux). The tab's title, the session toolbar
+(<kbd>Ctrl+Shift+]</kbd> and <kbd>[</kbd> on Linux). The header of the pane next to the
+focused one shows <kbd>⌘]</kbd>, and the previous one's <kbd>⌘[</kbd>, so you can see the
+way there. The tab's title, the session toolbar
 (with **pane 2 of 4**), **Reconnect**, the title bar and the
 [Files view](/guides/files-view/) follow the focused pane.
 
@@ -279,6 +281,41 @@ is, with the tab bar, toolbar and sidebar a little quieter too. The dim only low
 contrast, so a log you watch from another window stays readable. A remote desktop is never
 dimmed, since it may be playing video. Turn it off in **Settings → Terminal → Dim what
 does not have focus**.
+
+#### Broadcast input
+
+Broadcast sends what you type in one pane to other panes of the same tab at once, for
+example `sudo apt update` on four servers. It is **off** until you turn it on, on every tab,
+and nothing turns it on for you: not a new split, a new tab or a setting, and Flint never
+keeps it.
+
+- Each connected pane's header has a **broadcast** toggle: click it on the panes that should
+  receive. Or open the **Split** menu, or the command palette, and choose **Broadcast to
+  all panes**.
+- Every receiving pane gets a thick teal border and a **Receiving** tag, the tab shows the
+  broadcast icon, and a bar under the toolbar reads **Typing into 3 panes** with their
+  hosts. **Choose panes** in the bar highlights the toggles; **Stop** turns it off, as does
+  **Stop broadcast** in the Split menu or the palette. Receiving panes stay at full
+  contrast; the others are dimmed.
+- Whatever you type into a receiving pane goes to all of them: letters, <kbd>↵</kbd>,
+  <kbd>⌫</kbd>, arrows, <kbd>Tab</kbd>, <kbd>Esc</kbd> and control keys such as
+  <kbd>Ctrl+C</kbd>. Each pane's terminal turns the key into what *its* program asked for,
+  so a pane running Neovim or herdr (the Kitty keyboard protocol) and a plain shell each
+  get the right bytes. Flint's own shortcuts (<kbd>⌘D</kbd>, <kbd>⌘W</kbd>, <kbd>⌘]</kbd>…)
+  act once, on the app, and the mouse stays with the pane under it.
+- Pasted text goes to every receiving pane, through each one's own paste. A pasted image or
+  file goes to the focused pane only.
+- Typing in a pane that is not receiving reaches that pane alone.
+- A pane that loses its connection, reconnects or closes leaves the broadcast: its header
+  says **Left broadcast** and the bar names it. Reconnecting does not add it back; click
+  its toggle when you want it again. Empty panes and remote desktops never receive.
+
+:::caution
+Every key goes to every receiving pane, <kbd>↵</kbd> included. Check the bar before you
+type a command that changes something, and stop the broadcast as soon as you are done.
+:::
+
+Broadcast has no keyboard shortcut, so a slip of the fingers never turns it on.
 
 ### The terminal
 

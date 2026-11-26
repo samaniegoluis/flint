@@ -86,6 +86,11 @@ export interface Pane {
   from: string;
   /** Why the last switch did not happen, '' when it did. */
   graphicsNote: string;
+  /**
+   * Milestone 73 (28b3): the pane dropped out of its tab's broadcast (lost or
+   * reconnected); its header says so until the broadcast stops or it is added again.
+   */
+  leftBroadcast: boolean;
 }
 
 /** A tab: one to four panes in a layout. */
@@ -98,6 +103,12 @@ export interface Tab {
   /** Grid track sizes (lib/layout.ts). */
   cols: number[];
   rows: number[];
+  /**
+   * Milestone 73 (Principle 22): the panes that receive what is typed into any one of
+   * them, in the tab's order; empty is off. Only a person's toggle fills it: every tab
+   * starts with it empty, and nothing writes it anywhere.
+   */
+  broadcast: string[];
 }
 
 interface Snapshot {
@@ -194,6 +205,7 @@ class SessionStore {
       if (ev.state === 'connecting') this.patch(t.id, { status: 'connecting', end: null, prompt: null });
       else if (ev.state === 'ready') this.patch(t.id, { status: 'ready', prompt: null, connectedAt: Date.now() });
       else {
+        this.leaveBroadcast(t.id, true);
         this.patch(t.id, { status: 'ended', prompt: null, end: { code: ev.code, message: ev.message, exit_code: ev.exit_code, id: ev.id, params: ev.params } });
         this.bySession.delete(ev.session);
         this.inputs.drop(ev.session);
@@ -297,6 +309,8 @@ class SessionStore {
     if (!t || !t.alias) return;
     this.remember(t.alias);
     if (t.kind === 'rdp') { this.connectDesktop(paneId); return; }
+    // A reconnect leaves the broadcast; it is not added back (28b3).
+    this.leaveBroadcast(paneId, true);
     const session = mint('s');
     this.bySession.set(session, paneId);
     this.patch(paneId, { session, status: 'connecting', prompt: null, changedKey: null, end: null, cwd: '' });
@@ -309,7 +323,7 @@ class SessionStore {
   }
 
   private newPane(tabId: string, alias: string, noCommand: boolean, kind: HostType = 'ssh'): Pane {
-    return { id: mint('p'), kind, desktop: null, tab: tabId, alias, session: '', status: 'connecting', prompt: null, changedKey: null, end: null, connectedAt: 0, endedAt: 0, noCommand, cwd: '', graphics: '', graphicsSwitching: false, graphicsNote: '', suggest: '', from: '' };
+    return { id: mint('p'), kind, desktop: null, tab: tabId, alias, session: '', status: 'connecting', prompt: null, changedKey: null, end: null, connectedAt: 0, endedAt: 0, noCommand, cwd: '', graphics: '', graphicsSwitching: false, graphicsNote: '', suggest: '', from: '', leftBroadcast: false };
   }
 
   // A place waiting for a host (milestone 72): no session until `fill`.
@@ -330,7 +344,7 @@ class SessionStore {
   open(alias: string, noCommand = false, kind: HostType = 'ssh'): string {
     const id = mint('t');
     const pane = this.newPane(id, alias, noCommand, kind);
-    const tab: Tab = { id, panes: [pane.id], layout: 'cols', focus: pane.id, ...defaultTracks('cols', 1) };
+    const tab: Tab = { id, panes: [pane.id], layout: 'cols', focus: pane.id, ...defaultTracks('cols', 1), broadcast: [] };
     this.set({ tabs: [...this.snap.tabs, tab], panes: [...this.snap.panes, pane], active: id });
     this.connect(pane.id);
     return pane.id;
@@ -522,6 +536,7 @@ class SessionStore {
     if (!t) return;
     const tab = this.tab(t.tab);
     if (!tab || tab.panes.length <= 1) { this.closeTab(t.tab); return; }
+    this.leaveBroadcast(paneId, false);
     this.hangUp(t);
     const i = tab.panes.indexOf(paneId);
     const panes = tab.panes.filter((id) => id !== paneId);
@@ -570,6 +585,73 @@ class SessionStore {
   setCwd(paneId: string, cwd: string) {
     const t = this.pane(paneId);
     if (t && t.cwd !== cwd) this.patch(paneId, { cwd });
+  }
+
+  // Broadcast input (milestone 73, D-149 (4), Principle 22). The set lives on the tab,
+  // in memory only; a pane joins it only by a person's toggle (`toggleBroadcast`, Broadcast
+  // to all panes) and leaves it when it closes, drops or reconnects.
+
+  /** Whether a pane can receive broadcast input: a terminal that is up. */
+  canBroadcast(paneId: string): boolean {
+    const p = this.pane(paneId);
+    return !!p && p.kind === 'ssh' && p.status === 'ready';
+  }
+
+  /** Adds a pane to its tab's broadcast, or takes it out. */
+  toggleBroadcast(paneId: string) {
+    const p = this.pane(paneId);
+    const tab = this.tab(p?.tab ?? null);
+    if (!p || !tab) return;
+    if (tab.broadcast.includes(paneId)) { this.leaveBroadcast(paneId, false); return; }
+    if (!this.canBroadcast(paneId)) return;
+    this.patchTab(tab.id, { broadcast: tab.panes.filter((id) => id === paneId || tab.broadcast.includes(id)) });
+    if (p.leftBroadcast) this.patch(paneId, { leftBroadcast: false });
+  }
+
+  /** Every pane of the tab that can receive (Broadcast to all panes). Returns how many. */
+  broadcastAll(tabId: string | null): number {
+    const tab = this.tab(tabId);
+    if (!tab) return 0;
+    const set = tab.panes.filter((id) => this.canBroadcast(id));
+    if (set.length < 2) return 0;
+    this.set({
+      tabs: this.snap.tabs.map((t) => (t.id === tab.id ? { ...t, broadcast: set } : t)),
+      panes: this.snap.panes.map((p) => (p.tab === tab.id && p.leftBroadcast ? { ...p, leftBroadcast: false } : p)),
+    });
+    return set.length;
+  }
+
+  /** Turns the tab's broadcast off. */
+  stopBroadcast(tabId: string | null) {
+    const tab = this.tab(tabId);
+    if (!tab) return;
+    this.set({
+      tabs: this.snap.tabs.map((t) => (t.id === tab.id ? { ...t, broadcast: [] } : t)),
+      panes: this.snap.panes.map((p) => (p.tab === tab.id && p.leftBroadcast ? { ...p, leftBroadcast: false } : p)),
+    });
+  }
+
+  /**
+   * The panes besides `paneId` that receive what is typed into it: none unless the pane
+   * is itself in its tab's broadcast, and only those that are up.
+   */
+  receivers(paneId: string): string[] {
+    const p = this.pane(paneId);
+    const tab = this.tab(p?.tab ?? null);
+    if (!p || !tab || !tab.broadcast.includes(paneId)) return [];
+    return tab.broadcast.filter((id) => id !== paneId && this.canBroadcast(id));
+  }
+
+  // A pane leaves its tab's broadcast; `dropped` (lost or reconnecting) says so in its
+  // header while the broadcast goes on. The last one out turns it off.
+  private leaveBroadcast(paneId: string, dropped: boolean) {
+    const p = this.pane(paneId);
+    const tab = this.tab(p?.tab ?? null);
+    if (!p || !tab || !tab.broadcast.includes(paneId)) return;
+    const rest = tab.broadcast.filter((id) => id !== paneId);
+    if (rest.length === 0) { this.stopBroadcast(tab.id); return; }
+    this.patchTab(tab.id, { broadcast: rest });
+    if (dropped) this.patch(paneId, { leftBroadcast: true });
   }
 
   input(paneId: string, data: string) {

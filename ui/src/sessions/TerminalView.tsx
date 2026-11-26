@@ -18,6 +18,7 @@ import { clipboardKey } from '../lib/clipboardKeys';
 import { api } from '../api/backend';
 import { runAction } from '../shell/actions';
 import { sessions } from './store';
+import { isBroadcastCopy, PaneRelay } from './broadcastInput';
 import { parseOsc7 } from '../files/paths';
 import styles from './TerminalView.module.css';
 import { paletteVars, themePalette } from '../lib/terminalThemes';
@@ -167,19 +168,25 @@ export function TerminalView({ tabId, active, focus, fontSize }: { tabId: string
       // hidden at mount
     }
 
+    // Broadcast input (milestone 73): keys and text typed here, and pastes, reach the
+    // tab's other receiving panes, each encoded by its own terminal (broadcastInput.ts).
+    const relay = new PaneRelay(tabId, term);
+
     let committed = '';
     const onCompositionEnd = (e: CompositionEvent) => { committed = e.data ?? ''; };
     term.textarea?.addEventListener('compositionend', onCompositionEnd);
 
     term.attachCustomKeyEventHandler((e) => {
-      if (e.type !== 'keydown') return true;
+      // A key typed into another pane, handed to this one: only xterm.js takes it.
+      if (isBroadcastCopy(e)) return true;
+      if (e.type !== 'keydown') { relay.key(e); return true; }
       const lastCommit = committed;
       committed = '';
       // Dead keys, IME and dictation (lib/keyInput.ts).
       const ki = keyInput(e, lastCommit);
       if (ki.kind === 'paste') {
         e.preventDefault();
-        if (ki.text) term.paste(ki.text);
+        if (ki.text) relay.paste(ki.text);
         return false;
       }
       const mac = osRef.current === 'mac';
@@ -207,6 +214,7 @@ export function TerminalView({ tabId, active, focus, fontSize }: { tabId: string
       // Other ⌘ chords belong to the OS (⌘Q, ⌘H, ⌘C, ⌘V): keep them out of the
       // Kitty encoder, which would swallow them.
       if (mac && e.metaKey) return false;
+      relay.key(e);
       return true;
     });
 
@@ -216,7 +224,7 @@ export function TerminalView({ tabId, active, focus, fontSize }: { tabId: string
         navigator.clipboard?.writeText(term.getSelection()).catch(() => {});
         term.clearSelection();
       } else {
-        navigator.clipboard?.readText().then((t) => term.paste(t)).catch(() => {});
+        navigator.clipboard?.readText().then((t) => relay.paste(t)).catch(() => {});
       }
     };
     term.element?.addEventListener('contextmenu', onContextMenu);
@@ -247,7 +255,8 @@ export function TerminalView({ tabId, active, focus, fontSize }: { tabId: string
       upload(session).then((text) => {
         // The pane may have reconnected or closed meanwhile: paste only into the same session.
         if (alive && sessions.pane(tabId)?.session === session) {
-          term.paste(text);
+          // An image goes to this pane only, broadcast or not (spec v19).
+          relay.quietly(() => term.paste(text));
           say({ text: t('terminal_view.pasted_the_image_on_alias', { alias: pane.alias }), key });
         } else {
           say({ text: t('terminal_view.the_image_was_written_on', { alias: pane.alias }), kind: 'info', key });
@@ -256,7 +265,18 @@ export function TerminalView({ tabId, active, focus, fontSize }: { tabId: string
     };
     const onPaste = (e: ClipboardEvent) => {
       const choice = pasteChoice(e.clipboardData);
-      if (choice.kind === 'text') return;
+      if (choice.kind === 'text') {
+        // Under broadcast, text goes to every receiving pane through its own paste.
+        const text = e.clipboardData?.getData('text/plain') ?? '';
+        if (text && sessions.receivers(tabId).length > 0) {
+          e.preventDefault();
+          e.stopPropagation();
+          relay.paste(text);
+        } else {
+          relay.quietThisEvent();
+        }
+        return;
+      }
       e.preventDefault();
       e.stopPropagation();
       if (choice.kind === 'image') {
@@ -269,7 +289,7 @@ export function TerminalView({ tabId, active, focus, fontSize }: { tabId: string
           if (r.kind === 'image') discardStaged(r.image);
           return;
         }
-        if (r.kind === 'text') term.paste(r.text);
+        if (r.kind === 'text') relay.paste(r.text);
         if (r.kind === 'image') {
           pasteImage({ name: '', size: r.size }, (session) => pasteStaged(session, r.image), () => discardStaged(r.image));
         }
@@ -277,7 +297,10 @@ export function TerminalView({ tabId, active, focus, fontSize }: { tabId: string
     };
     term.element?.addEventListener('paste', onPaste, true);
 
-    const input = term.onData((data) => sessions.input(tabId, data));
+    const input = term.onData((data) => {
+      relay.data(data);
+      sessions.input(tabId, data);
+    });
     // OSC 52: a remote program (Neovim, tmux, Zellij) sets the clipboard. The core
     // writes it: the webview refuses a clipboard write no click started. Queries are
     // ignored there, so the remote never reads the clipboard.
@@ -306,6 +329,7 @@ export function TerminalView({ tabId, active, focus, fontSize }: { tabId: string
 
     return () => {
       alive = false;
+      relay.close();
       redrawers.delete(redrawMine);
       clearTimeout(settle);
       document.fonts?.removeEventListener('loadingdone', onFontsLoaded);

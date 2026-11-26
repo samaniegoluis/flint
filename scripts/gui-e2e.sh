@@ -40,7 +40,7 @@ fi
 #                                                (milestone 27, D-068)
 #   scripts/repeat.sh vim 10                     one run N times, with its failure rate
 # Exit status: 0 all passed, 1 a run failed.
-runs=(terminal vault tunnels paste rdp webgl fullscreen vim clilink update selfupdate)
+runs=(terminal broadcast vault tunnels paste rdp webgl fullscreen vim clilink update selfupdate)
 # multimon (milestone 38) needs two monitors: on Linux an X display with two (the check's
 # container makes one, FLINT_E2E_MULTIMON_DISPLAY), on macOS a person's own screens with
 # FLINT_E2E_MULTIMON=1 (its windows take a Space on each).

@@ -26,6 +26,8 @@
   // A failure names its run, and one run can be repeated alone (scripts/repeat.sh).
   //   terminal  the shell, files, a jump host, tabs, copy between servers, split panes,
   //             a changed host key
+  //   broadcast milestone 73: keys typed once into two panes (one in Kitty mode) read back
+  //             in each pane's own encoding, paste, a pane that drops, stop
   //   vault     test connection, initial command, palette, settings, known hosts,
   //             sidebar and groups, rename, lock, the tray
   //   tunnels   tunnels in the app (milestone 23)
@@ -51,7 +53,7 @@
   const COVER = '@@COVER@@';
   // fullscreen only: '1' when the window really goes full screen (FLINT_E2E_NATIVE_FS).
   const NATIVEFS = '@@NATIVEFS@@';
-  const RUNS = ['terminal', 'vault', 'tunnels', 'paste', 'vim', 'rdp', 'webgl', 'fullscreen', 'multimon', 'rdpbench', 'clilink', 'update', 'selfupdate'];
+  const RUNS = ['terminal', 'broadcast', 'vault', 'tunnels', 'paste', 'vim', 'rdp', 'webgl', 'fullscreen', 'multimon', 'rdpbench', 'clilink', 'update', 'selfupdate'];
   // The benchmark's host (rdpbench only; '' otherwise).
   const BHOST = '@@BHOST@@';
   const BUSER = '@@BUSER@@';
@@ -1047,6 +1049,193 @@
       await waitFor(() => !immersive() && mons().get().phase === 'off', 'out of full screen and back to one monitor', 10000);
       await check(true, 'Exit full screen ends the desktop across monitors');
       if (isMac) log('diag: macOS: the extra window leaves its Space');
+    }
+
+    if (RUN === 'broadcast') {
+      // Milestone 73: broadcast input (Principle 22, D-152). Two panes on the same host,
+      // one in the Kitty keyboard mode and one plain: keys typed once reach each as its
+      // own terminal encodes them, read back on the remote side; a pasted line arrives
+      // once in each, an image only in the focused pane, and a terminal's reply to its
+      // program never crosses to another pane.
+      await setStep('broadcast: two panes, off');
+      const mac = (await window.backend.app_info({})).os === 'mac';
+      const send = (code, layer = '') => (document.activeElement ?? document.body).dispatchEvent(new KeyboardEvent('keydown', {
+        key: '', code, bubbles: true, cancelable: true,
+        ...(mac ? { metaKey: true, shiftKey: layer === 'shift', altKey: layer === 'alt' }
+          : { ctrlKey: true, shiftKey: layer !== 'alt', altKey: layer !== '' }),
+      }));
+      const panes = () => qa('.spane', activeRegion());
+      const paneTerm = (el) => window.__flintE2E.terms[el.querySelector('[data-tab]').getAttribute('data-tab')];
+      // Wrapped rows joined: a long line reads as one.
+      const termOf = (el) => { const b = paneTerm(el).buffer.active; let out = ''; for (let i = 0; i < b.length; i++) { const l = b.getLine(i); if (l) out += (i > 0 && !l.isWrapped ? '\n' : '') + l.translateToString(true); } return out; };
+      const count = (s, needle) => s.split(needle).length - 1;
+      const focusPane = async (i) => {
+        panes()[i].dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+        if (panes()[i].classList.contains('focus')) panes()[i].querySelector('textarea').focus();
+        await waitFor(() => panes()[i].classList.contains('focus') && document.activeElement === panes()[i].querySelector('textarea'), `pane ${i + 1} focused`);
+      };
+      // A key as a browser delivers it: keydown, keypress when the keydown was not
+      // cancelled (a printable key), keyup.
+      const press = async (init) => {
+        const ta = activePane().querySelector('textarea');
+        const ev = (type, extra = {}) => new KeyboardEvent(type, { bubbles: true, cancelable: true, ...init, ...extra });
+        const down = ev('keydown');
+        ta.dispatchEvent(down);
+        await sleep(30);
+        if (!down.defaultPrevented && [...init.key].length === 1 && !init.ctrlKey && !init.metaKey) {
+          ta.dispatchEvent(ev('keypress', { charCode: init.key.charCodeAt(0), which: init.key.charCodeAt(0) }));
+          await sleep(30);
+        }
+        ta.dispatchEvent(ev('keyup'));
+        await sleep(30);
+      };
+      const toggle = (i) => panes()[i].querySelector('[data-bc-toggle]');
+
+      await click('.tab', 'local');
+      await waitFor(() => toolbarIs('ready'), 'the local tab');
+      activePane().querySelector('textarea').focus();
+      send('KeyD');
+      await waitFor(() => panes().length === 2 && panes()[1].querySelector('[data-host-picker] input'), 'a second pane with its picker');
+      panes()[1].querySelector('[data-host-picker] input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true, cancelable: true }));
+      await waitFor(() => panes()[1].dataset.status === 'ready' && toggle(1), 'the second pane connected', 30000);
+      await check(!q('[data-bc-bar]') && !q('[data-tab-bc]') && qa('.spane.bc').length === 0 && toggle(0)?.getAttribute('aria-pressed') === 'false' && toggle(1)?.getAttribute('aria-pressed') === 'false',
+        'broadcast is off on a new split: no bar, no tab icon, every toggle off');
+      await runInTerminal('echo solo-$((6*7))', 'solo-42');
+      await sleep(300);
+      await check(!termOf(panes()[0]).includes('solo-42'), 'with broadcast off, what is typed reaches the focused pane only');
+      await check(q('[data-split-menu]') === null, 'the Split menu is closed');
+      await click('[data-split-button]');
+      const bcItem = await waitFor(() => byText('[data-split-menu] .mi', 'Broadcast to all panes'), 'Broadcast to all panes in the Split menu');
+      const stopItem = byText('[data-split-menu] .mi', 'Stop broadcast');
+      await check(!bcItem.getAttribute('aria-disabled') && stopItem?.getAttribute('aria-disabled') === 'true', 'the Split menu offers "Broadcast to all panes"; "Stop broadcast" is greyed while it is off');
+      await click('[data-split-button]');
+
+      await setStep('broadcast: keys in each encoding');
+      // Each pane reads raw bytes up to a "q" and prints them in hex. Pane 1 asks for the
+      // Kitty keyboard protocol (CSI > 1 u) and sends a DA1 query, whose reply xterm.js
+      // writes into pane 1's input only.
+      // bash's read turns CR into LF, so the bytes are read one by one.
+      const dump = (kitty) => `sh -c 'stty raw -echo; ${kitty ? 'printf "\\033[>1u\\033[c"; ' : ''}echo bc-ready-$((6*7)); h=; while :; do c=$(dd bs=1 count=1 2>/dev/null | od -An -tx1 | tr -d " \\n"); [ "$c" = 71 ] && break; h=$h$c; done; ${kitty ? 'printf "\\033[<u"; ' : ''}stty sane; echo "[bc:$h]"'`;
+      await focusPane(0);
+      await runInTerminal(dump(true), 'bc-ready-42');
+      await focusPane(1);
+      await runInTerminal(dump(false), 'bc-ready-42');
+      await focusPane(0);
+      await click('[data-split-button]');
+      await click('[data-split-menu] .mi', 'Broadcast to all panes');
+      await waitFor(() => q('[data-bc-bar]'), 'the broadcast bar');
+      await waitFor(() => document.activeElement === panes()[0].querySelector('textarea'), 'the keys back in the focused terminal');
+      await check(true, 'after the Split menu the keys go back to the focused terminal');
+      await check(q('[data-bc-count]')?.textContent === 'Typing into 2 panes' && q('.tab.on [data-tab-bc]') && qa('.spane.bc').length === 2 && qa('[data-bc-tag]').length === 2,
+        'Broadcast to all panes: the bar says "Typing into 2 panes", the tab shows the icon, both panes carry the border and "Receiving"');
+      window.dispatchEvent(new Event('focus'));
+      await waitFor(() => q('.app').dataset.inactive === 'false', 'the window reads as active');
+      const fullContrast = (el) => { const cs = getComputedStyle(el); return Number(cs.opacity) === 1 && !cs.filter.includes('saturate'); };
+      await check(fullContrast(panes()[1].querySelector('[data-tab]')), 'a receiving pane without the focus stays at full contrast (28e3)');
+      await focusPane(0);
+      await press({ key: 'Enter', code: 'Enter', keyCode: 13, shiftKey: true });
+      await press({ key: 'a', code: 'KeyA', keyCode: 65, ctrlKey: true });
+      await press({ key: 'A', code: 'KeyA', keyCode: 65, shiftKey: true });
+      await press({ key: 'q', code: 'KeyQ', keyCode: 81 });
+      const hexOf = (i) => (termOf(panes()[i]).match(/\[bc:([0-9a-f]*)\]/) ?? [])[1];
+      try {
+        await waitFor(() => hexOf(0) !== undefined && hexOf(1) !== undefined, 'both panes print what they read', 15000);
+      } catch (err) {
+        for (const i of [0, 1]) log(`diag: pane ${i + 1}: ${termOf(panes()[i]).split('\n').filter((l) => l.trim()).slice(-3).join(' | ')}`);
+        throw err;
+      }
+      const kitty = hexOf(0);
+      const plain = hexOf(1);
+      log(`diag: broadcast bytes, kitty pane ${kitty}, plain pane ${plain}`);
+      // Shift+Enter, Ctrl+A, Shift+A: CSI 13;2u, CSI 97;5u, "A" in Kitty mode; CR, ^A, "A" plain.
+      const kittyKeys = '1b5b31333b3275' + '1b5b39373b3575' + '41';
+      await check(kitty.endsWith(kittyKeys), `the Kitty pane reads Shift+Enter, Ctrl+A and Shift+A in its own encoding (${kitty})`);
+      await check(plain === '0d' + '01' + '41', `the plain pane reads the same keys as CR, ^A and "A", typed once in the other pane (${plain})`);
+      await check(kitty.startsWith('1b5b3f') && !plain.includes('1b'), "the Kitty pane's DA1 reply stays in that pane; nothing it answers crosses to the other");
+      // The other way: typed into the plain pane, whose terminal takes Shift+A from keypress
+      // (the Kitty pane encodes it on keydown). Stopped while each pane starts its reader.
+      const hexes = (i) => [...termOf(panes()[i]).matchAll(/\[bc:([0-9a-f]*)\]/g)].map((m) => m[1]);
+      await click('[data-split-button]');
+      await click('[data-split-menu] .mi', 'Stop broadcast');
+      await waitFor(() => !q('[data-bc-bar]'), 'broadcast stopped');
+      // The first round's marker is still on screen: wait for the second.
+      await focusPane(0);
+      await type(dump(true));
+      await enter();
+      await waitFor(() => count(termOf(panes()[0]), 'bc-ready-42') === 2, 'the Kitty reader again');
+      await focusPane(1);
+      await type(dump(false));
+      await enter();
+      await waitFor(() => count(termOf(panes()[1]), 'bc-ready-42') === 2, 'the plain reader again');
+      await click('[data-split-button]');
+      await click('[data-split-menu] .mi', 'Broadcast to all panes');
+      await waitFor(() => q('[data-bc-bar]') && document.activeElement === panes()[1].querySelector('textarea'), 'broadcast on, from pane 2');
+      window.__flintE2E.bcLog = [];
+      await press({ key: 'Enter', code: 'Enter', keyCode: 13, shiftKey: true });
+      await press({ key: 'a', code: 'KeyA', keyCode: 65, ctrlKey: true });
+      await press({ key: 'A', code: 'KeyA', keyCode: 65, shiftKey: true });
+      await press({ key: 'q', code: 'KeyQ', keyCode: 81 });
+      log('diag: ' + window.__flintE2E.bcLog.join(' ; ') + ` (pane 1 ${panes()[0].querySelector('[data-tab]').dataset.tab})`);
+      await waitFor(() => hexes(0).length === 2 && hexes(1).length === 2, 'both panes print again', 15000);
+      log(`diag: typed from the plain pane, kitty pane ${hexes(0)[1]}, plain pane ${hexes(1)[1]}`);
+      await check(hexes(0)[1].endsWith(kittyKeys) && hexes(1)[1] === '0d0141', `typed from the plain pane, each pane reads its own encoding (${hexes(0)[1]} / ${hexes(1)[1]})`);
+      await focusPane(0);
+
+      await setStep('broadcast: paste');
+      await type("bash -c 'stty -echo; IFS= read -r l; stty echo; echo \"[pasted:$l]\"'");
+      await enter();
+      await sleep(400);
+      await type('hello-bc');
+      await enter();
+      await waitFor(() => termOf(panes()[0]).includes('[pasted:hello-bc]') && termOf(panes()[1]).includes('[pasted:hello-bc]'), 'the pasted line in both panes', 15000);
+      await sleep(300);
+      await check(count(termOf(panes()[0]), '[pasted:hello-bc]') === 1 && count(termOf(panes()[1]), '[pasted:hello-bc]') === 1,
+        'a pasted line arrives once in each receiving pane, through its own paste');
+      const pngBytes = Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='), (c) => c.charCodeAt(0));
+      const png = new File([pngBytes], 'bc e2e.png', { type: 'image/png' });
+      {
+        const ta = activePane().querySelector('textarea');
+        const dt = new DataTransfer();
+        dt.items.add(png);
+        ta.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+      }
+      await waitFor(() => termOf(panes()[0]).includes('bc-e2e.png'), "the image's path in the focused pane", 20000);
+      await sleep(500);
+      await check(!termOf(panes()[1]).includes('bc-e2e.png'), 'an image paste goes to the focused pane only');
+      // Clear the line in both: Ctrl+U goes to each.
+      await press({ key: 'u', code: 'KeyU', keyCode: 85, ctrlKey: true });
+
+      await setStep('broadcast: one pane out, Choose panes, a pane that drops');
+      toggle(1).click();
+      await waitFor(() => q('[data-bc-count]')?.textContent === 'Typing into 1 pane' && !panes()[1].classList.contains('bc'), 'pane 2 out of the broadcast');
+      await check(document.activeElement === panes()[0].querySelector('textarea'), "after a toggle the keys go back to the focused pane's terminal");
+      await focusPane(0);
+      await runInTerminal('echo one-out-$((6*7))', 'one-out-42');
+      await sleep(300);
+      await check(!termOf(panes()[1]).includes('one-out-42'), 'a pane taken out with its toggle receives nothing (Principle 22)');
+      await click('[data-bc-choose]');
+      await check(q('.splits.bc-choosing') && q('[data-bc-choose]').getAttribute('aria-pressed') === 'true', 'Choose panes makes the header toggles stand out');
+      // Pane 2's shell ends by itself in a moment, while it is in the broadcast.
+      await focusPane(1);
+      await runInTerminal('(sleep 2; kill -9 $$) & echo armed-$((6*7))', 'armed-42');
+      toggle(1).click();
+      await waitFor(() => panes()[1].classList.contains('bc') && !q('.splits.bc-choosing'), 'pane 2 back in');
+      await check(q('[data-bc-count]')?.textContent === 'Typing into 2 panes', 'a toggle adds the pane back, and ends Choose panes');
+      await waitFor(() => panes()[1].dataset.status === 'ended', "pane 2's session ended", 20000);
+      await check(!panes()[1].classList.contains('bc') && panes()[1].querySelector('[data-bc-left]') && q('[data-bc-count]')?.textContent === 'Typing into 1 pane' && q('[data-bc-left-note]') && panes()[1].querySelector('[data-left-broadcast]'),
+        'a pane that drops leaves the broadcast: its header says "Left broadcast", its card says so, the bar counts 1 and names it');
+      panes()[1].querySelector('[data-left-broadcast]').closest('.card').querySelector('.btn-primary').click();
+      await waitFor(() => panes()[1].dataset.status === 'ready', 'pane 2 reconnected', 30000);
+      await check(!panes()[1].classList.contains('bc') && toggle(1).getAttribute('aria-pressed') === 'false', 'reconnecting does not add it back');
+
+      await setStep('broadcast: stop');
+      await click('[data-bc-stop]');
+      await waitFor(() => !q('[data-bc-bar]'), 'the bar gone');
+      await check(!q('[data-tab-bc]') && qa('.spane.bc').length === 0 && qa('[data-bc-left]').length === 0, 'Stop ends the broadcast: no bar, no icon, no border');
+      send('KeyK');
+      await fill('.palette input', 'broadcast');
+      await check(byText('[role="option"]', 'Broadcast to all panes') && !byText('[role="option"]', 'Stop broadcast'), 'the palette offers "Broadcast to all panes" while it is off');
+      q('.palette input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
     }
 
     if (RUN === 'vim') {

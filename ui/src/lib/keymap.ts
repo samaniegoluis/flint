@@ -9,7 +9,7 @@ export type Os = 'mac' | 'linux' | 'windows';
 export type Action =
   | 'palette' | 'gotoHost' | 'switchVault' | 'openVault' | 'createVault' | 'connectRemote'
   | 'newSession' | 'closeTab' | 'reconnect' | 'duplicate' | 'toggleSidebar'
-  | 'splitRight' | 'splitDown' | 'focusNextPane' | 'focusPrevPane'
+  | 'splitRight' | 'splitDown' | 'focusNextPane' | 'focusPrevPane' | 'broadcastAll' | 'stopBroadcast'
   | 'layout1' | 'layout2' | 'layout3' | 'layout4'
   | 'viewHosts' | 'viewFiles' | 'viewTunnels' | 'viewKeys' | 'viewCredentials' | 'settings' | 'newHost' | 'newSshHost' | 'newRdpHost' | 'editHost'
   | 'collapseAll' | 'expandAll' | 'fullscreen' | 'fullscreenAll'
@@ -50,6 +50,10 @@ const CHORDS: Record<Action, Chord> = {
   splitDown: { code: 'KeyD', shifted: true, label: 'D' },
   focusNextPane: { code: 'BracketRight', label: ']' },
   focusPrevPane: { code: 'BracketLeft', label: '[' },
+  // Milestone 73 (D-152): no chord, so broadcast never turns on by a slip of the keys;
+  // the pane headers' toggles, the Split menu and the palette.
+  broadcastAll: { none: true, code: '', label: '' },
+  stopBroadcast: { none: true, code: '', label: '' },
   layout1: { code: 'Digit1', alt: true, label: '1' },
   layout2: { code: 'Digit2', alt: true, label: '2' },
   layout3: { code: 'Digit3', alt: true, label: '3' },

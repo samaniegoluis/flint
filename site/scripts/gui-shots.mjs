@@ -104,6 +104,12 @@ try {
 			await page.locator('.spane[data-status="empty"]').waitFor({ state: 'detached', timeout: 5000 });
 			await page.waitForTimeout(400);
 			await page.screenshot({ path: join(extra, `split-4-${theme}.png`) });
+			// Broadcast input (milestone 73, 28b1): three of the four panes receive.
+			for (const i of [0, 1, 3]) await page.locator('.spane:visible').nth(i).locator('[data-bc-toggle]').click();
+			await page.waitForTimeout(400);
+			await page.screenshot({ path: join(extra, `broadcast-${theme}.png`) });
+			await page.locator('[data-bc-stop]').click();
+			await page.waitForTimeout(300);
 			await page.setViewportSize({ width: 900, height: 600 });
 			await page.waitForTimeout(600);
 			await page.screenshot({ path: join(extra, `split-narrow-${theme}.png`) });
