@@ -8,7 +8,7 @@ import "core:encoding/hex"
 import "core:time"
 import "core:json"
 import "ext:webui"
-import "../../adapters/crypto"
+import "../../adapters/crypto" as flint_crypto
 import "../../adapters/uievents"
 import "../../adapters/vault"
 import "../../application"
@@ -83,7 +83,7 @@ fn rpc_access_state(st: GuiState, store: vault.LockedVaultStore, presence: uieve
 // The owner answers approval `id`. Allow first proves presence (the OS's check, or
 // the master password checked against the key held), then becomes a grant. Runs on
 // a worker: Touch ID and polkit block until the person answers.
-fn rpc_access_answer(req: AccessAnswer, c: crypto.Sodium, store: vault.LockedVaultStore, presence: uievents.OsPresence, st: GuiState, mut app: webui.App) -> AccessState! {
+fn rpc_access_answer(req: AccessAnswer, c: flint_crypto.Sodium, store: vault.LockedVaultStore, presence: uievents.OsPresence, st: GuiState, mut app: webui.App) -> AccessState! {
     try st.require_unlocked()
     ap := find_approval(st.holder.access_book(), req.id) or {
         return error(coded(ERR_NOT_FOUND, "this request is no longer waiting"))

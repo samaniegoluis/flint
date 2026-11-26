@@ -151,7 +151,7 @@ fn (mut self: RdpTabSink) desktop_cursor(tab: str, c: domain.RdpCursor) {
 }
 
 // The connection, on a worker, until the tab ends.
-fn run_gui_rdp(mut app: webui.App, c: crypto.Sodium, mut store: vault.LockedVaultStore, vs: application.VaultSession, holder: vault.SessionHolder, board: uievents.OsClipboard, ui_store: config.JsonUiStateStore, req: RdpOpenReq) {
+fn run_gui_rdp(mut app: webui.App, c: flint_crypto.Sodium, mut store: vault.LockedVaultStore, vs: application.VaultSession, holder: vault.SessionHolder, board: uievents.OsClipboard, ui_store: config.JsonUiStateStore, req: RdpOpenReq) {
     mut rd := new_freerdp_desktop()
     prompter := new_gui_prompter(app, req.tab)
     mut sink := RdpTabSink{ events: new_gui_desktop_sink(app), holder: holder }
@@ -291,7 +291,7 @@ fn rdp_type_check(params: str, st: GuiState) -> RdpTypeReq! {
 
 // Types, then tells the page how many characters went ("rdp:typed").
 // Type password waits here for the person's presence check (Touch ID, polkit): a worker.
-fn run_gui_rdp_type(mut app: webui.App, c: crypto.Sodium, store: vault.LockedVaultStore, vs: application.VaultSession, board: uievents.OsClipboard, presence: uievents.OsPresence, req: RdpTypeReq) {
+fn run_gui_rdp_type(mut app: webui.App, c: flint_crypto.Sodium, store: vault.LockedVaultStore, vs: application.VaultSession, board: uievents.OsClipboard, presence: uievents.OsPresence, req: RdpTypeReq) {
     mut rd := new_freerdp_desktop()
     mut clip := board
     mut out := RdpTyped{ tab: req.tab, what: req.what, count: 0, code: "", message: "" }

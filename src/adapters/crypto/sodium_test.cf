@@ -1,4 +1,4 @@
-package crypto
+package flint_crypto
 
 import "../../ports"
 import "core:encoding/hex"

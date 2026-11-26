@@ -7,6 +7,11 @@ type FakeSent struct {
     items: []str
 }
 
+// CFIRE-UPSTREAM: CF-147 (regressed: field access through a shared[T] field does not build;
+// method calls through it do)
+fn (mut self: FakeSent) add(item: str) { self.items.push(item) }
+fn (self: FakeSent) all() -> []str { return self.items }
+
 type FakeNotifier struct {
     sent: shared[FakeSent]
     fail: str
@@ -20,7 +25,7 @@ fn (self: FakeNotifier) alert_publish(server: str, topic: str, kind: str) -> voi
     if self.fail.len() > 0 {
         return error(self.fail)
     }
-    self.sent.items.push("{server}|{topic}|{kind}")
+    self.sent.add("{server}|{topic}|{kind}")
 }
 
 fn on_target() -> domain.AlertTarget {
@@ -49,9 +54,9 @@ test "a publish passes only the kind, the server and the topic" {
     assert_eq(a.kind, ALERT_APPROVAL)
     l := publish_alert(n, on_target(), ALERT_LOCKED, 2000)
     assert(l.ok)
-    assert_eq(n.sent.items.len(), usize(2))
-    assert_eq(n.sent.items[0], "https://ntfy.sh|flint-abc|approval")
-    assert_eq(n.sent.items[1], "https://ntfy.sh|flint-abc|locked")
+    assert_eq(n.sent.all().len(), usize(2))
+    assert_eq(n.sent.all()[0], "https://ntfy.sh|flint-abc|approval")
+    assert_eq(n.sent.all()[1], "https://ntfy.sh|flint-abc|locked")
 }
 
 test "a failed or impossible publish is a status, never sent with anything else" {
@@ -70,7 +75,7 @@ test "a failed or impossible publish is a status, never sent with anything else"
     mut bad_server := on_target()
     bad_server.server = "ntfy.sh"
     assert(!publish_alert(n, bad_server, ALERT_TEST, 5).ok)
-    assert_eq(n.sent.items.len(), usize(0))
+    assert_eq(n.sent.all().len(), usize(0))
 }
 
 test "the topic is made once by the app and only replaced by New topic" {

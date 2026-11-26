@@ -182,6 +182,15 @@ type FakeBank struct {
     late_after: i64
 }
 
+// CFIRE-UPSTREAM: CF-147 (regressed: field access through a shared[T] field does not build;
+// method calls through it do)
+fn (self: FakeBank) bank_blobs() -> []domain.VaultRecords { return self.blobs }
+fn (self: FakeBank) bank_reads() -> i64 { return self.reads }
+fn (self: FakeBank) bank_late_after() -> i64 { return self.late_after }
+fn (mut self: FakeBank) set_blobs(list: []domain.VaultRecords) { self.blobs = list }
+fn (mut self: FakeBank) set_reads(n: i64) { self.reads = n }
+fn (mut self: FakeBank) set_late_after(n: i64) { self.late_after = n }
+
 fn new_fake_store() -> FakeStore {
     return FakeStore{ file_path: "", file_salt: [], file_key: [], attached: false, meta_keys: [], meta_values: [], groups: [], hosts: [], keys: [], creds: [], known: [], snap_groups: [], snap_hosts: [], snap_keys: [], snap_creds: [], snap_known: [], tunnels: [], snap_tunnels: [], act_id: "", act_key: [], rk_key: [], rk_salt: [], rk_secrets: domain.VaultSecrets{ hosts: [], keys: [], creds: [] }, rk_act: false, rk_fail: "", rec_tokens: [], tombs: [], replaced: 0, copy_open: false, bank: make(shared[FakeBank], FakeBank{ blobs: [], reads: 0, late_after: 0 }) }
 }
@@ -989,20 +998,20 @@ fn (self: FakeStore) vault_file_bytes(path: str) -> []byte! {
     // Through `self.bank`: a local copy of the field loses its `shared[T]` type once this
     // package is imported, and its fields lower with `.` instead of `->` (CF-156).
     // CFIRE-UPSTREAM: CF-156
-    mut list := self.bank.blobs
+    mut list := self.bank.bank_blobs()
     n := list.len()
-    reads := self.bank.reads + 1
-    late := self.bank.late_after
+    reads := self.bank.bank_reads() + 1
+    late := self.bank.bank_late_after()
     mut tombs := self.tombs
     if late > 0 && reads > late {
         tombs.push(domain.Tombstone{ kind: "host", id: "written-by-another-process", deleted_at: 1 })
     }
     list.push(domain.VaultRecords{ groups: self.groups, hosts: self.hosts, keys: self.keys, creds: self.creds, known_hosts: self.known, tunnels: self.tunnels, tokens: self.rec_tokens, tombstones: tombs })
     if n >= 0 {
-        self.bank.blobs = list
+        self.bank.set_blobs(list)
     }
     if n >= 0 {
-        self.bank.reads = reads
+        self.bank.set_reads(reads)
     }
     // The same records give the same bytes, so an unchanged vault hashes the same.
     mut same := n
@@ -1043,7 +1052,7 @@ fn (self: FakeStore) fake_blob_of(data: []byte) -> FakeBlob! {
     if n < 0 {
         return error(coded(ERR_INVALID, "not a fake vault"))
     }
-    list := self.bank.blobs
+    list := self.bank.bank_blobs()
     return FakeBlob{ key: parts[0], id: parts[1], records: list[usize(n)] }
 }
 

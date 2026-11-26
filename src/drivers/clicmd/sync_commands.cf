@@ -13,7 +13,7 @@ import "core:os"
 import "core:time"
 import "core:json"
 import "../../adapters/config"
-import "../../adapters/crypto"
+import "../../adapters/crypto" as flint_crypto
 import "../../adapters/keychain" as flint_keychain
 import "../../adapters/vault"
 import "../../adapters/vaultremote"
@@ -79,7 +79,7 @@ fn cmd_vault_connect_list(url: str, sec: SecretInput, as_json: bool) -> void! {
 }
 
 // `flint vault connect <url> [--label <text>]`, `--to <path> [--id <id>]` or `--list`.
-fn cmd_vault_connect(p: ParsedArgs, sec: SecretInput, as_json: bool, c: crypto.Sodium, mut store: vault.LockedVaultStore, src: VaultSource, recents: config.JsonRecentStore) -> void! {
+fn cmd_vault_connect(p: ParsedArgs, sec: SecretInput, as_json: bool, c: flint_crypto.Sodium, mut store: vault.LockedVaultStore, src: VaultSource, recents: config.JsonRecentStore) -> void! {
     url := p.positional(2)
     to := p.flag_value("--to")
     id := p.flag_value("--id")
@@ -141,7 +141,7 @@ fn cmd_vault_connect(p: ParsedArgs, sec: SecretInput, as_json: bool, c: crypto.S
 // `flint vault sync`: in the app when it holds the vault, else with the master
 // password typed for this command. A password changed on another machine is asked
 // for (or read with --new-master-stdin) and taken.
-fn cmd_vault_sync(p: ParsedArgs, sec: SecretInput, as_json: bool, c: crypto.Sodium, mut store: vault.LockedVaultStore, src: VaultSource, recents: config.JsonRecentStore) -> void! {
+fn cmd_vault_sync(p: ParsedArgs, sec: SecretInput, as_json: bool, c: flint_crypto.Sodium, mut store: vault.LockedVaultStore, src: VaultSource, recents: config.JsonRecentStore) -> void! {
     links := remote_links()
     remote := new_http_vault_remote()
     tokens := token_keychain()
@@ -287,7 +287,7 @@ fn remote_status_fields(r: application.RemoteStatus) -> ([]str, []str) {
 // After a command run here (not in the app) left a connected vault with changes
 // its server lacks: sync it now. A failure is a warning; the change waits for the
 // next sync (Principle 14: nothing is lost by waiting).
-fn sync_after_command(p: ParsedArgs, c: crypto.Sodium, mut store: vault.LockedVaultStore, kc: flint_keychain.OsKeychain, recents: config.JsonRecentStore) {
+fn sync_after_command(p: ParsedArgs, c: flint_crypto.Sodium, mut store: vault.LockedVaultStore, kc: flint_keychain.OsKeychain, recents: config.JsonRecentStore) {
     if p.positional(0) == "vault" {
         verb := p.positional(1)
         if verb != "rename" && verb != "merge" {

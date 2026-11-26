@@ -14,7 +14,7 @@ import "core:sync"
 import "core:time"
 import "core:os"
 import "../../adapters/config"
-import "../../adapters/crypto"
+import "../../adapters/crypto" as flint_crypto
 import "../../adapters/keychain" as flint_keychain
 import "../../adapters/vault"
 import "../../adapters/vaultremote"
@@ -82,7 +82,7 @@ fn rpc_vault_sync_hint(params: str, st: GuiState) -> str! {
     return ok_json()
 }
 
-fn run_sync_loop(c: crypto.Sodium, mut store: vault.LockedVaultStore, kc: flint_keychain.OsKeychain, settings_store: config.JsonSettingsStore, st: GuiState, mut app: webui.App) {
+fn run_sync_loop(c: flint_crypto.Sodium, mut store: vault.LockedVaultStore, kc: flint_keychain.OsKeychain, settings_store: config.JsonSettingsStore, st: GuiState, mut app: webui.App) {
     links := new_json_remote_link_store(flint_config_dir())
     remote := new_http_vault_remote()
     mut clock := new_sync_clock()

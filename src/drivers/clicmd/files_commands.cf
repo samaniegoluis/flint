@@ -104,7 +104,7 @@ fn copy_summary(r: domain.CopyResult, req: application.CopyRequest) -> str {
     return "Copied {plural(i64(r.files.len()), "file", "files")} ({human_bytes(r.bytes)}{folders}) {where} in {duration_text(r.duration_ms)}."
 }
 
-fn cmd_cp[P: ports.Prompter, L: ports.LocalFiles, K: ports.TransferSink](p: ParsedArgs, sec: SecretInput, as_json: bool, c: crypto.Sodium, mut store: vault.LockedVaultStore, src: VaultSource, recents: config.JsonRecentStore, prompter: P, mut local: L, mut sink: K) -> i32! {
+fn cmd_cp[P: ports.Prompter, L: ports.LocalFiles, K: ports.TransferSink](p: ParsedArgs, sec: SecretInput, as_json: bool, c: flint_crypto.Sodium, mut store: vault.LockedVaultStore, src: VaultSource, recents: config.JsonRecentStore, prompter: P, mut local: L, mut sink: K) -> i32! {
     try p.allow_flags("cp", ["-r", "--recursive", "--force", "--timeout", "--accept-new-host-key"])
     req := try copy_request_from_args(p)
     opts := try connect_options(p)

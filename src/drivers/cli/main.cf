@@ -5,7 +5,7 @@ package main
 // sends it over the local socket (D-038).
 
 import "core:json"
-import "../../adapters/crypto"
+import "../../adapters/crypto" as flint_crypto
 import "../../adapters/process"
 import "../../adapters/ssh" as flint_ssh
 import "../../adapters/vault"

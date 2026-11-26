@@ -14,7 +14,7 @@ import "core:json"
 import "core:os"
 import "../../domain"
 import "../../application"
-import "../../adapters/crypto"
+import "../../adapters/crypto" as flint_crypto
 import "../../adapters/rootupdate"
 import "../version"
 
@@ -53,7 +53,8 @@ fn main() {
     // A test package (scripts/package.sh linux --test-feed) has its local feed's key
     // compiled in; a release has none and takes Flint's key alone.
     mut key := hex.decode(UPDATE_PUBLIC_KEY_HEX) or []
-    mut prefix := UPDATE_DOWNLOAD_PREFIX
+    // CFIRE-UPSTREAM: CF-196 (`mut x := CONST` of another package infers no type)
+    mut prefix: str = UPDATE_DOWNLOAD_PREFIX
     if version.UPDATE_TEST_KEY_HEX.len() > 0 {
         key = hex.decode(version.UPDATE_TEST_KEY_HEX) or []
         prefix = update_download_prefix(version.UPDATE_TEST_FEED)

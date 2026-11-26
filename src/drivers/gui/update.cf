@@ -21,7 +21,7 @@ import "core:os"
 import "core:sync"
 import "core:time"
 import "../../adapters/config"
-import "../../adapters/crypto"
+import "../../adapters/crypto" as flint_crypto
 import "../../adapters/process"
 import "../../adapters/vaultremote"
 import "../../application"
@@ -220,7 +220,7 @@ fn run_update_progress(st: GuiState, mut app: webui.App) {
     }
 }
 
-fn run_update_loop(c: crypto.Sodium, settings_store: config.JsonSettingsStore, st: GuiState, mut app: webui.App) {
+fn run_update_loop(c: flint_crypto.Sodium, settings_store: config.JsonSettingsStore, st: GuiState, mut app: webui.App) {
     feed := new_http_update_feed()
     mut dl := new_http_update_downloader()
     mut files := new_os_update_files()

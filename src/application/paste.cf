@@ -52,7 +52,9 @@ fn paste_dir[T: ports.SftpTransport](mut sftp: T, path: str, own: bool) -> void!
 fn paste_root[T: ports.SftpTransport](mut sftp: T) -> str! {
     home := try sftp.sftp_realpath(".")
     mut failed := ""
-    for i, rel in PASTE_HOME_DIRS {
+    // CFIRE-UPSTREAM: CF-196 (a loop over another package's global slice types its element `auto`)
+    dirs: []str = PASTE_HOME_DIRS
+    for i, rel in dirs {
         // ~/.cache is shared with other programs: created if missing, left as it is.
         paste_dir(mut sftp, remote_join(home, rel), i > 0) or err {
             failed = "{err.message()}"

@@ -13,7 +13,7 @@ import "core:os"
 import "core:time"
 import "ext:webui"
 import "../../adapters/config"
-import "../../adapters/crypto"
+import "../../adapters/crypto" as flint_crypto
 import "../../adapters/ipc" as flint_ipc
 import "../../adapters/keychain" as flint_keychain
 import "../../adapters/process"
@@ -120,7 +120,7 @@ fn run_lock_timer(mut store: vault.LockedVaultStore, st: GuiState, mut app: webu
 }
 
 // One accept loop. Several run on the same listener (SERVE_ACCEPTORS).
-fn run_accept_loop(listener: flint_ipc.IpcListener, c: crypto.Sodium, mut store: vault.LockedVaultStore, kc: flint_keychain.OsKeychain, recents: config.JsonRecentStore, st: GuiState, mut app: webui.App) {
+fn run_accept_loop(listener: flint_ipc.IpcListener, c: flint_crypto.Sodium, mut store: vault.LockedVaultStore, kc: flint_keychain.OsKeychain, recents: config.JsonRecentStore, st: GuiState, mut app: webui.App) {
     for !listener.stopped() {
         got := listener.accept_wait(SERVE_ACCEPT_WAIT_MS) or err {
             break
@@ -151,8 +151,8 @@ fn app_state_for(st: GuiState, path: str) -> clicmd.AppState {
 }
 
 // Answers one client's request.
-fn serve_client(mut conn: flint_ipc.IpcConn, c: crypto.Sodium, mut store: vault.LockedVaultStore, kc: flint_keychain.OsKeychain, recents: config.JsonRecentStore, st: GuiState, mut app: webui.App) {
-    defer conn.close()
+fn serve_client(mut conn: flint_ipc.IpcConn, c: flint_crypto.Sodium, mut store: vault.LockedVaultStore, kc: flint_keychain.OsKeychain, recents: config.JsonRecentStore, st: GuiState, mut app: webui.App) {
+    defer conn.ipc_close()
     text := conn.recv(SERVE_SEND_MS) or {
         return
     }
@@ -219,7 +219,8 @@ fn serve_client(mut conn: flint_ipc.IpcConn, c: crypto.Sodium, mut store: vault.
         if now.state == APP_UNLOCKED {
             locked = lock_now(mut store, st, mut app, "cli")
         }
-        mut answer := APP_LOCKED
+        // CFIRE-UPSTREAM: CF-196 (`mut x := CONST` of another package infers no type)
+        mut answer: str = APP_LOCKED
         if locked {
             answer = APP_UNLOCKED
         }
@@ -273,7 +274,7 @@ type GateOutcome struct {
 
 // Names in the log entry the token `secret` still matches, when it is revoked or
 // expired.
-fn name_known_token(c: crypto.Sodium, tokens: []domain.Token, secret: str, mut entry: domain.ActivityEntry) {
+fn name_known_token(c: flint_crypto.Sodium, tokens: []domain.Token, secret: str, mut entry: domain.ActivityEntry) {
     known := match_token(c, tokens, secret) or {
         return
     }
@@ -320,7 +321,7 @@ fn go_ahead(st: GuiState, store: vault.LockedVaultStore, session: application.Va
     return GateOutcome{ refusal: "", sudo_typed: sudo_typed, entry_id: id, grant_id: e.grant }
 }
 
-fn gate(conn: flint_ipc.IpcConn, req: clicmd.ServeRequest, c: crypto.Sodium, store: vault.LockedVaultStore, st: GuiState, mut app: webui.App, session_kind: bool) -> GateOutcome {
+fn gate(conn: flint_ipc.IpcConn, req: clicmd.ServeRequest, c: flint_crypto.Sodium, store: vault.LockedVaultStore, st: GuiState, mut app: webui.App, session_kind: bool) -> GateOutcome {
     parsed := parse_cli_args(req.argv) or {
         return refuse("")
     }
@@ -688,7 +689,7 @@ fn run_servable_here(req: clicmd.ServeRequest, st: GuiState) -> bool {
     return st.unlocked() && st.vault_session().path == req.vault && run_request_servable(req)
 }
 
-fn serve_run(mut conn: flint_ipc.IpcConn, req: clicmd.ServeRequest, c: crypto.Sodium, mut store: vault.LockedVaultStore, kc: flint_keychain.OsKeychain, recents: config.JsonRecentStore, st: GuiState, mut app: webui.App) {
+fn serve_run(mut conn: flint_ipc.IpcConn, req: clicmd.ServeRequest, c: flint_crypto.Sodium, mut store: vault.LockedVaultStore, kc: flint_keychain.OsKeychain, recents: config.JsonRecentStore, st: GuiState, mut app: webui.App) {
     if !run_servable_here(req, st) {
         _ = conn.send(json_not_served(), SERVE_SEND_MS) or {}
         return
@@ -735,7 +736,7 @@ fn serve_run(mut conn: flint_ipc.IpcConn, req: clicmd.ServeRequest, c: crypto.So
 
 // `connect`, `exec` and `host test`: the vault is checked and copied under the hold,
 // then the session runs without it, as a window tab does.
-fn serve_session(mut conn: flint_ipc.IpcConn, req: clicmd.ServeRequest, c: crypto.Sodium, mut store: vault.LockedVaultStore, kc: flint_keychain.OsKeychain, recents: config.JsonRecentStore, st: GuiState, mut app: webui.App) {
+fn serve_session(mut conn: flint_ipc.IpcConn, req: clicmd.ServeRequest, c: flint_crypto.Sodium, mut store: vault.LockedVaultStore, kc: flint_keychain.OsKeychain, recents: config.JsonRecentStore, st: GuiState, mut app: webui.App) {
     st.hold()
     ok := st.unlocked() && st.vault_session().path == req.vault && session_servable(req)
     st.release()

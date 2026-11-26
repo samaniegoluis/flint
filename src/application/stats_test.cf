@@ -34,12 +34,16 @@ type FakeClockState struct {
     now: i64
 }
 
+// CFIRE-UPSTREAM: CF-147 (regressed: field reads through a shared[T] field do not build; method calls do)
+fn (self: FakeClockState) read_now() -> i64 { return self.now }
+fn (mut self: FakeClockState) advance(ms: i64) { self.now = self.now + ms }
+
 type StatsClock struct {
     state: shared[FakeClockState]
 }
 
 fn (mut self: StatsClock) clock_now_ms() -> i64 {
-    return self.state.now
+    return self.state.read_now()
 }
 
 fn (mut self: FakeStats) stats_open(command: str) -> void! {
@@ -67,7 +71,7 @@ fn (mut self: FakeStats) stats_read(timeout_ms: i64) -> domain.ExecChunk! {
         self.pending = ""
         return domain.ExecChunk{ stdout: out, stderr: "", done: false, exit_code: 0, signal: "" }
     }
-    self.clock.now = self.clock.now + timeout_ms
+    self.clock.advance(timeout_ms)
     done := self.end_after && self.sent >= i64(self.replies.len())
     return domain.ExecChunk{ stdout: "", stderr: "", done: done, exit_code: 0, signal: "" }
 }

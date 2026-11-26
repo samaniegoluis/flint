@@ -11,7 +11,7 @@ import "core:json"
 import "core:time"
 import "core:os"
 import "../../adapters/config"
-import "../../adapters/crypto"
+import "../../adapters/crypto" as flint_crypto
 import "../../adapters/ipc" as flint_ipc
 import "../../adapters/process"
 import "../../adapters/uievents"
@@ -197,7 +197,7 @@ fn rpc_window_state(st: GuiState, presence: uievents.OsPresence) -> str! {
 
 // Opens the locked window: the master password, or the presence check when the
 // request carries none. Runs on a worker: Touch ID and polkit block until answered.
-fn rpc_window_unlock(req: WindowUnlockReq, c: crypto.Sodium, store: vault.LockedVaultStore, presence: uievents.OsPresence, st: GuiState, mut app: webui.App) -> WindowState! {
+fn rpc_window_unlock(req: WindowUnlockReq, c: flint_crypto.Sodium, store: vault.LockedVaultStore, presence: uievents.OsPresence, st: GuiState, mut app: webui.App) -> WindowState! {
     if !st.holder.window_locked() {
         return window_state(st, presence)
     }

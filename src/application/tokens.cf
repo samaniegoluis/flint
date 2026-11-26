@@ -219,7 +219,7 @@ fn set_activity_retention_days[T: ports.TokenStore](mut tokens: T, days: i64, no
 // with the vault's key.
 fn backup_activity[T: ports.TokenStore](tokens: T, dest: str) -> void! {
     // "C:/..." on Windows, as the save dialog gives it (windows-port).
-    if !is_absolute_path(dest) {
+    if !domain.is_absolute_path(dest) {
         return error(coded(ERR_INVALID, "the backup path must be absolute"))
     }
     try tokens.activity_backup(dest)

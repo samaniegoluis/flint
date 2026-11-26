@@ -16,7 +16,7 @@ import "core:os"
 import "core:time"
 import "core:sync"
 import "../../adapters/config"
-import "../../adapters/crypto"
+import "../../adapters/crypto" as flint_crypto
 import "../../adapters/fonts"
 import "../../adapters/keychain" as flint_keychain
 import "../../adapters/process"
@@ -437,7 +437,7 @@ fn rpc_settings_get(store: config.JsonSettingsStore) -> str! {
     return json.stringify(try load_settings(store))
 }
 
-fn rpc_settings_set(params: str, c: crypto.Sodium, mut store: config.JsonSettingsStore, st: GuiState, presence: uievents.OsPresence, sys_lang: str, mut app: webui.App) -> str! {
+fn rpc_settings_set(params: str, c: flint_crypto.Sodium, mut store: config.JsonSettingsStore, st: GuiState, presence: uievents.OsPresence, sys_lang: str, mut app: webui.App) -> str! {
     try st.require_open_window()
     req := try parse_req[domain.Settings](params)
     mut saved := try save_settings(mut store, req)
@@ -507,7 +507,7 @@ fn rpc_vault_recents(store: vault.LockedVaultStore, recents: config.JsonRecentSt
 // Argon2id takes about a second, and the window keeps responding meanwhile. Each
 // holds the state for its whole run, so a command served over the socket never sees
 // the vault switch under it.
-fn rpc_vault_unlock(req: UnlockReq, c: crypto.Sodium, mut store: vault.LockedVaultStore, kc: flint_keychain.OsKeychain, recents: config.JsonRecentStore, mut st: GuiState) -> application.VaultInfo! {
+fn rpc_vault_unlock(req: UnlockReq, c: flint_crypto.Sodium, mut store: vault.LockedVaultStore, kc: flint_keychain.OsKeychain, recents: config.JsonRecentStore, mut st: GuiState) -> application.VaultInfo! {
     if req.password.len() == 0 {
         // A locked window opens with the master password or presence, never with the
         // keychain's key behind it (milestone 14).
@@ -559,7 +559,7 @@ fn rpc_vault_unlock(req: UnlockReq, c: crypto.Sodium, mut store: vault.LockedVau
 
 // The unlock screen's "Allow" for the caller that asked: the grant the approval
 // window would propose, confirmed by the master password just typed.
-fn allow_on_unlock(asked: domain.Approval, c: crypto.Sodium, store: vault.LockedVaultStore, st: GuiState, vault_id: str) {
+fn allow_on_unlock(asked: domain.Approval, c: flint_crypto.Sodium, store: vault.LockedVaultStore, st: GuiState, vault_id: str) {
     cat := load_catalog(store) or domain.Catalog{ groups: [], hosts: [], keys: [], creds: [] }
     mut ap := asked
     ap.vault_id = vault_id
@@ -613,7 +613,7 @@ fn rpc_unlock_request_dismiss(st: GuiState) -> str! {
     return ok_json()
 }
 
-fn rpc_vault_create(req: CreateReq, c: crypto.Sodium, mut store: vault.LockedVaultStore, kc: flint_keychain.OsKeychain, recents: config.JsonRecentStore, mut st: GuiState) -> application.VaultInfo! {
+fn rpc_vault_create(req: CreateReq, c: flint_crypto.Sodium, mut store: vault.LockedVaultStore, kc: flint_keychain.OsKeychain, recents: config.JsonRecentStore, mut st: GuiState) -> application.VaultInfo! {
     try st.require_open_window()
     st.hold()
     defer st.release()
@@ -684,7 +684,7 @@ fn rpc_vault_rename(params: str, mut store: vault.LockedVaultStore, recents: con
 // Changes the open vault's master password (milestone 40, D-095). On a worker: two
 // Argon2id runs. The socket waits (`hold`) so no command lands between the copy and
 // its rename; the new session replaces the old one, whose key the holder wipes.
-fn rpc_vault_passwd(req: PasswdReq, c: crypto.Sodium, mut store: vault.LockedVaultStore, kc: flint_keychain.OsKeychain, mut st: GuiState) -> PasswdReply! {
+fn rpc_vault_passwd(req: PasswdReq, c: flint_crypto.Sodium, mut store: vault.LockedVaultStore, kc: flint_keychain.OsKeychain, mut st: GuiState) -> PasswdReply! {
     defer c.wipe_text(req.current)
     defer c.wipe_text(req.password)
     st.hold()
@@ -722,7 +722,7 @@ fn rpc_catalog(store: vault.LockedVaultStore, st: GuiState) -> str! {
     return json.stringify(try catalog_view(store))
 }
 
-fn rpc_group_add(params: str, c: crypto.Sodium, mut store: vault.LockedVaultStore, st: GuiState) -> str! {
+fn rpc_group_add(params: str, c: flint_crypto.Sodium, mut store: vault.LockedVaultStore, st: GuiState) -> str! {
     try st.require_unlocked()
     req := try parse_req[PathReq](params)
     return json.stringify(try add_group(c, mut store, req.path))
@@ -740,13 +740,13 @@ fn rpc_group_rm(params: str, mut store: vault.LockedVaultStore, st: GuiState) ->
     return json.stringify(try remove_group(mut store, req.path))
 }
 
-fn rpc_host_add(params: str, c: crypto.Sodium, mut store: vault.LockedVaultStore, st: GuiState) -> str! {
+fn rpc_host_add(params: str, c: flint_crypto.Sodium, mut store: vault.LockedVaultStore, st: GuiState) -> str! {
     try st.require_unlocked()
     req := try parse_req[application.HostPatch](params)
     return json.stringify(try add_host(c, mut store, st.vault_session(), req))
 }
 
-fn rpc_host_edit(params: str, c: crypto.Sodium, mut store: vault.LockedVaultStore, st: GuiState) -> str! {
+fn rpc_host_edit(params: str, c: flint_crypto.Sodium, mut store: vault.LockedVaultStore, st: GuiState) -> str! {
     try st.require_unlocked()
     target := try parse_req[TargetReq](params)
     patch := try parse_req[application.HostPatch](params)
@@ -760,7 +760,7 @@ fn rpc_host_rm(params: str, mut store: vault.LockedVaultStore, st: GuiState) -> 
 }
 
 // The key comes pasted (`private_key`) or from a file the person picked (`file`).
-fn rpc_key_add(params: str, c: crypto.Sodium, mut store: vault.LockedVaultStore, inspector: flint_ssh.LibsshKeyInspector, st: GuiState) -> str! {
+fn rpc_key_add(params: str, c: flint_crypto.Sodium, mut store: vault.LockedVaultStore, inspector: flint_ssh.LibsshKeyInspector, st: GuiState) -> str! {
     try st.require_unlocked()
     req := try parse_req[KeyAddReq](params)
     mut content := req.private_key
@@ -784,13 +784,13 @@ fn rpc_key_rm(params: str, mut store: vault.LockedVaultStore, st: GuiState) -> s
     return json.stringify(try remove_key(mut store, req.name))
 }
 
-fn rpc_cred_add(params: str, c: crypto.Sodium, mut store: vault.LockedVaultStore, st: GuiState) -> str! {
+fn rpc_cred_add(params: str, c: flint_crypto.Sodium, mut store: vault.LockedVaultStore, st: GuiState) -> str! {
     try st.require_unlocked()
     req := try parse_req[application.CredPatch](params)
     return json.stringify(try add_cred(c, mut store, st.vault_session(), req))
 }
 
-fn rpc_cred_edit(params: str, c: crypto.Sodium, mut store: vault.LockedVaultStore, st: GuiState) -> str! {
+fn rpc_cred_edit(params: str, c: flint_crypto.Sodium, mut store: vault.LockedVaultStore, st: GuiState) -> str! {
     try st.require_unlocked()
     target := try parse_req[TargetReq](params)
     patch := try parse_req[application.CredPatch](params)
@@ -807,14 +807,14 @@ fn rpc_cred_rm(params: str, mut store: vault.LockedVaultStore, st: GuiState) -> 
 
 // The single exception to Principle 6: the page asked to see one saved password. The
 // value goes back to the page only, never to a log or an error.
-fn rpc_secret_reveal(params: str, c: crypto.Sodium, store: vault.LockedVaultStore, st: GuiState) -> str! {
+fn rpc_secret_reveal(params: str, c: flint_crypto.Sodium, store: vault.LockedVaultStore, st: GuiState) -> str! {
     try st.require_unlocked()
     req := try parse_req[SecretReq](params)
     return json.stringify(RevealReply{ value: try reveal_password(c, store, st.vault_session(), req.kind, req.name) })
 }
 
 // Copies a saved password; the value never crosses RPC.
-fn rpc_secret_copy(params: str, c: crypto.Sodium, store: vault.LockedVaultStore, mut clip: uievents.OsClipboard, st: GuiState) -> str! {
+fn rpc_secret_copy(params: str, c: flint_crypto.Sodium, store: vault.LockedVaultStore, mut clip: uievents.OsClipboard, st: GuiState) -> str! {
     try st.require_unlocked()
     req := try parse_req[SecretReq](params)
     try copy_password(c, store, st.vault_session(), mut clip, req.kind, req.name)
@@ -862,7 +862,7 @@ fn session_open_check(params: str, st: GuiState) -> SessionOpenReq! {
 
 // The connection itself, on a worker thread. It ends with a "session:state" event:
 // the shell's exit status, or an error code.
-fn run_gui_session(mut app: webui.App, c: crypto.Sodium, mut store: vault.LockedVaultStore, vs: application.VaultSession, req: SessionOpenReq) {
+fn run_gui_session(mut app: webui.App, c: flint_crypto.Sodium, mut store: vault.LockedVaultStore, vs: application.VaultSession, req: SessionOpenReq) {
     mut opts := default_connect_options()
     opts.accept_new_host_key = req.accept_new_host_key
     opts.run_initial_command = !req.no_command
@@ -879,11 +879,12 @@ fn run_gui_session(mut app: webui.App, c: crypto.Sodium, mut store: vault.Locked
         result = connect_host(c, mut store, vs, mut link, prompter, mut term, mut clock, req.alias, "xterm-256color", opts)
     }
     link.link_hangup()
-    if result.has_value() {
-        emit_session_state(mut app, req.session, "ended", "", "", result.value())
-    } else {
-        msg := "{result.error().message()}"
-        emit_session_state(mut app, req.session, "ended", error_code_of(msg), error_text_of(msg), -1)
+    match result {
+        Ok(code) => emit_session_state(mut app, req.session, "ended", "", "", code),
+        Err(e) => {
+            msg := "{e.message()}"
+            emit_session_state(mut app, req.session, "ended", error_code_of(msg), error_text_of(msg), -1)
+        },
     }
     gui_session_drop(req.session)
 }
@@ -915,7 +916,7 @@ fn host_test_check(params: str, st: GuiState) -> HostTestReq! {
 
 // The test itself, on a worker thread: the editor's unsaved form (`target` "" for a
 // new host). It ends with a "host:test" event.
-fn run_gui_host_test(mut app: webui.App, c: crypto.Sodium, mut store: vault.LockedVaultStore, vs: application.VaultSession, req: HostTestReq, patch: application.HostPatch) {
+fn run_gui_host_test(mut app: webui.App, c: flint_crypto.Sodium, mut store: vault.LockedVaultStore, vs: application.VaultSession, req: HostTestReq, patch: application.HostPatch) {
     mut opts := default_connect_options()
     opts.accept_new_host_key = req.accept_new_host_key
     mut link := new_ssh_link()

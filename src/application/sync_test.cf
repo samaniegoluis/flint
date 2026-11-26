@@ -574,10 +574,10 @@ test "a write made while a sync finds nothing new is left to upload" {
     // `.` instead of `->` (CF-156).
     // CFIRE-UPSTREAM: CF-156
     if true {
-        a.store.bank.reads = 0
+        a.store.bank.set_reads(0)
     }
     if true {
-        a.store.bank.late_after = 1
+        a.store.bank.set_late_after(1)
     }
     got := try sync_vault(crypto, mut a.store, a.links, remote, a.kc, a.kc, mut a.session, "", 2000)
     assert_eq(got.result, SYNC_IN_STEP)

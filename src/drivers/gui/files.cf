@@ -159,7 +159,7 @@ fn rpc_files_transfer(req: FilesTransferReq, app: webui.App, st: GuiState) -> do
     mut clock := new_system_clock()
     copy := application.CopyRequest{ id: req.id, alias: "", direction: req.direction, local: req.local, remote: req.remote, recursive: req.recursive, force: req.force }
     defer give_back_transfer(req.session, req.id, mut link)
-    return transfer_files(mut link, mut local, mut sink, mut clock, copy)
+    return try transfer_files(mut link, mut local, mut sink, mut clock, copy)
 }
 
 // A copy from one session to another (milestone 19, D-059): each session lends a
@@ -182,7 +182,7 @@ fn rpc_files_relay(req: FilesRelayReq, app: webui.App, st: GuiState) -> domain.C
         give_back_transfer(req.to_session, req.id, mut to)
         give_back_transfer(req.session, req.id, mut from)
     }
-    return relay_between_sessions(mut from, mut to, mut sink, mut clock, copy)
+    return try relay_between_sessions(mut from, mut to, mut sink, mut clock, copy)
 }
 
 // Asks a running transfer to stop; its promise then fails and its partial file

@@ -26,7 +26,7 @@ import "core:os"
 import "core:time"
 import "../../domain"
 import "../../application/vaultserver"
-import "../../adapters/crypto"
+import "../../adapters/crypto" as flint_crypto
 import "../../adapters/serverfs"
 import "../version"
 
@@ -72,7 +72,8 @@ fn listen_parts(spec: str) -> ServeOptions! {
 
 fn cmd_serve() -> void! {
     sodium := try new_sodium()
-    mut max_body := SERVER_MAX_BODY_DEFAULT
+    // CFIRE-UPSTREAM: CF-196 (`mut x := CONST` of another package infers no type)
+    mut max_body: i64 = SERVER_MAX_BODY_DEFAULT
     max_text := (os.getenv("FLINT_VAULT_MAX_BYTES") or "")
     if max_text.len() > 0 {
         max_body = parse_version_tag(max_text)

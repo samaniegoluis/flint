@@ -10,7 +10,7 @@ package clicmd
 
 import "core:json"
 import "../../adapters/config"
-import "../../adapters/crypto"
+import "../../adapters/crypto" as flint_crypto
 import "../../adapters/ssh" as flint_ssh
 import "../../adapters/vault"
 import "../../application"
@@ -96,7 +96,7 @@ fn print_tunnel(v: application.TunnelView) {
 }
 
 // The saved tunnels: run by the app or in this process.
-fn cmd_tunnel(p: ParsedArgs, sec: SecretInput, as_json: bool, c: crypto.Sodium, mut store: vault.LockedVaultStore, src: VaultSource, recents: config.JsonRecentStore) -> void! {
+fn cmd_tunnel(p: ParsedArgs, sec: SecretInput, as_json: bool, c: flint_crypto.Sodium, mut store: vault.LockedVaultStore, src: VaultSource, recents: config.JsonRecentStore) -> void! {
     verb := p.positional(1)
     mut tun := store
     mut runner := new_native_tunnels()
@@ -175,7 +175,7 @@ fn tunnels_need_flint(verb: str) -> str {
 }
 
 // `up`, `down` and `status`, run by the app for the CLI.
-fn cmd_tunnel_session[P: ports.Prompter](p: ParsedArgs, sec: SecretInput, as_json: bool, c: crypto.Sodium, mut store: vault.LockedVaultStore, src: VaultSource, recents: config.JsonRecentStore, prompter: P) -> void! {
+fn cmd_tunnel_session[P: ports.Prompter](p: ParsedArgs, sec: SecretInput, as_json: bool, c: flint_crypto.Sodium, mut store: vault.LockedVaultStore, src: VaultSource, recents: config.JsonRecentStore, prompter: P) -> void! {
     verb := p.positional(1)
     if verb == "up" {
         try p.allow_flags("tunnel up", ["--timeout", "--accept-new-host-key"])

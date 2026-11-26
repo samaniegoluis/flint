@@ -14,7 +14,7 @@ package clicmd
 import "core:time"
 import "core:json"
 import "../../adapters/config"
-import "../../adapters/crypto"
+import "../../adapters/crypto" as flint_crypto
 import "../../adapters/keychain" as flint_keychain
 import "../../adapters/vault"
 import "../../application"
@@ -142,7 +142,7 @@ fn print_token_list(list: []application.TokenView) {
     print_table(["ID", "NAME", "ALLOWS", "REACHES", "STATUS", "UNTIL"], rows)
 }
 
-fn cmd_token(p: ParsedArgs, sec: SecretInput, as_json: bool, c: crypto.Sodium, mut store: vault.LockedVaultStore, src: VaultSource, recents: config.JsonRecentStore) -> void! {
+fn cmd_token(p: ParsedArgs, sec: SecretInput, as_json: bool, c: flint_crypto.Sodium, mut store: vault.LockedVaultStore, src: VaultSource, recents: config.JsonRecentStore) -> void! {
     verb := p.positional(1)
     tokens := store
     if verb == "create" {

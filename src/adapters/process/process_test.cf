@@ -41,7 +41,7 @@ test "the executable folder and OS name are known" {
     os := os_name()
     assert(os == "mac" || os == "linux" || os == "windows")
     // "C:/..." on Windows (windows-port).
-    assert(executable_dir().starts_with("/") || (os == "windows" && is_absolute_path(executable_dir())))
+    assert(executable_dir().starts_with("/") || (os == "windows" && domain.is_absolute_path(executable_dir())))
 }
 
 // Every `\` becomes `/` on Windows, not only the first (CF-151: 0.12's `.replace` is

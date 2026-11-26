@@ -432,9 +432,8 @@ fn transfer_files[T: ports.SftpTransport, L: ports.LocalFiles, K: ports.Transfer
 
 // `flint cp`: connects to `req.alias` (verifying and logging in as `exec` does),
 // opens SFTP on that session, copies, and hangs up. `link` serves both
-// `SshTransport` and `SftpTransport`: cfire has no `T: A + B` (CF-100), so only the
-// first is named and the SFTP calls go through functions that name the second.
-fn copy_with_host[C: ports.Crypto, S: ports.VaultStore, T: ports.SshTransport, P: ports.Prompter, L: ports.LocalFiles, K: ports.TransferSink, M: ports.Clock](crypto: C, mut store: S, session: VaultSession, mut link: T, prompter: P, mut local: L, mut sink: K, mut clock: M, req: CopyRequest, opts: ConnectOptions) -> domain.CopyResult! {
+// `SshTransport` and `SftpTransport`, both named in its bound (CF-100).
+fn copy_with_host[C: ports.Crypto, S: ports.VaultStore, T: ports.SshTransport + ports.SftpTransport, P: ports.Prompter, L: ports.LocalFiles, K: ports.TransferSink, M: ports.Clock](crypto: C, mut store: S, session: VaultSession, mut link: T, prompter: P, mut local: L, mut sink: K, mut clock: M, req: CopyRequest, opts: ConnectOptions) -> domain.CopyResult! {
     try require_ssh_alias(store, req.alias, "copying files")
     target := try open_link(crypto, mut store, session, mut link, prompter, req.alias, opts)
     open_sftp(mut link) or err {
@@ -444,7 +443,7 @@ fn copy_with_host[C: ports.Crypto, S: ports.VaultStore, T: ports.SshTransport, P
     mut r := req
     r.alias = target.alias
     defer link.link_hangup()
-    return copy_files(mut link, mut local, mut sink, mut clock, r)
+    return try copy_files(mut link, mut local, mut sink, mut clock, r)
 }
 
 fn label_sftp[T: ports.SftpTransport](mut sftp: T, name: str) {
@@ -456,9 +455,8 @@ fn label_sftp[T: ports.SftpTransport](mut sftp: T, name: str) {
 // streams the copy from `req.alias` to `req.to_alias` through this process; nothing
 // is written to this machine's disk and no credential reaches either host. Both
 // links are hung up whatever happens. `to` serves `LocalFiles` over its own SFTP
-// channel (adapters/ssh/sftp_far.cf); cfire has no `T: A + B` (CF-100), so only
-// `SshTransport` is named here.
-fn relay_with_hosts[C: ports.Crypto, S: ports.VaultStore, T: ports.SshTransport, P: ports.Prompter, K: ports.TransferSink, M: ports.Clock](crypto: C, mut store: S, session: VaultSession, mut from: T, mut to: T, prompter: P, mut sink: K, mut clock: M, req: CopyRequest, opts: ConnectOptions) -> domain.CopyResult! {
+// channel (adapters/ssh/sftp_far.cf), so its bound names all three ports (CF-100).
+fn relay_with_hosts[C: ports.Crypto, S: ports.VaultStore, T: ports.SshTransport + ports.SftpTransport + ports.LocalFiles, P: ports.Prompter, K: ports.TransferSink, M: ports.Clock](crypto: C, mut store: S, session: VaultSession, mut from: T, mut to: T, prompter: P, mut sink: K, mut clock: M, req: CopyRequest, opts: ConnectOptions) -> domain.CopyResult! {
     if req.direction != COPY_RELAY {
         return error(coded(ERR_INTERNAL, "relay: not a copy between two hosts"))
     }
@@ -487,7 +485,7 @@ fn relay_with_hosts[C: ports.Crypto, S: ports.VaultStore, T: ports.SshTransport,
         from.link_hangup()
         to.link_hangup()
     }
-    return copy_files(mut from, mut to, mut sink, mut clock, r)
+    return try copy_files(mut from, mut to, mut sink, mut clock, r)
 }
 
 // The Files view's copy between two servers (milestone 19, D-059): both sessions
@@ -495,8 +493,8 @@ fn relay_with_hosts[C: ports.Crypto, S: ports.VaultStore, T: ports.SshTransport,
 // with no channel; each gets an SFTP channel of its own, and the bytes stream from
 // `from` to `to` through this process as `flint cp a:/x b:/y` does (D-057), with
 // nothing on this machine's disk. `to` serves `LocalFiles` over its channel
-// (adapters/ssh/sftp_far.cf); cfire has no `T: A + B` (CF-100). Not logged (D-055).
-fn relay_between_sessions[T: ports.SftpTransport, K: ports.TransferSink, C: ports.Clock](mut from: T, mut to: T, mut sink: K, mut clock: C, req: CopyRequest) -> domain.CopyResult! {
+// (adapters/ssh/sftp_far.cf), named in its bound (CF-100). Not logged (D-055).
+fn relay_between_sessions[T: ports.SftpTransport + ports.LocalFiles, K: ports.TransferSink, C: ports.Clock](mut from: T, mut to: T, mut sink: K, mut clock: C, req: CopyRequest) -> domain.CopyResult! {
     if req.direction != COPY_RELAY {
         return error(coded(ERR_INTERNAL, "relay: not a copy between two hosts"))
     }
@@ -504,7 +502,7 @@ fn relay_between_sessions[T: ports.SftpTransport, K: ports.TransferSink, C: port
     try open_sftp(mut to)
     label_sftp(mut from, req.alias)
     label_sftp(mut to, req.to_alias)
-    return copy_files(mut from, mut to, mut sink, mut clock, req)
+    return try copy_files(mut from, mut to, mut sink, mut clock, req)
 }
 
 // ---- Files dropped from the OS (milestone 17) ----------------------------------------

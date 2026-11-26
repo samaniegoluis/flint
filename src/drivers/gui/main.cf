@@ -13,7 +13,7 @@ import "core:fs"
 import "core:os"
 import "../../adapters/clilink"
 import "../../adapters/config"
-import "../../adapters/crypto"
+import "../../adapters/crypto" as flint_crypto
 import "../../adapters/fonts"
 import "../../adapters/keychain" as flint_keychain
 import "../../adapters/process"
@@ -591,7 +591,7 @@ fn main() {
         close_all_desktops()
         // Tunnels run in this process only: quitting closes them (D-062).
         release_all_tunnels()
-        listener.close()
+        listener.ipc_close()
         // Commands the CLI runs through this app (`flint exec`, `connect`) hold their
         // connection while they run: a moment to finish, then they are cut, so quitting
         // (and Relaunch's update-apply, which waits for this process) is never held by

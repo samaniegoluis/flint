@@ -1,4 +1,6 @@
-package crypto
+package flint_crypto
+
+// CFIRE-UPSTREAM: CF-197 (a package named `crypto` collides with the stdlib module; an import alias alone loses the type's methods)
 
 // libsodium-backed implementation of the `Crypto` port: Argon2id key derivation and
 // XChaCha20-Poly1305 AEAD. No primitive here is implemented by hand (Principle 4).

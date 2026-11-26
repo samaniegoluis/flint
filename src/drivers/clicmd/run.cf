@@ -7,7 +7,7 @@ package clicmd
 
 import "core:os"
 import "../../adapters/config"
-import "../../adapters/crypto"
+import "../../adapters/crypto" as flint_crypto
 import "../../adapters/keychain" as flint_keychain
 import "../../adapters/process"
 import "../../adapters/ssh" as flint_ssh
@@ -171,7 +171,7 @@ fn is_session_command(p: ParsedArgs) -> bool {
 // Runs one checked session command against `src`'s vault, on the given terminal,
 // prompter and output. Returns the process exit status: 0, or the remote status of
 // `connect` and `exec`.
-fn run_session_command[M: ports.Terminal, P: ports.Prompter, O: ports.ExecSink, L: ports.LocalFiles, K: ports.TransferSink](p: ParsedArgs, sec: SecretInput, as_json: bool, c: crypto.Sodium, mut store: vault.LockedVaultStore, src: VaultSource, recents: config.JsonRecentStore, mut term: M, prompter: P, mut sink: O, mut local: L, mut progress: K, term_name: str) -> i32! {
+fn run_session_command[M: ports.Terminal, P: ports.Prompter, O: ports.ExecSink, L: ports.LocalFiles, K: ports.TransferSink](p: ParsedArgs, sec: SecretInput, as_json: bool, c: flint_crypto.Sodium, mut store: vault.LockedVaultStore, src: VaultSource, recents: config.JsonRecentStore, mut term: M, prompter: P, mut sink: O, mut local: L, mut progress: K, term_name: str) -> i32! {
     noun := p.positional(0)
     if noun == "cp" {
         return try cmd_cp(p, sec, as_json, c, mut store, src, recents, prompter, mut local, mut progress)
@@ -192,7 +192,7 @@ fn run_session_command[M: ports.Terminal, P: ports.Prompter, O: ports.ExecSink, 
 
 // Runs one checked command that opens no SSH session against `src`'s vault.
 // Returns the process exit status, 0.
-fn run_command(p: ParsedArgs, sec: SecretInput, as_json: bool, c: crypto.Sodium, mut store: vault.LockedVaultStore, src: VaultSource, recents: config.JsonRecentStore) -> i32! {
+fn run_command(p: ParsedArgs, sec: SecretInput, as_json: bool, c: flint_crypto.Sodium, mut store: vault.LockedVaultStore, src: VaultSource, recents: config.JsonRecentStore) -> i32! {
     noun := p.positional(0)
     if noun == "vault" {
         try cmd_vault(p, sec, as_json, c, mut store, src, recents)
@@ -240,8 +240,9 @@ fn run_local(p: ParsedArgs, sec: SecretInput, as_json: bool) -> i32! {
         status = run_command(p, sec, as_json, c, mut store, local_vault_source(kc), recents)
     }
     // Milestone 43: a connected vault this command changed goes to its server now.
-    if status.has_value() {
-        sync_after_command(p, c, mut store, kc, recents)
+    match status {
+        Ok(_) => sync_after_command(p, c, mut store, kc, recents),
+        Err(_) => {},
     }
     store.vault_detach()
     return try status

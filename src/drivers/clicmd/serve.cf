@@ -35,7 +35,7 @@ import "core:os"
 import "core:time"
 import "core:json"
 import "../../adapters/config"
-import "../../adapters/crypto"
+import "../../adapters/crypto" as flint_crypto
 import "../../adapters/ipc" as flint_ipc
 import "../../adapters/keychain" as flint_keychain
 import "../../adapters/process"
@@ -378,7 +378,7 @@ fn ask_app(p: ParsedArgs, args: []str, as_json: bool, mut sec: SecretInput) -> S
     if !conn.open {
         return not_served()
     }
-    defer conn.close()
+    defer conn.ipc_close()
     mut req := new_request("run", target.path)
     req.argv = args
     req.cwd = current_dir()
@@ -412,7 +412,8 @@ fn ask_app(p: ParsedArgs, args: []str, as_json: bool, mut sec: SecretInput) -> S
 // open, or for an `exec` that prints nothing: every hop's dial and login, the
 // command's own limit, and a margin.
 fn session_wait_ms(p: ParsedArgs) -> i64 {
-    mut dial := SSH_CONNECT_TIMEOUT_SECS
+    // CFIRE-UPSTREAM: CF-196 (`mut x := CONST` of another package infers no type)
+    mut dial: i64 = SSH_CONNECT_TIMEOUT_SECS
     if p.has_flag("--timeout") {
         dial = parse_seconds_flag("--timeout", p.flag_value("--timeout")) or SSH_CONNECT_TIMEOUT_SECS
     }
@@ -455,7 +456,7 @@ fn ask_app_session(p: ParsedArgs, args: []str, as_json: bool, sec: SecretInput) 
     if !conn.open {
         return not_served()
     }
-    defer conn.close()
+    defer conn.ipc_close()
     mut term := new_stdio_terminal()
     size := term.term_size()
     mut term_name := (os.getenv("TERM") or "")
@@ -629,7 +630,7 @@ fn show_running_app() -> bool {
     if !conn.open {
         return false
     }
-    defer conn.close()
+    defer conn.ipc_close()
     _ = ask_app_state(conn, "show", "", "") or {
         return false
     }
@@ -736,7 +737,7 @@ fn request_unlock(target: domain.RecentVault, p: ParsedArgs) -> AppState {
             return AppState{ state: APP_LOCKED, name: "" }
         }
     }
-    defer conn.close()
+    defer conn.ipc_close()
     return ask_app_state_for(conn, "unlock", target.path, caller_summary(p), whole_command(caller_command(p)).text, access_need(p)) or AppState{ state: APP_LOCKED, name: "" }
 }
 
@@ -765,7 +766,7 @@ fn app_holds_unlocked(target: domain.RecentVault) -> bool {
     if !conn.open {
         return false
     }
-    defer conn.close()
+    defer conn.ipc_close()
     st := ask_app_state(conn, "status", target.path, "") or AppState{ state: APP_LOCKED, name: "" }
     return st.state == APP_UNLOCKED
 }
@@ -825,7 +826,7 @@ fn wait_for_unlock(target: domain.RecentVault, wait_ms: i64) -> AppState {
         }
         mut c := conn
         st = ask_app_state(c, "status", target.path, "") or AppState{ state: APP_LOCKED, name: "" }
-        c.close()
+        c.ipc_close()
     }
     return st
 }
@@ -843,7 +844,7 @@ fn app_lock_reason(target: domain.RecentVault) -> LockWhy {
     if !conn.open {
         return not_running
     }
-    defer conn.close()
+    defer conn.ipc_close()
     st := ask_app_state(conn, "status", target.path, "") or {
         return not_running
     }
@@ -864,7 +865,7 @@ fn lock_in_app(target: domain.RecentVault) -> bool {
     if !conn.open {
         return false
     }
-    defer conn.close()
+    defer conn.ipc_close()
     st := ask_app_state(conn, "lock", target.path, "") or AppState{ state: APP_LOCKED, name: "" }
     return st.state == APP_UNLOCKED
 }
@@ -897,7 +898,7 @@ fn served_secrets(req: ServeRequest) -> SecretInput {
 // Runs a client's command against `session`, the vault the app holds (attached to
 // `store`), capturing everything it prints. The caller holds the vault still for
 // the whole run and has checked that `req.vault` is `session`'s.
-fn run_served(req: ServeRequest, c: crypto.Sodium, mut store: vault.LockedVaultStore, kc: flint_keychain.OsKeychain, recents: config.JsonRecentStore, session: application.VaultSession) -> ServedRun {
+fn run_served(req: ServeRequest, c: flint_crypto.Sodium, mut store: vault.LockedVaultStore, kc: flint_keychain.OsKeychain, recents: config.JsonRecentStore, session: application.VaultSession) -> ServedRun {
     p := parse_cli_args(req.argv) or {
         return ServedRun{ reply: not_served(), ended: ServedEnd{ exit: 0, error_code: "" } }
     }
@@ -926,7 +927,7 @@ type ServedEnd struct {
 
 // The exit status of a command run for a client, or the code of the error it
 // reported.
-fn served_exit(p: ParsedArgs, req: ServeRequest, c: crypto.Sodium, mut store: vault.LockedVaultStore, kc: flint_keychain.OsKeychain, session: application.VaultSession, recents: config.JsonRecentStore) -> ServedEnd {
+fn served_exit(p: ParsedArgs, req: ServeRequest, c: flint_crypto.Sodium, mut store: vault.LockedVaultStore, kc: flint_keychain.OsKeychain, session: application.VaultSession, recents: config.JsonRecentStore) -> ServedEnd {
     code := run_command(p, served_secrets(req), req.as_json, c, mut store, served_vault_source(kc, session), recents) or err {
         msg := "{err.message()}"
         return ServedEnd{ exit: i64(report_error(msg, req.as_json)), error_code: error_code_of(msg) }
@@ -965,7 +966,7 @@ fn session_servable(req: ServeRequest) -> bool {
 // ends with the frame carrying the exit status and what the command printed. The
 // vault is not held still meanwhile: a session can last hours, and needs the key
 // only to log in.
-fn run_served_session(conn: flint_ipc.IpcConn, req: ServeRequest, c: crypto.Sodium, mut store: vault.LockedVaultStore, kc: flint_keychain.OsKeychain, recents: config.JsonRecentStore, session: application.VaultSession, sudo_typed: str) -> ServedEnd {
+fn run_served_session(conn: flint_ipc.IpcConn, req: ServeRequest, c: flint_crypto.Sodium, mut store: vault.LockedVaultStore, kc: flint_keychain.OsKeychain, recents: config.JsonRecentStore, session: application.VaultSession, sudo_typed: str) -> ServedEnd {
     p := parse_cli_args(req.argv) or {
         return ServedEnd{ exit: 2, error_code: ERR_USAGE }
     }
@@ -991,7 +992,7 @@ fn run_served_session(conn: flint_ipc.IpcConn, req: ServeRequest, c: crypto.Sodi
 
 // The exit status of a session command run for a client, or the code of the error it
 // reported, with that error's code.
-fn session_exit[M: ports.Terminal, P: ports.Prompter, O: ports.ExecSink, L: ports.LocalFiles, K: ports.TransferSink](p: ParsedArgs, sec: SecretInput, as_json: bool, c: crypto.Sodium, mut store: vault.LockedVaultStore, src: VaultSource, recents: config.JsonRecentStore, mut term: M, prompter: P, mut sink: O, mut local: L, mut progress: K, term_name: str) -> ServedEnd {
+fn session_exit[M: ports.Terminal, P: ports.Prompter, O: ports.ExecSink, L: ports.LocalFiles, K: ports.TransferSink](p: ParsedArgs, sec: SecretInput, as_json: bool, c: flint_crypto.Sodium, mut store: vault.LockedVaultStore, src: VaultSource, recents: config.JsonRecentStore, mut term: M, prompter: P, mut sink: O, mut local: L, mut progress: K, term_name: str) -> ServedEnd {
     code := run_session_command(p, sec, as_json, c, mut store, src, recents, mut term, prompter, mut sink, mut local, mut progress, term_name) or err {
         msg := "{err.message()}"
         return ServedEnd{ exit: i64(report_error(msg, as_json)), error_code: error_code_of(msg) }

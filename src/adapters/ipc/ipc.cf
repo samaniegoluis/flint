@@ -188,7 +188,8 @@ fn peer_allowed(known: bool, uid: i64, allowed_uid: i64) -> bool {
 }
 
 // Stops listening and removes the socket file.
-fn (mut self: IpcListener) close() {
+// CFIRE-UPSTREAM: CF-203 (a user method named `close` breaks `defer f.close()` on an fs.File)
+fn (mut self: IpcListener) ipc_close() {
     if !self.open {
         return
     }
@@ -280,7 +281,8 @@ fn (self: IpcConn) readable(timeout_ms: i32) -> bool {
     return r
 }
 
-fn (mut self: IpcConn) close() {
+// CFIRE-UPSTREAM: CF-203
+fn (mut self: IpcConn) ipc_close() {
     if !self.open {
         return
     }

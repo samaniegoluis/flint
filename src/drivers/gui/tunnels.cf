@@ -82,7 +82,7 @@ fn rpc_tunnels_list(store: vault.LockedVaultStore, st: GuiState) -> str! {
     return json.stringify(try list_tunnels(store, store, mut runner, ""))
 }
 
-fn rpc_tunnel_save(params: str, c: crypto.Sodium, store: vault.LockedVaultStore, st: GuiState, mut app: webui.App) -> str! {
+fn rpc_tunnel_save(params: str, c: flint_crypto.Sodium, store: vault.LockedVaultStore, st: GuiState, mut app: webui.App) -> str! {
     try st.require_unlocked()
     req := try parse_req[TunnelSaveReq](params)
     mut p := empty_tunnel_patch()
@@ -147,7 +147,7 @@ fn tunnel_start_check(params: str, st: GuiState) -> TunnelStartReq! {
 
 // The start itself, on a worker: the first tunnel logs in (when the host has no
 // tunnel session yet), the others ride that session.
-fn run_tunnel_start(mut app: webui.App, c: crypto.Sodium, mut store: vault.LockedVaultStore, vs: application.VaultSession, req: TunnelStartReq) {
+fn run_tunnel_start(mut app: webui.App, c: flint_crypto.Sodium, mut store: vault.LockedVaultStore, vs: application.VaultSession, req: TunnelStartReq) {
     prompter := new_gui_prompter(app, req.session)
     mut runner := new_native_tunnels()
     mut done := TunnelStarted{ session: req.session, host: req.host, results: [], code: "", message: "" }

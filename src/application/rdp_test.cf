@@ -17,7 +17,8 @@ type FakeDesktop struct {
     resizes: []domain.DesktopSize
     // Each layout asked for, as its monitors' local ids joined by ",".
     layouts: []str
-    announces: []bool
+    // CFIRE-UPSTREAM: CF-206 ("text" or "none" per announce: a []bool field breaks the build when the package imports core:json)
+    announces: []str
     answers: []str
     modes: []str
     // From this connection on (1-based; 0: never) the server cannot be reached.
@@ -44,7 +45,7 @@ fn new_fake_desktop(fp: str, password: str) -> FakeDesktop {
 }
 
 fn (mut self: FakeDesktop) rd_clip_announce(tab: str, has_text: bool) -> void! {
-    self.announces.push(has_text)
+    self.announces.push(if has_text { "text" } else { "none" })
 }
 
 // Each answer as "ok <text>" or "fail".
@@ -583,8 +584,8 @@ test "the tab announces whether this machine's clipboard holds text, never the t
     clip.text = "hello"
     try announce_desktop_clipboard(mut rd, mut clip, "t1")
     assert_eq(rd.announces.len(), 2)
-    assert(!rd.announces[0])
-    assert(rd.announces[1])
+    assert_eq(rd.announces[0], "none")
+    assert_eq(rd.announces[1], "text")
     assert_eq(rd.answers.len(), 0)
 }
 
@@ -620,7 +621,7 @@ test "a copy on this machine is announced to the server, and the remote's own co
     mut ticking := TickingClipboard{ inner: clip2, at_wait: 1, reads: 0 }
     try run_remote_desktop(crypto, mut store, s, mut rd2, no_prompter(), mut sink, mut ticking, mut ui0, rdp_req("win"))
     assert_eq(rd2.announces.len(), 1)
-    assert(rd2.announces[0])
+    assert_eq(rd2.announces[0], "text")
     assert_eq(rd2.answers.len(), 0)
 }
 
