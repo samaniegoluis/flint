@@ -1,6 +1,7 @@
 // @ts-check
 import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
+import externalLinks from './src/lib/external-links.mjs';
 
 // https://astro.build/config
 export default defineConfig({
@@ -77,5 +78,7 @@ export default defineConfig({
 				},
 			],
 		}),
+		// Off-site links open in a new tab (src/lib/external-links.mjs).
+		externalLinks(),
 	],
 });
