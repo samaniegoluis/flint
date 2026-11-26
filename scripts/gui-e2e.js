@@ -1207,23 +1207,27 @@
 
       await setStep('broadcast: one pane out, Choose panes, a pane that drops');
       toggle(1).click();
-      await waitFor(() => q('[data-bc-count]')?.textContent === 'Typing into 1 pane' && !panes()[1].classList.contains('bc'), 'pane 2 out of the broadcast');
+      await waitFor(() => q('[data-bc-count]')?.textContent === 'Choose the panes to type into' && !panes()[1].classList.contains('bc'), 'pane 2 out of the broadcast');
+      await check(q('.splits.bc-choosing') && q('[data-bc-choose-hint]') && !q('[data-bc-choose]'), 'with one pane left, the bar asks to choose the panes, and their toggles stand out');
+      await check(getComputedStyle(toggle(1)).outlineStyle === 'dashed' && toggle(1).getAttribute('aria-pressed') === 'false', "a pane not chosen keeps an unpressed toggle with a dashed outline, never the chosen look");
       await check(document.activeElement === panes()[0].querySelector('textarea'), "after a toggle the keys go back to the focused pane's terminal");
       await focusPane(0);
       await runInTerminal('echo one-out-$((6*7))', 'one-out-42');
       await sleep(300);
       await check(!termOf(panes()[1]).includes('one-out-42'), 'a pane taken out with its toggle receives nothing (Principle 22)');
-      await click('[data-bc-choose]');
-      await check(q('.splits.bc-choosing') && q('[data-bc-choose]').getAttribute('aria-pressed') === 'true', 'Choose panes makes the header toggles stand out');
       // Pane 2's shell ends by itself in a moment, while it is in the broadcast.
       await focusPane(1);
       await runInTerminal('(sleep 2; kill -9 $$) & echo armed-$((6*7))', 'armed-42');
       toggle(1).click();
       await waitFor(() => panes()[1].classList.contains('bc') && !q('.splits.bc-choosing'), 'pane 2 back in');
-      await check(q('[data-bc-count]')?.textContent === 'Typing into 2 panes', 'a toggle adds the pane back, and ends Choose panes');
+      await check(q('[data-bc-count]')?.textContent === 'Typing into 2 panes', 'a toggle adds the pane back: "Typing into 2 panes" again');
+      await click('[data-bc-choose]');
+      await check(q('.splits.bc-choosing') && q('[data-bc-choose]').textContent === 'Done', 'Choose panes outlines the toggles and becomes Done');
+      await click('[data-bc-choose]');
+      await check(!q('.splits.bc-choosing') && q('[data-bc-choose]').textContent === 'Choose panes', 'Done ends choosing');
       await waitFor(() => panes()[1].dataset.status === 'ended', "pane 2's session ended", 20000);
-      await check(!panes()[1].classList.contains('bc') && panes()[1].querySelector('[data-bc-left]') && q('[data-bc-count]')?.textContent === 'Typing into 1 pane' && q('[data-bc-left-note]') && panes()[1].querySelector('[data-left-broadcast]'),
-        'a pane that drops leaves the broadcast: its header says "Left broadcast", its card says so, the bar counts 1 and names it');
+      await check(!panes()[1].classList.contains('bc') && panes()[1].querySelector('[data-bc-left]') && q('[data-bc-count]')?.textContent === 'Choose the panes to type into' && q('[data-bc-left-note]') && panes()[1].querySelector('[data-left-broadcast]'),
+        'a pane that drops leaves the broadcast: its header says "Left broadcast", its card says so, the bar names it and asks for panes again');
       panes()[1].querySelector('[data-left-broadcast]').closest('.card').querySelector('.btn-primary').click();
       await waitFor(() => panes()[1].dataset.status === 'ready', 'pane 2 reconnected', 30000);
       await check(!panes()[1].classList.contains('bc') && toggle(1).getAttribute('aria-pressed') === 'false', 'reconnecting does not add it back');

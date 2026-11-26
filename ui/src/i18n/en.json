@@ -2140,5 +2140,8 @@
   "session_area.choose_panes": "Choose panes",
   "session_area.stop": "Stop",
   "session_cards.left_broadcast": "This pane left the broadcast. Reconnecting doesn't add it back.",
-  "session_area.alias_left": "· {alias} left"
+  "session_area.alias_left": "· {alias} left",
+  "session_area.choose_the_panes": "Choose the panes to type into",
+  "session_area.click_toggle_on_each_pane": "Click the broadcast toggle on each pane to add or remove it",
+  "session_area.done": "Done"
 }

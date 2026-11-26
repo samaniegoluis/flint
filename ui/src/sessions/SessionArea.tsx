@@ -235,14 +235,18 @@ export function SessionArea({ shown, fontSize, onPalette, onEditHost, onManageTu
         // Typing into N panes (28b1), and the panes that dropped out of it (28b3).
         const into = activeTab.broadcast.map((id) => panes.find((p) => p.id === id)).filter((p) => !!p);
         const left = panes.filter((p) => p.tab === activeTab.id && p.leftBroadcast);
+        // One pane chosen types into no other yet: the bar asks for the rest (owner, M73 check).
+        const lone = into.length < 2;
+        const picking = choosing || lone;
         return (
           <div className="bc-bar" role="status" aria-live="polite" data-bc-bar>
             <Icon name="broadcast" />
-            <span className="strong" data-bc-count>{t('session_area.typing_into_n_panes', { count: into.length })}</span>
+            <span className="strong" data-bc-count>{lone ? t('session_area.choose_the_panes') : t('session_area.typing_into_n_panes', { count: into.length })}</span>
             <span className="bc-hosts trunc">{into.map((p) => p.alias).join(' · ')}</span>
+            {picking && <span className="hint" data-bc-choose-hint>{t('session_area.click_toggle_on_each_pane')}</span>}
             {left.map((p) => <span key={p.id} className="hint" data-bc-left-note>{t(p.status === 'ended' ? 'session_area.alias_left_broadcast' : 'session_area.alias_left', { alias: p.alias })}</span>)}
             <span className="grow" />
-            <button className="btn btn-ghost btn-sm" data-bc-choose aria-pressed={choosing} onClick={() => setChoosing((c) => !c)}>{t('session_area.choose_panes')}</button>
+            {!lone && <button className="btn btn-ghost btn-sm" data-bc-choose aria-pressed={choosing} onClick={() => setChoosing((c) => !c)}>{choosing ? t('session_area.done') : t('session_area.choose_panes')}</button>}
             <button className="btn btn-bc btn-sm" data-bc-stop onClick={() => { setChoosing(false); sessions.stopBroadcast(activeTab.id); }}><Icon name="x" size="sm" />{t('session_area.stop')}</button>
           </div>
         );
@@ -256,7 +260,7 @@ export function SessionArea({ shown, fontSize, onPalette, onEditHost, onManageTu
               {rdp
                 ? <RdpView pane={rdp} active={shown && t.id === active} showStats={stats} onEditHost={onEditHost} onKnownHosts={onKnownHosts} />
                 : <SplitView tab={t} panes={own} shown={shown} active={t.id === active} fontSize={fontSize} onEditHost={onEditHost}
-                  choosing={choosing && t.id === active && t.broadcast.length > 0} onChosen={() => setChoosing(false)} />}
+                  choosing={t.id === active && t.broadcast.length > 0 && (choosing || t.broadcast.length < 2)} />}
             </div>
           );
         })}

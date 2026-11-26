@@ -2140,5 +2140,8 @@
   "session_area.choose_panes": "Elegir paneles",
   "session_area.stop": "Detener",
   "session_cards.left_broadcast": "Este panel salió de la difusión. Al reconectar no vuelve a entrar.",
-  "session_area.alias_left": "· {alias} salió"
+  "session_area.alias_left": "· {alias} salió",
+  "session_area.choose_the_panes": "Elige los paneles donde escribir",
+  "session_area.click_toggle_on_each_pane": "Haz clic en el botón de difusión de cada panel para añadirlo o quitarlo",
+  "session_area.done": "Listo"
 }

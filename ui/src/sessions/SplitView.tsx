@@ -26,11 +26,10 @@ function offset(at: number, k: number, index: number): string {
   return `calc(${GAP}px + (100% - ${2 * GAP + (k - 1) * GAP}px) * ${at.toFixed(4)} + ${index * GAP}px)`;
 }
 
-export function SplitView({ tab, panes, shown, active, fontSize, onEditHost, choosing = false, onChosen }: {
+export function SplitView({ tab, panes, shown, active, fontSize, onEditHost, choosing = false }: {
   tab: Tab;
-  /** Choose panes (the broadcast bar): the header toggles stand out until one is used. */
+  /** Choose panes (the broadcast bar): the header toggles of the panes not chosen stand out. */
   choosing?: boolean;
-  onChosen?: () => void;
   panes: Pane[];
   /** The sessions area is on screen (not Keys, Credentials or Settings). */
   shown: boolean;
@@ -112,7 +111,6 @@ export function SplitView({ tab, panes, shown, active, fontSize, onEditHost, cho
                       title={bc ? t('split_view.stop_receiving') : t('split_view.receive_typed_input')}
                       onMouseDown={(e) => e.stopPropagation()} onClick={() => {
                         sessions.toggleBroadcast(id);
-                        onChosen?.();
                         // The keys go back to the focused terminal, not to the toggle.
                         setTimeout(() => focusTerminal(sessions.tab(tab.id)?.focus ?? null), 0);
                       }}><Icon name="broadcast" /></button>

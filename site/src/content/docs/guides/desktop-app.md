@@ -294,7 +294,8 @@ keeps it.
   all panes**.
 - Every receiving pane gets a thick teal border and a **Receiving** tag, the tab shows the
   broadcast icon, and a bar under the toolbar reads **Typing into 3 panes** with their
-  hosts. **Choose panes** in the bar highlights the toggles; **Stop** turns it off, as does
+  hosts. With only one pane chosen the bar asks you to choose the others. **Choose panes**
+  outlines the toggles of the panes not chosen until you press **Done**; **Stop** turns it off, as does
   **Stop broadcast** in the Split menu or the palette. Receiving panes stay at full
   contrast; the others are dimmed.
 - Whatever you type into a receiving pane goes to all of them: letters, <kbd>↵</kbd>,
