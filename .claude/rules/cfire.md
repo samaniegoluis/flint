@@ -6,6 +6,19 @@
   - **Toolchain & Hybrid Native WebUI Packages**: Use `import "core:tako"` along with `build.Tako()` in `build.cf` for Tako GUI integration, or `import "ext:webui"` (`cfire init --webui` / `cfire new <dir> --webui`) for Wails/Tauri-style hybrid native WebView + Two-Way Typed RPC & Event applications across macOS, Windows, iOS, and Linux. `pkg:*` imports are retired (`cfire/RETIRED-API`).
   - **Native libraries (cfire 0.12)**: `@pkg(...)` and `@define` on `import cpp` are retired. Each executable lists its pkg-config packages in `build.cf` (`build.Executable(..., { PkgConfig: [...] })`); Flint's own per-OS `.pc` files live in `src/adapters/pkgconfig/<os>/`, put on `PKG_CONFIG_PATH` by `scripts/env.sh`.
 - **Language changes in 0.12 that bite**: `byte` is `u8`; `str` parameters are views by default (store or return an owned copy); integer narrowing is explicit; each module has one canonical import path (`cfire fix` rewrites them).
+- **Pinned to cfire `v0.12.7` (D-154). What bites since `v0.12.2`**:
+  - **Qualify every type from a sibling package**: `domain.Settings`, `ports.SshTransport`, never a bare `Settings` (CF-195). Call another package's functions qualified too (`domain.is_absolute_path(...)`): a bare call no longer finds them.
+  - A Flint package named like a stdlib module is imported `as flint_<name>` (`keychain`, `ipc`, `ssh`); `adapters/crypto` is `package flint_crypto` (CF-197).
+  - **`try` on every forwarded fallible return**: `return try f()`; in a `void!` function, `try g()` then `return` (CF-198).
+  - `os.getenv(k)` is `str?`: write `(os.getenv(k) or "")`.
+  - No `.has_value()`, `.value()`, `.error()` on a result in pure `.cf`: `match x { Ok(v) => …, Err(e) => … }`.
+  - One escape for braces in interpolated strings: `\{` `\}` (`{{` is rejected).
+  - `mut x := CONST` of another package needs a type (`mut dial: i64 = …`), and so does a loop over another package's global (CF-196).
+  - No `[]bool` field in a struct of a package that imports `core:json` (CF-206): use `[]str` or ints.
+  - No field access through a `shared[T]` field (`self.clock.now`): give `T` accessor methods (CF-147, regressed).
+  - No user method named `close` (CF-203: `ipc_close`); watch other stdlib-like names (`read`, `write`, `send`, `recv`, `stop`).
+  - Do **not** run a plain `cfire fix`: it puts the `try` at the call's `(` and imports stdlib modules for Flint package names. `--only <code>` is fine.
+  - `scripts/test.sh` goes on past a suite that does not build: read "✗ N of 20 test suite(s) failed" and every "compilation failed", not only the `--- FAIL` count. `cfire test` caches passes (`(cached) PASS`).
 - **Core Ergonomics**:
   - **String Interpolation**: Double-quoted strings interpolate arbitrary expressions and format specifiers inline: `"sum={a + b} hex={mask:04x}"`.
   - **Loops & Defer**: Use `for i in 0..n` (half-open) or `for i in 1..=n` (inclusive) for numeric ranges, `for item in slice` / `for idx, item in slice` for collections, and `defer cleanup()` or `defer { ... }` for RAII scope cleanup (`return` inside `defer { ... }` is forbidden via `cfire/RETURN-IN-DEFER`).

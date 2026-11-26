@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Installs the cfire release Flint is pinned to (D-105) from its release archive, checked
+# Installs the cfire release Flint is pinned to (D-154) from its release archive, checked
 # against a SHA-256 kept here rather than one downloaded beside the archive (milestone 51):
 #
 #   scripts/install-cfire.sh [prefix]     # default ~/.local
@@ -12,13 +12,13 @@
 # changes CFIRE_VERSION and the sums below together.
 set -euo pipefail
 
-CFIRE_VERSION=v0.12.2
+CFIRE_VERSION=v0.12.7
 # From the release's SHA256SUMS.txt.
 sum_for() {
   case "$1" in
-    macos-arm64)    echo 8a9fdae6c9b56b0c825c6de83f916644a3aebab01dc7d3675e6fe97a8eaf3026 ;;
-    linux-x86_64)   echo 6fe582d6bf6a21a429b9212c28b8d01bf1a69bed9ee9216fa7afd6e7c1db7ffd ;;
-    windows-x86_64) echo 2bbaa7adff5882ca4df05434ae8e993263a0880a4498ccde3390659e7eb62578 ;;
+    macos-arm64)    echo 7003f681da1ca5e52cc4b4106b7ef966d052fe3cfa81f1d131682fe7383d57a3 ;;
+    linux-x86_64)   echo 7e2711ee16b4c6333a3e8635d0ebcd8709b14ac7f1fd9b113f4ef6a46392d0d7 ;;
+    windows-x86_64) echo b3fe5afe58be37e4c4f5d5dc274ae7d2b2276d514c8e54431cfd006ac0d3aea5 ;;
     *) return 1 ;;
   esac
 }
@@ -51,6 +51,9 @@ exe=cfire; [[ "$target" == windows-* ]] && exe=cfire.exe
 mkdir -p "$prefix/bin" "$prefix/share/cfire"
 rm -rf "$prefix/share/cfire/runtime"
 cp -R "$tmp/$name/runtime" "$prefix/share/cfire/runtime"
+# A new file, not one written over: macOS kills a signed binary copied over the old one
+# (its code-signature cache still holds the old pages).
+rm -f "$prefix/bin/$exe"
 cp "$tmp/$name/$exe" "$prefix/bin/$exe"
 chmod 755 "$prefix/bin/$exe"
 "$prefix/bin/$exe" --version >&2

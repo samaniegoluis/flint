@@ -6,7 +6,7 @@
 # %LOCALAPPDATA%\flint-build elsewhere): the temp folder and cfire's caches.
 #
 #   FLINT_WIN_OPT  where cfire and FreeRDP live   (default $FLINT_WIN_HOME/opt)
-#   FLINT_CFIRE    cfire's folder (cfire.exe + runtime\)  (default $FLINT_WIN_OPT/cfire-0.12.2)
+#   FLINT_CFIRE    cfire's folder (cfire.exe + runtime\)  (default $FLINT_WIN_OPT/cfire-0.12.7)
 #   FLINT_WV2      WebView2Loader.dll's folder, from the Microsoft.Web.WebView2 NuGet package
 #                  (default $FLINT_WIN_OPT/webview2/1.0.4314.35)
 if [ "${MSYSTEM:-}" != CLANG64 ]; then
@@ -16,7 +16,7 @@ fi
 _d="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 _root="$(cd "$_d/../.." && pwd)"
 . "$_d/home.sh"
-export FLINT_CFIRE="${FLINT_CFIRE:-$FLINT_WIN_OPT/cfire-0.12.2}"
+export FLINT_CFIRE="${FLINT_CFIRE:-$FLINT_WIN_OPT/cfire-0.12.7}"
 # FreeRDP's bin: its sample server, sfreerdp-server, for the RDP suite (scripts/test.sh).
 # WebView2Loader.dll: cfire's fallback without it never finds the installed runtime (W-10),
 # so every webui window needs it beside the .exe or on PATH.

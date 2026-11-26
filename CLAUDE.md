@@ -2,7 +2,7 @@
 
 Flint is an open-source SSH client (GUI + CLI over one encrypted vault) written in
 [cfire](https://github.com/gsandoval/cfire), a Go-flavoured language that lowers to C++23,
-pinned to its release `v0.12.2` (D-105) on macOS, Linux and Windows.
+pinned to its release `v0.12.7` (D-154) on macOS, Linux and Windows.
 It is the rewrite of the author's Go/Wails client Tether
 (`~/Personal/Proyectos/go/tether`), which is the reference for existing behaviour.
 
