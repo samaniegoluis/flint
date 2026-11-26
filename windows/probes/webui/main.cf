@@ -36,7 +36,7 @@ window.backend.greet({name: "Windows"}).then(r => {
     }
     app.on("seen") |d| {
         println("backend: page received the event: {d}")
-        if os.getenv("PROBE_AUTOQUIT") == "1" {
+        if (os.getenv("PROBE_AUTOQUIT") or "") == "1" {
             app.eval("window.runtime.Quit()")
         }
     }

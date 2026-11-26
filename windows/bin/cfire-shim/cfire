@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# cfire for Flint on Windows: the pinned release (FLINT_CFIRE, windows/bin/env.sh), with
+# --no-shard on every command that links.
+# CFIRE-UPSTREAM: CF-207 (since v0.12.6 cfire links one object per .cf file in a single
+# command line, with no response file; through cmd.exe that is over Windows' 8,191
+# characters for each of Flint's executables and test suites: "The command line is too
+# long."). --no-shard is the single translation unit of v0.12.2.
+case "${1:-}" in
+  build|test|run|bench) sub=$1; shift; exec "$FLINT_CFIRE/cfire.exe" "$sub" --no-shard "$@" ;;
+  *) exec "$FLINT_CFIRE/cfire.exe" "$@" ;;
+esac

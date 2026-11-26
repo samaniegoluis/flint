@@ -9,7 +9,7 @@ import "core:fs"
 import "core:os"
 
 test "fs.exists sees a listening AF_UNIX socket file (W-14)" {
-    path := os.getenv("TMPDIR", ".") + "\\flint-w14.sock"
+    path := (os.getenv("TMPDIR") or ".") + "\\flint-w14.sock"
     _ = fs.remove(path)
     mut err := ""
     mut handle: u64 = 0

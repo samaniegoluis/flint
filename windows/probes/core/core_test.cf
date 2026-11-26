@@ -5,7 +5,7 @@ import "core:net"
 import "core:fs"
 
 fn helper() -> str {
-    return os.getenv("ARGV_ECHO", "argv_echo.exe")
+    return (os.getenv("ARGV_ECHO") or "argv_echo.exe")
 }
 
 test "net: TCP listen, connect, write and read back on loopback" {
@@ -69,7 +69,7 @@ test "os.pipe: write then read" {
 
 test "os: env, cwd, pid" {
     os.setenv("FLINT_PROBE", "ñandú ✓")
-    assert_eq(os.getenv("FLINT_PROBE"), "ñandú ✓")
+    assert_eq((os.getenv("FLINT_PROBE") or ""), "ñandú ✓")
     // A `str` on every OS (W-03): 0.10 returned a std::filesystem::path on Windows.
     here: str = os.cwd()
     assert(here.len() > 0)
