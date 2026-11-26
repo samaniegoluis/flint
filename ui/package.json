@@ -9,9 +9,9 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@xterm/addon-fit": "0.12.0-beta.287",
-    "@xterm/addon-webgl": "0.20.0-beta.286",
-    "@xterm/xterm": "6.1.0-beta.287",
+    "@xterm/addon-fit": "0.12.0-beta.335",
+    "@xterm/addon-webgl": "0.20.0-beta.332",
+    "@xterm/xterm": "6.1.0-beta.339",
     "qrcode-generator": "2.0.4",
     "react": "18.3.1",
     "react-dom": "18.3.1"
