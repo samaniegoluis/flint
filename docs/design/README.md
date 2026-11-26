@@ -513,9 +513,54 @@ On the second canvas, page 17. Optional push alerts through ntfy (open source, i
 | `27d2` | Activity entry for it: Result "Missed · alerted · the program got approval_timeout", and an info line "Timed out 5 min after an alert to your phone" with when and where the alert was sent and which of the two texts it carried. |
 | `27e1` / `27e2` | 900 × 600: the setup rows stack (label above control); the QR and its steps still sit side by side; the two notification rows wrap one under the other below the QR. Shown at the top of the setup and scrolled to the end. |
 
-**As built (milestone 63, 2026-11-23):** three differences from the boards. (1) 27a2's second
-step says to add the topic in the ntfy app with **+**: on an iPhone the camera opens the QR's
-`https://` address on ntfy's web page, and no browser hands an `ntfy://` link to the iOS app
-(owner's check). (2) The address and the App Store / Google Play names are text, not links:
-the app opens only Flint's own pages. (3) 27d2's info line reads "Timed out after an alert to
-your phone" without the alert's time and server, which the activity log does not keep.
+## Many hosts in one tab, v19 (screens 28*)
+
+On the second canvas, page 18. Four features that arrive together: split with another host, broadcast input, workspaces, and reopening tabs at start.
+
+**New token:** `--broadcast` (with `--broadcast-text`, `--broadcast-subtle`, `--broadcast-border`, `--text-on-broadcast`) in `tokens.css`, dark and light. It is a teal used only for broadcast input, never for focus (ember) or errors (red), and always paired with the broadcast icon (`i-broadcast`) and a word. Also new: the `i-workspace` icon, and workspace items in the shared rail (hidden unless a board sets `data-workspaces`).
+
+**Split with another host.** A split (⌘D, ⇧⌘D, the Split menu) or a layout with more places than panes opens **empty panes**. An empty pane has no session and shows a compact host picker: the search field (focused), the focused pane's host first and preselected ("same as pane 1", so ↵ repeats the old same-host split), then recent hosts, then matches as you type. Rows show alias, user@address and group, as in the palette. Footer: "↵ Connect · esc Close pane". Choosing a host turns the pane into the usual connecting card (11a). Empty panes that aren't focused stay quiet: one "Connect to a host" button and "⌘] moves here".
+
+**Broadcast input.** Never on by itself. Each connected pane header has a broadcast toggle; the Split menu has "Broadcast to all panes" and "Stop broadcast" (⌥⌘I, proposed). A receiving pane gets a thick teal border and a "Receiving" tag; the focused pane keeps its ember ring outside the teal border. A bar under the toolbar reads "Typing into N panes" with the hosts, Choose panes and Stop; the tab carries the broadcast icon. A receiving pane that drops leaves the set ("Left broadcast"), the count goes down, and reconnecting doesn't add it back.
+
+**Workspaces.** A saved tab (layout, divider positions, one host per place or an empty place), stored in the vault so it follows the person to every machine. They sit in the rail above Keys, each with its layout icon; an open one has an ember edge. The rail shows the first five, then **More** lists all of them with a filter and "New workspace…".
+
+**Reopen tabs at start.** A switch in Settings → Terminal, on by default, remembered on this computer only. After unlock the tabs from the last quit come back in their layouts and connect; a host that needs a password, a passphrase or a host key asks as a normal connect would.
+
+| Screen | What it shows |
+|---|---|
+| `28a1` | Split right: pane 1 connected, pane 2 empty with the picker, prod-api-01 preselected ("same as pane 1"), then Recent. |
+| `28a2` | Grid 2 × 2 from one pane: pane 1 connected; pane 2 focused with "db" typed (matches highlighted); panes 3 and 4 quiet. |
+| `28a3` | 900 × 600: the picker in a quarter pane, three rows, no group column. |
+| `28b1` | Broadcast to 3 of 4 panes: teal borders and "Receiving" tags, the bar "Typing into 3 panes" with Choose panes and Stop, the icon in the tab; pane 3 (db-primary) looks normal. |
+| `28b2` | Turning it on: a toggle in each pane header (one hovered, with its tooltip) and the Split menu open with "Broadcast to all panes" and "Stop broadcast" (disabled while off). |
+| `28b3` | A receiving pane drops: the connection-lost card says it left the broadcast; its header shows "Left broadcast"; the bar counts 2 and names the pane that left. |
+| `28c1` | The rail with three workspaces above Keys; Deploy is open (ember edge, its tab exists). |
+| `28c1b` | Seven workspaces: the rail shows five, then More, open: all seven with their hosts, the two not in the rail, and New workspace…. |
+| `28c2` | Save as workspace: name field and a thumbnail of the layout labelled with each place's host; "Saved in the Work vault". |
+| `28c3` | New workspace: name, the four layouts (the Split menu's icons), a host per place; place 3 is open with the picker ("⌫ Leave empty"). A place may stay empty. |
+| `28c4a` / `28c4b` | A workspace's context menu in the rail (Open, Update from this tab, Rename, Delete…) and the delete confirm ("It goes from the Work vault on every machine. Hosts and open tabs stay as they are."). |
+| `28c5` | Opening a workspace whose host was deleted: that place opens as an empty pane with the note "web-old was removed from this vault." |
+| `28d1` | Settings → Terminal with "Reopen tabs at start" (on), above Server resources. |
+| `28d2` | The first seconds after unlock: three tabs back; the active one (Deploy, 2 × 2) has three panes connecting and one asking to verify a changed host key. |
+
+### Dim what does not take the keys (screens 28e*)
+
+One rule for the whole app: **what is drawn at full contrast receives what you type.**
+- In a split, every pane but the focused one is dimmed. Under broadcast, receiving panes stay at full contrast with their border; only the others are dimmed.
+- While Flint's window has no focus, every pane is dimmed. The chrome goes only a little quieter (the macOS traffic lights grey out, ember accents such as the active tab's edge, the focused pane's ring and "pane 1 of 4" turn neutral).
+- A remote desktop (RDP) is never dimmed, because it may be playing video; with the window inactive only its chrome goes quiet.
+- The dim lowers contrast, never an overlay: `--dim-opacity` and `--dim-saturate` in `tokens.css` (dark 0.74 / 0.85; light 0.70 / 0.65, so in light the text goes greyer and lighter), and `--dim-chrome-opacity` for the inactive window's chrome (0.86 / 0.84). `--pane-dim` already names the scrim behind in-pane cards, so the new tokens are `--dim-*`.
+- The cursor of a terminal without focus is drawn hollow.
+- This replaces the earlier fixed 60 % on unfocused split panes, so the 18*, 25a8, 26* and 28* boards now show the token values.
+- Setting: "Dim what does not have focus", on by default, in Settings → Terminal beside "Reopen tabs at start".
+
+| Screen | What it shows |
+|---|---|
+| `28e1` | 2 × 2 tab, four hosts (shell, htop, a log, Neovim): the top-left pane focused at full contrast, the other three dimmed. |
+| `28e2` | The same tab with the window inactive: all four panes dimmed, the chrome slightly quieter, the traffic lights grey. |
+| `28e3` | Broadcast to 3 of 4 panes: the receiving panes at full contrast with their border, db-primary dimmed. |
+| `28e4` | Two empty panes that aren't focused: their quiet state dimmed the same way. |
+| `28e5` | An RDP tab with the window inactive: the remote screen at full contrast, only the chrome quieter. |
+| `28e6` | Settings → Terminal: "Dim what does not have focus" (on) next to "Reopen tabs at start". |
+| `28e7` | 900 × 600 version of 28e1. |

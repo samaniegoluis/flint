@@ -84,7 +84,7 @@
 <symbol id="i-bell-off" viewBox="0 0 24 24"><path d="M8.5 6A6 6 0 0 1 18 11v4M6 11v5l-2 2h14"/><path d="M10 21h4"/><path d="M3 3l18 18"/></symbol>
 <symbol id="i-arrow-up" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></symbol>
 <symbol id="i-pin" viewBox="0 0 24 24"><path d="M9 3h6l-1 6 4 4H6l4-4z"/><path d="M12 13v8"/></symbol>
-</svg>
+<symbol id="i-broadcast" viewBox="0 0 24 24"><circle cx="12" cy="12" r="2"/><path d="M8.5 8.5a5 5 0 0 0 0 7"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M5.6 5.6a9 9 0 0 0 0 12.8"/><path d="M18.4 5.6a9 9 0 0 1 0 12.8"/></symbol><symbol id="i-workspace" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 4v16"/><path d="M12 12h9"/></symbol></svg>
 <div class="app" data-theme="light" data-view="settings" data-os="mac" data-collapsed="true" style="width: 900px; height: 600px">
 <div style="position: absolute; inset: 0"><div class="chrome" style="position: absolute; inset: 0; font-family: var(--font-ui); color: var(--text-primary)">
 <header class="titlebar">
@@ -99,6 +99,13 @@
 <button class="rail-btn" data-item="hosts" title="Hosts (⇧⌘H) — click again to hide the sidebar"><svg class="ic" aria-hidden="true"><use href="#i-hosts"></use></svg>Hosts</button>
 <button class="rail-btn" data-item="files" title="Files of the active session (⌘E)"><svg class="ic" aria-hidden="true"><use href="#i-files"></use></svg>Files</button>
 <button class="rail-btn" data-item="tunnels" title="Tunnels (⇧⌘T)"><svg class="ic" aria-hidden="true"><use href="#i-tunnel"></use></svg>Tunnels<span class="rail-badge tun-count" aria-label="3 tunnels running">3</span></button>
+<span class="rail-sep rail-ws-sep" role="separator"></span>
+<button class="rail-btn rail-ws" data-ws="deploy" data-n="1" title="Workspace Deploy — opens as a tab"><span class="layout-ic rail-ws-ic" style="grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr"><i></i><i></i><i></i><i></i></span>Deploy<span class="rail-ws-open" aria-label="open"></span></button>
+<button class="rail-btn rail-ws" data-ws="homelab" data-n="2" title="Workspace Homelab — opens as a tab"><span class="layout-ic rail-ws-ic" style="grid-template-columns: 1fr 1fr"><i></i><i></i></span>Homelab<span class="rail-ws-open" aria-label="open"></span></button>
+<button class="rail-btn rail-ws" data-ws="legacy" data-n="3" title="Workspace Legacy — opens as a tab"><span class="layout-ic rail-ws-ic" style="grid-template-columns: 1fr 1fr"><i></i><i></i></span>Legacy<span class="rail-ws-open" aria-label="open"></span></button>
+<button class="rail-btn rail-ws" data-ws="billing" data-n="4" title="Workspace Billing — opens as a tab"><span class="layout-ic rail-ws-ic" style="grid-template-rows: 1fr 1fr"><i></i><i></i></span>Billing<span class="rail-ws-open" aria-label="open"></span></button>
+<button class="rail-btn rail-ws" data-ws="clients" data-n="5" title="Workspace Clients — opens as a tab"><span class="layout-ic rail-ws-ic" style="grid-template-columns: 2fr 1fr; grid-template-rows: 1fr 1fr"><i style="grid-row: span 2"></i><i></i><i></i></span>Clients<span class="rail-ws-open" aria-label="open"></span></button>
+<button class="rail-btn rail-ws-more" title="All workspaces"><svg class="ic" aria-hidden="true"><use href="#i-more"></use></svg>More<span class="rail-badge rail-ws-count">2</span></button>
 <span class="rail-sep" role="separator"></span>
 <button class="rail-btn" data-item="keys" title="SSH keys (⇧⌘K)"><svg class="ic" aria-hidden="true"><use href="#i-key"></use></svg>Keys</button>
 <button class="rail-btn" data-item="credentials" title="Credentials (⇧⌘C)"><svg class="ic" aria-hidden="true"><use href="#i-cred"></use></svg>Credentials</button>
