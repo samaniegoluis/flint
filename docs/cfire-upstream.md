@@ -3505,3 +3505,20 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   use. No native code.
 - **Ideal:** a cfire function shadows a header's name inside its package, and a header
   function in a namespace (`hns::greet`) is never matched by an unqualified cfire call.
+
+### CF-194 · missing · `confirmed`: nothing in `core:os` points stdin elsewhere
+- **Needed (milestone 73's release, 2026-11-26):** the desktop app must not hand its
+  SSH sessions the modes of the terminal that launched it. libssh's
+  `ssh_channel_request_pty_size` copies the process' stdin terminal modes into each PTY
+  request (`ttyopts.c`, `encode_current_tty_opts`) and sends its sane defaults only when
+  stdin is not a TTY. Flint launched from a terminal in raw mode (a TUI, an agent's
+  shell) opened every session with `-echo -icanon`, and bash's readline then echoed
+  nothing (zsh draws its own line, so only bash hosts showed it). From Finder or the
+  Dock stdin is not a terminal and nothing happens.
+- **Gap:** `core:os` has `stdin()`, `is_tty()` and `make(os.RawTerminal)`, but no
+  `dup2`, `freopen` or a way to open `/dev/null` onto FD 0.
+- **Workaround:** `detach_stdin` in `src/adapters/process/process.cf` (native
+  `flint_proc::detach_stdin`, POSIX only), tagged `// CFIRE-UPSTREAM: CF-194`, called
+  first thing in the GUI driver's `main`.
+- **Ideal:** `os.redirect_stdin(path: str) -> void!` (or `os.stdin_null()`), a no-op on
+  Windows.

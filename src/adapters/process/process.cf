@@ -34,6 +34,21 @@ fn executable_dir() -> str {
     return dir
 }
 
+// The desktop app's stdin, when it is a terminal, is pointed at /dev/null: its SSH
+// sessions take libssh's sane terminal modes, never those of the terminal that launched
+// it (raw mode from a TUI left every bash session without echo). False when that
+// failed. Windows: nothing to do (libssh has no termios there and sends its defaults).
+fn detach_stdin() -> bool {
+    mut rc: i32 = 0
+    // CFIRE-UPSTREAM: CF-194
+    cpp {
+        #if !defined(_WIN32)
+        rc = flint_proc::detach_stdin();
+        #endif
+    }
+    return rc == 0
+}
+
 // Windows only (windows-port): starts the program at `path` detached from this
 // process, like `setsid` on POSIX. False when it could not be started, and always
 // false elsewhere (POSIX callers use the shell, drivers/clicmd/serve.cf).

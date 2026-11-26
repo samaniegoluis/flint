@@ -458,6 +458,21 @@ inline void install_winch() {
     sigaction(SIGWINCH, &sa, nullptr);
 }
 
+// CF-194: the desktop app points its stdin at /dev/null when it is a terminal. libssh's
+// ssh_channel_request_pty_size copies the modes of the process' own terminal into the
+// PTY request (ttyopts.c, encode_current_tty_opts) and sends its sane defaults only
+// when stdin is not a TTY. Launched from a terminal in raw mode (a TUI, an agent's
+// shell), every session the app opened started with -echo -icanon, and bash's readline
+// then echoed nothing (zsh draws its own line and hid it). 0 done or nothing to do.
+inline int detach_stdin() {
+    if (!isatty(STDIN_FILENO)) return 0;
+    int fd = open("/dev/null", O_RDONLY);
+    if (fd < 0) return -1;
+    int rc = dup2(fd, STDIN_FILENO) < 0 ? -1 : 0;
+    if (fd != STDIN_FILENO) close(fd);
+    return rc;
+}
+
 // 0 on success (or when stdin is not a terminal: nothing to change), -1 on error.
 inline int raw_enter() {
     install_winch();

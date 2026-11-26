@@ -58,6 +58,12 @@ fn main() {
     e2e_script: str = os.getenv("FLINT_GUI_E2E")
     e2e := e2e_script.len() > 0
 
+    // Before any SSH session: libssh copies a terminal stdin's modes into each PTY
+    // request, and a launch from a raw-mode terminal left bash with no echo (CF-194).
+    if !detach_stdin() {
+        write_stderr("flint-gui: stdin is a terminal and could not be detached; sessions may start without echo\n")
+    }
+
     // One Flint per config folder: a second launch shows the running one's window
     // (closed to the tray, it comes back locked) and exits.
     if !e2e && show_running_app() {
