@@ -73,12 +73,11 @@ export function TerminalView({ tabId, active, focus, fontSize }: { tabId: string
   const fitRef = useRef<FitAddon | null>(null);
   const webglRef = useRef<WebglAddon | null>(null);
 
-  // The WebGL renderer draws each glyph once into a texture atlas and reuses it. A
-  // glyph drawn before the terminal's font was ready keeps the fallback font, and
-  // only cells redrawn later (a selection, a new background) use the real one: text
-  // that changes font when selected, or nearly vanishes after a font change. Dropping
-  // the atlas once the font is in redraws every glyph with it. Cheap: glyphs are
-  // drawn again on demand.
+  // Once the font is in, or a split settles, the terminal is fitted and drawn again.
+  // Flint used to drop the WebGL glyph atlas here too (text that changed font when
+  // selected, garbled glyphs in the other panes after a split); xterm.js
+  // 6.1.0-beta.339 keeps its atlas right on its own (upstream #6042, #6043, #6055,
+  // #6226).
   //
   // Only a shown terminal is fitted (through `refit`): fitting a hidden one measured
   // its box under display:none, where "100%" reads as 100 px, and shrank the terminal
@@ -87,11 +86,6 @@ export function TerminalView({ tabId, active, focus, fontSize }: { tabId: string
   const redrawGlyphs = () => {
     const term = termRef.current;
     if (!term) return;
-    try {
-      webglRef.current?.clearTextureAtlas();
-    } catch {
-      // no atlas yet
-    }
     refit();
     term.refresh(0, term.rows - 1);
   };
@@ -147,7 +141,7 @@ export function TerminalView({ tabId, active, focus, fontSize }: { tabId: string
       allowProposedApi: true,
       theme: terminalTheme(hostRef.current ?? undefined),
       vtExtensions: { kittyKeyboard: true },
-    } as ConstructorParameters<typeof Terminal>[0]);
+    });
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.open(screenRef.current!);
