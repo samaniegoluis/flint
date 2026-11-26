@@ -4,6 +4,20 @@ What changed in each version of Flint, newest first. Versions follow
 [SemVer](https://semver.org): a release with a new feature bumps the minor version, one
 with only fixes the patch. Written by `scripts/release.sh` from the commit history.
 
+## 0.36.0 — 2026-11-26
+
+Type into several panes of a tab at once. Each pane's header has a toggle that adds it to the broadcast, and the Split menu and the palette can add every pane in one go. A bar above the panes says how many receive your keys and stops it in one click, and broadcast is never on by itself in a new tab. Also fixed: when Flint was started from a terminal, bash servers didn't show what you typed.
+
+### Added
+
+- **ui:** Broadcast input to the panes of a tab
+
+### Fixed
+
+- **ui:** Choose panes never looks like a chosen pane, and one pane asks for the rest
+- **gui:** Sessions start with echo when Flint was launched from a terminal
+
+
 ## 0.35.0 — 2026-11-26
 
 Split a tab into panes on different hosts. ⌘D and ⇧⌘D now open an empty pane that asks which host it connects to. The host you were on is offered first, so ⌘D then ↵ still repeats it. A layout such as Grid 2 × 2 fills its new places the same way. What doesn't take your keys is dimmed: panes without the focus, and every pane while Flint is in the background. Settings → Terminal can turn the dimming off.
