@@ -42,7 +42,8 @@ SignPath's approval), so they move to v20 and this version goes first (owner, 20
 **In scope (v19), four milestones sized for one session each:**
 - **Split with another host** (72): a split or a layout opens empty panes, each with a host
   picker in its middle, the focused pane's host first, so ⌘D then ↵ still repeats today's
-  split. Duplicate (⌥⌘D) is unchanged.
+  split. Duplicate (⌥⌘D) is unchanged. What does not take the keys is dimmed: the panes
+  that are not focused, and the whole window while another app has the focus.
 - **Broadcast input** (73): a per-pane toggle picks which panes of a tab receive what is
   typed or pasted, shown on every receiving pane and in a bar over the tab; it never turns
   on by itself.
@@ -104,6 +105,13 @@ change.
   place into that host's session (`sessions.connect`), with the same prompts as any connect;
   Esc or ⌘W closes the empty pane. The core is unchanged: an empty pane makes no
   `session_open`.
+- **Dimmed when it does not take the keys** (72, page only, D-150). One rule: what is drawn
+  at full contrast receives what is typed. In a split, every pane but the focused one is
+  dimmed; while the window does not have the focus (`blur`/`focus` of the page), every pane
+  is. The dim is a CSS change on the pane's container (lower contrast, about 70-80 %, the
+  value from the design), never a change to xterm.js's renderer; an RDP pane is dimmed less
+  or not at all, as the design decides. *Dim what does not have focus* in Settings turns it
+  off, on by default.
 - **Broadcast input** (73, page only). A tab holds the set of its panes that receive input,
   off on every tab and never saved. A key typed into the focused pane is handed to each
   receiving pane's own terminal to encode, so a pane in Kitty keyboard mode (herdr, Neovim)
@@ -112,7 +120,8 @@ change.
   xterm.js API) is settled at 73's plan with a test. A text paste goes to each receiving
   pane through its own paste path (bracketed paste per terminal, the paste limit per pane);
   an image or a file goes to the focused pane only. A pane that is lost, reconnecting or
-  empty receives nothing. Every receiving pane draws a border in the broadcast colour and the
+  empty receives nothing. Receiving panes are drawn at full contrast, as the focused one
+  is (72's rule). Every receiving pane draws a border in the broadcast colour and the
   tab shows a bar *Typing into N panes* with a way to stop.
 - **A workspace** (74). One appended migration adds a `workspaces` table to the vault: an id
   (128 bits), a name, the layout, the track sizes and the ordered places, each a host id or
@@ -242,8 +251,8 @@ Claude Design run (designs 28) before 72's plan.
 
 | # | Milestone | Delivers |
 |---|---|---|
-| 72 | **Split with another host** | The store's empty pane; `split()` and the layouts opening empty panes; the empty pane's picker (the focused pane's host first and preselected, recent hosts, search), ↵ or a click connecting it, Esc and ⌘W closing it; the Split menu, the toolbar's Split button and the palette's actions saying what they open; ⇧⌘↵ in the palette unchanged; an RDP host in the picker as the open question below settles. Verified: vitest of the store (a split adds an empty pane, a layout on one pane adds empty ones, connecting one turns it into a session, closing one leaves the others); gui-e2e: ⌘D then ↵ connects the same host as before, ⌘D then a typed host connects another, a 2 × 2 from one pane connected place by place, Esc closes an empty pane, an empty pane makes no `session_open`; gui-e2e's existing split steps updated; docs (the desktop app guide's split panes; keyboard shortcuts); the landing's split section if its wording changes |
-| 73 | **Broadcast input** | The per-tab broadcast set and its toggle (per pane, all panes, stop), with a shortcut chosen at plan; keys handed to each receiving terminal to encode; text paste through each pane's own paste path, image and file paste to the focused pane only; lost, reconnecting, empty and RDP panes excluded; the border on each receiving pane and the *Typing into N panes* bar; nothing of it saved. Verified: vitest of the broadcast set (off on a new tab, a pane that drops leaves it, never in a saved shape); gui-e2e on macOS, Linux and the Windows VM: one pane in Kitty mode and one plain shell, Shift+Enter and a Ctrl chord typed once reach each as its own encoding (checked on the remote side), a pasted line arrives once in each, an image paste reaches the focused pane only; docs (the desktop app guide: broadcast, its warning; keyboard shortcuts); the landing if the owner wants it there |
+| 72 | **Split with another host** | The store's empty pane; `split()` and the layouts opening empty panes; the empty pane's picker (the focused pane's host first and preselected, recent hosts, search), ↵ or a click connecting it, Esc and ⌘W closing it; the Split menu, the toolbar's Split button and the palette's actions saying what they open; ⇧⌘↵ in the palette unchanged; an RDP host in the picker as the open question below settles; the panes that are not focused, and every pane while the window has no focus, dimmed, with *Dim what does not have focus* in Settings. Verified: vitest of the store (a split adds an empty pane, a layout on one pane adds empty ones, connecting one turns it into a session, closing one leaves the others); gui-e2e: ⌘D then ↵ connects the same host as before, ⌘D then a typed host connects another, a 2 × 2 from one pane connected place by place, Esc closes an empty pane, an empty pane makes no `session_open`, an unfocused pane and a blurred window read as dimmed and the setting turns it off; gui-e2e's existing split steps updated; docs (the desktop app guide's split panes; keyboard shortcuts); the landing's split section if its wording changes |
+| 73 | **Broadcast input** | The per-tab broadcast set and its toggle (per pane, all panes, stop), with a shortcut chosen at plan; keys handed to each receiving terminal to encode; text paste through each pane's own paste path, image and file paste to the focused pane only; lost, reconnecting, empty and RDP panes excluded; the border on each receiving pane, receiving panes at full contrast, and the *Typing into N panes* bar; nothing of it saved. Verified: vitest of the broadcast set (off on a new tab, a pane that drops leaves it, never in a saved shape); gui-e2e on macOS, Linux and the Windows VM: one pane in Kitty mode and one plain shell, Shift+Enter and a Ctrl chord typed once reach each as its own encoding (checked on the remote side), a pasted line arrives once in each, an image paste reaches the focused pane only; docs (the desktop app guide: broadcast, its warning; keyboard shortcuts); the landing if the owner wants it there |
 | 74 | **Workspaces** | The `workspaces` table by an appended migration and its record merge; save, rename, delete and list use cases and their RPC; *Save as workspace* and *Update workspace* on a tab (only these write the vault, never a drag or a split), a workspace made from scratch (a name, a layout and a host per place), opening one (switch to its tab or open it, a deleted host's place empty), the workspaces in the side rail. Verified: `cfire test` of the migration, the use cases and the merge (a workspace added on two machines merges; a deleted host leaves an empty place); vitest of the tab shape; sync-e2e: a workspace saved on one client opens on the other; gui-e2e: save a 2 × 2 of hosts, quit, open it, every pane connects; a second open switches to its tab; docs (a Workspaces guide; the vault format reference: the new table); the landing (workspaces as a headline feature, in the split section or its own) |
 | 75 | **Restore open sessions** | The tabs of each vault in `ui-state.json` (ids and layout only), written debounced; restore after the vault's unlock at start, panes connecting, a deleted host's place empty, RDP tabs coming back as tabs; *Reopen tabs at start* in Settings, on by default. Verified: vitest of the restore state (written on a split, a close, a layout change; ids only; a damaged file falls back to no tabs); gui-e2e: open two tabs (one split in a grid), quit, start, unlock, the same tabs and layout come back connected; with the setting off nothing comes back; `ui-state.json` read back holding no host name; docs (the desktop app guide: restore and its setting) |
 
@@ -251,7 +260,8 @@ Claude Design run (designs 28) before 72's plan.
 
 Settled with the owner on 2026-11-26 (D-149): ⌘D and ⇧⌘D open an empty pane with the
 current host preselected; workspaces live in the vault; broadcast stays inside one tab and
-never turns on by itself; restored tabs connect on their own, with a setting to turn it off.
+never turns on by itself; restored tabs connect on their own, with a setting to turn it off;
+what does not take the keys is dimmed (D-150).
 Open, to settle at each milestone's plan:
 
 - **An RDP host chosen in an empty pane** (72): left out of the picker, or listed as opening
