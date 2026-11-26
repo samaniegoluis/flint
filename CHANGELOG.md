@@ -4,6 +4,19 @@ What changed in each version of Flint, newest first. Versions follow
 [SemVer](https://semver.org): a release with a new feature bumps the minor version, one
 with only fixes the patch. Written by `scripts/release.sh` from the commit history.
 
+## 0.35.0 — 2026-11-26
+
+Split a tab into panes on different hosts. ⌘D and ⇧⌘D now open an empty pane that asks which host it connects to. The host you were on is offered first, so ⌘D then ↵ still repeats it. A layout such as Grid 2 × 2 fills its new places the same way. What doesn't take your keys is dimmed: panes without the focus, and every pane while Flint is in the background. Settings → Terminal can turn the dimming off.
+
+### Added
+
+- **ui:** Splits open empty panes that ask for their host, and what does not take the keys is dimmed
+
+### Fixed
+
+- **ui:** The title bar's search button reads "Search…" and stays on one line
+
+
 ## 0.34.0 — 2026-11-24
 
 Flint no longer keeps sending a token the server refused. After a 401 the app stops syncing that vault on its own and the status bar reads Token refused, with Sync now and Replace token at hand, so a few machines with an old token can't lock every machine behind the same router out. A 429 now says how long the server asks to wait. The vault server gains flint-vault-server delete, logs the cause of a 500, and keeps serving when one vault's record is damaged; the self-host guide explains how the server counts clients behind NAT, Docker Swarm and proxies. On the Mac, opening an RDP session can no longer hang on reading the keyboard layout.
