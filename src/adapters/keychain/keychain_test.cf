@@ -5,7 +5,7 @@ import "core:os"
 import "core:rand"
 import "../../ports"
 
-fn keychain_port_check[K: Keychain](k: K) -> bool {
+fn keychain_port_check[K: ports.Keychain](k: K) -> bool {
     got := k.keychain_load("flint-test-absent-" + sha256.random_hex(8)) or err { return true }
     return got.len() == 0
 }
@@ -27,7 +27,7 @@ fn warm_up_keychain() -> bool {
         apple = true;
         #endif
     }
-    if apple || os.getenv("FLINT_TEST_KEYCHAIN") == "off" {
+    if apple || (os.getenv("FLINT_TEST_KEYCHAIN") or "") == "off" {
         return false
     }
     _ = new_os_keychain(true).keychain_load("flint-test-warm-up")
@@ -39,7 +39,7 @@ KEYCHAIN_WARM: bool = warm_up_keychain()
 // Talks to the real OS keychain. FLINT_TEST_KEYCHAIN=off skips it on a machine
 // without one (a headless Linux box with no Secret Service).
 test "save, load, overwrite and forget a vault key in the OS keychain" {
-    if os.getenv("FLINT_TEST_KEYCHAIN") == "off" {
+    if (os.getenv("FLINT_TEST_KEYCHAIN") or "") == "off" {
         println("skipped: FLINT_TEST_KEYCHAIN=off")
         return
     }

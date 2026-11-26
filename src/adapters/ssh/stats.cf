@@ -43,7 +43,7 @@ fn (mut self: StatsLink) stats_send(data: str) -> void! {
     try self.link.link_channel_write(data)
 }
 
-fn (mut self: StatsLink) stats_read(timeout_ms: i64) -> ExecChunk! {
+fn (mut self: StatsLink) stats_read(timeout_ms: i64) -> domain.ExecChunk! {
     start := time.now_ms()
     for true {
         chunk := try self.link.link_channel_read(STATS_LOCKED_READ_MS)

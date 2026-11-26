@@ -13,7 +13,7 @@ fn update_tmp(name: str) -> str {
 }
 
 fn system32() -> str {
-    mut root := os.getenv("SystemRoot")
+    mut root := (os.getenv("SystemRoot") or "")
     if root.len() == 0 {
         root = "C:/Windows"
     }

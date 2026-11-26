@@ -65,7 +65,7 @@ fn ipc_file_mode(path: str) -> i64 {
 // Listens on `path` for peers of this process's uid. Fails with `conflict` when
 // another Flint already serves it.
 fn ipc_listen(path: str) -> IpcListener! {
-    return ipc_listen_for(path, ipc_own_uid())
+    return try ipc_listen_for(path, ipc_own_uid())
 }
 
 // As ipc_listen, accepting only peers of `uid`. Tests pass another uid to prove a

@@ -14,7 +14,7 @@ import "../../domain"
 PEER_CHAIN_MAX: i64 = 32
 
 // One process, or `false` when it is gone or not ours to read.
-fn peer_proc(pid: i64) -> (CallerProc, bool) {
+fn peer_proc(pid: i64) -> (domain.CallerProc, bool) {
     mut ppid: i64 = 0
     mut started: i64 = 0
     mut exe := ""
@@ -31,13 +31,13 @@ fn peer_proc(pid: i64) -> (CallerProc, bool) {
             argv0 = info.argv0;
         }
     }
-    return (CallerProc{ pid: pid, ppid: ppid, started: started, exe: exe, argv0: argv0 }, ok)
+    return (domain.CallerProc{ pid: pid, ppid: ppid, started: started, exe: exe, argv0: argv0 }, ok)
 }
 
 // The caller behind a connection: `peer` and its parents. A parent that exited
 // before we looked ends the chain there.
-fn ipc_caller(peer: IpcPeer) -> Caller {
-    mut chain: []CallerProc = []
+fn ipc_caller(peer: IpcPeer) -> domain.Caller {
+    mut chain: []domain.CallerProc = []
     mut pid := peer.pid
     for _ in 0..PEER_CHAIN_MAX {
         if pid <= 0 {
@@ -53,5 +53,5 @@ fn ipc_caller(peer: IpcPeer) -> Caller {
         }
         pid = p.ppid
     }
-    return Caller{ uid: peer.uid, chain: chain }
+    return domain.Caller{ uid: peer.uid, chain: chain }
 }

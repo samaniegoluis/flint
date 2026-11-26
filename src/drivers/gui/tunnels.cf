@@ -16,7 +16,7 @@ package main
 import "ext:webui"
 import "core:json"
 import "core:time"
-import "../../adapters/ssh"
+import "../../adapters/ssh" as flint_ssh
 import "../../adapters/uievents"
 import "../../adapters/vault"
 import "../../application"
@@ -76,13 +76,13 @@ fn emit_tunnels_changed(mut app: webui.App, reason: str) {
     app.emit("tunnels:changed", TunnelsChanged{ reason: reason })
 }
 
-fn rpc_tunnels_list(store: LockedVaultStore, st: GuiState) -> str! {
+fn rpc_tunnels_list(store: vault.LockedVaultStore, st: GuiState) -> str! {
     try st.require_unlocked()
     mut runner := new_native_tunnels()
     return json.stringify(try list_tunnels(store, store, mut runner, ""))
 }
 
-fn rpc_tunnel_save(params: str, c: Sodium, store: LockedVaultStore, st: GuiState, mut app: webui.App) -> str! {
+fn rpc_tunnel_save(params: str, c: crypto.Sodium, store: vault.LockedVaultStore, st: GuiState, mut app: webui.App) -> str! {
     try st.require_unlocked()
     req := try parse_req[TunnelSaveReq](params)
     mut p := empty_tunnel_patch()
@@ -97,7 +97,7 @@ fn rpc_tunnel_save(params: str, c: Sodium, store: LockedVaultStore, st: GuiState
     p.open_on_connect = req.open_on_connect
     mut tun := store
     runner := new_native_tunnels()
-    mut v: TunnelView! = error("")
+    mut v: application.TunnelView! = error("")
     if req.target.len() == 0 {
         v = add_tunnel(c, store, mut tun, runner, req.host, p)
     } else {
@@ -108,7 +108,7 @@ fn rpc_tunnel_save(params: str, c: Sodium, store: LockedVaultStore, st: GuiState
     return json.stringify(got)
 }
 
-fn rpc_tunnel_rm(params: str, store: LockedVaultStore, st: GuiState, mut app: webui.App) -> str! {
+fn rpc_tunnel_rm(params: str, store: vault.LockedVaultStore, st: GuiState, mut app: webui.App) -> str! {
     try st.require_unlocked()
     req := try parse_req[TunnelRefReq](params)
     mut tun := store
@@ -118,7 +118,7 @@ fn rpc_tunnel_rm(params: str, store: LockedVaultStore, st: GuiState, mut app: we
     return json.stringify(v)
 }
 
-fn rpc_tunnel_stop(params: str, store: LockedVaultStore, st: GuiState, mut app: webui.App) -> str! {
+fn rpc_tunnel_stop(params: str, store: vault.LockedVaultStore, st: GuiState, mut app: webui.App) -> str! {
     try st.require_unlocked()
     req := try parse_req[TunnelRefReq](params)
     mut runner := new_native_tunnels()
@@ -147,7 +147,7 @@ fn tunnel_start_check(params: str, st: GuiState) -> TunnelStartReq! {
 
 // The start itself, on a worker: the first tunnel logs in (when the host has no
 // tunnel session yet), the others ride that session.
-fn run_tunnel_start(mut app: webui.App, c: Sodium, mut store: LockedVaultStore, vs: VaultSession, req: TunnelStartReq) {
+fn run_tunnel_start(mut app: webui.App, c: crypto.Sodium, mut store: vault.LockedVaultStore, vs: application.VaultSession, req: TunnelStartReq) {
     prompter := new_gui_prompter(app, req.session)
     mut runner := new_native_tunnels()
     mut done := TunnelStarted{ session: req.session, host: req.host, results: [], code: "", message: "" }
@@ -179,7 +179,7 @@ fn run_tunnel_start(mut app: webui.App, c: Sodium, mut store: LockedVaultStore, 
 
 // The tunnels a start opens: the ones asked for, or the host's own picks.
 // CFIRE-UPSTREAM: CF-113 (a helper, since the caller cannot keep a list result)
-fn start_names(store: LockedVaultStore, mut runner: NativeTunnels, req: TunnelStartReq) -> []str! {
+fn start_names(store: vault.LockedVaultStore, mut runner: flint_ssh.NativeTunnels, req: TunnelStartReq) -> []str! {
     if req.names.len() > 0 {
         return req.names
     }

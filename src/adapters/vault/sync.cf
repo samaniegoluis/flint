@@ -72,19 +72,19 @@ fn (self: SqlVaultStore) bury_and_delete(kind: str, id: str) -> void! {
     try self.conn().run_sql("DELETE FROM " + table + " WHERE " + key + " = ?1;", [sql_text(id)])
 }
 
-fn (self: SqlVaultStore) tombstones_all() -> []Tombstone! {
+fn (self: SqlVaultStore) tombstones_all() -> []domain.Tombstone! {
     try self.require_open()
     res := try self.conn().query_cells("SELECT kind, id, deleted_at FROM tombstones ORDER BY kind, id;", [])
-    mut list: []Tombstone = []
+    mut list: []domain.Tombstone = []
     for r in res {
-        list.push(Tombstone{ kind: cell_str(r[0]), id: cell_str(r[1]), deleted_at: cell_i64(r[2]) })
+        list.push(domain.Tombstone{ kind: cell_str(r[0]), id: cell_str(r[1]), deleted_at: cell_i64(r[2]) })
     }
     return list
 }
 
 // Every synced row of the open vault, with its stamp, and the tombstones.
-fn (self: SqlVaultStore) vault_records() -> VaultRecords! {
-    return VaultRecords{
+fn (self: SqlVaultStore) vault_records() -> domain.VaultRecords! {
+    return domain.VaultRecords{
             groups: try self.groups_all(),
             hosts: try self.hosts_all(),
             keys: try self.keys_all(),
@@ -99,7 +99,7 @@ fn (self: SqlVaultStore) vault_records() -> VaultRecords! {
 // Replaces every synced row and tombstone with `r`, each row keeping the stamp it
 // carries (a merge's result). Call inside `vault_begin` / `vault_commit`: foreign keys
 // are checked at the commit, so the order rows go in does not matter.
-fn (self: SqlVaultStore) vault_replace_records(r: VaultRecords) -> void! {
+fn (self: SqlVaultStore) vault_replace_records(r: domain.VaultRecords) -> void! {
     try self.require_open()
     try self.conn().exec("PRAGMA defer_foreign_keys = ON;")
     try self.conn().exec("DELETE FROM tunnels; DELETE FROM host_tags; DELETE FROM known_hosts; DELETE FROM hosts; DELETE FROM credentials; DELETE FROM ssh_keys; DELETE FROM groups; DELETE FROM tokens; DELETE FROM tombstones;")
@@ -194,7 +194,7 @@ fn (self: SqlVaultStore) vault_file_bytes(path: str) -> []byte! {
 // Opens a copy downloaded from the vault's server through a private file (0600,
 // removed after), with `page_key` and `salt`, or with the open vault's own when they
 // are empty, and reads its records and id. The open vault is not touched.
-fn (self: SqlVaultStore) vault_blob_records(data: []byte, page_key: []byte, salt: []byte) -> BlobRecords! {
+fn (self: SqlVaultStore) vault_blob_records(data: []byte, page_key: []byte, salt: []byte) -> domain.BlobRecords! {
     mut key := page_key
     mut s := salt
     if key.len() == 0 {
@@ -224,7 +224,7 @@ fn (self: SqlVaultStore) vault_blob_records(data: []byte, page_key: []byte, salt
     try blob.conn().migrate()
     records := try blob.vault_records()
     id := try blob.vault_get_meta(VAULT_META_ID)
-    return BlobRecords{ vault_id: id, records: records }
+    return domain.BlobRecords{ vault_id: id, records: records }
 }
 
 // Writes a vault downloaded from its server as a new file at `path` (0600).

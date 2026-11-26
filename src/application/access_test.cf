@@ -16,7 +16,7 @@ test "a scope by name maps to ids and back" {
     assert_eq(refused, 1)
     access_scope_from_names(cat0, ScopeByName{ all: false, groups: [], hosts: ["ghost"] }) or { refused += 1 }
     assert_eq(refused, 2)
-    g := Grant{ id: "g", vault_id: "v", anchor_pid: 1, anchor_started: 1, label: "x", scope: s, read: true, exec: false, write: false, created_ms: 0, expires_ms: 0, duration: "lock" }
+    g := domain.Grant{ id: "g", vault_id: "v", anchor_pid: 1, anchor_started: 1, label: "x", scope: s, read: true, exec: false, write: false, created_ms: 0, expires_ms: 0, duration: "lock" }
     v := grant_view(g, cat0)
     assert_eq(v.groups[0], "lab/pve")
     whole := try access_scope_from_names(cat0, ScopeByName{ all: true, groups: [], hosts: [] })
@@ -32,7 +32,7 @@ fn (self: FakePresence) presence_method() -> str {
     return self.method
 }
 
-fn (self: FakePresence) presence_confirm(reason: PresenceReason) -> bool! {
+fn (self: FakePresence) presence_confirm(reason: domain.PresenceReason) -> bool! {
     return self.answer
 }
 

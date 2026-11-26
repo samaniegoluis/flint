@@ -20,8 +20,8 @@ type AccessState struct {
     // The core's clock (monotonic, not the wall clock): the page turns deadlines and
     // expiries into its own time with it.
     now_ms:   i64        `json:"now_ms"`
-    pending:  []Approval `json:"pending"`
-    grants:   []GrantView `json:"grants"`
+    pending:  []domain.Approval `json:"pending"`
+    grants:   []application.GrantView `json:"grants"`
     // Milestone 57: *Allow sudo for a while* is on, so the root window offers periods.
     sudo_periods: bool   `json:"sudo_periods"`
 }
@@ -29,7 +29,7 @@ type AccessState struct {
 type AccessAnswer struct {
     id:       str         `json:"id"`
     allow:    bool        `json:"allow"`
-    scope:    ScopeByName `json:"scope"`
+    scope:    application.ScopeByName `json:"scope"`
     read:     bool        `json:"read"`
     exec:     bool        `json:"exec"`
     write:    bool        `json:"write"`
@@ -53,7 +53,7 @@ type GrantsChanged struct {
     count: i64 `json:"count"`
 }
 
-fn access_state(st: GuiState, store: LockedVaultStore, presence: OsPresence) -> AccessState {
+fn access_state(st: GuiState, store: vault.LockedVaultStore, presence: uievents.OsPresence) -> AccessState {
     now := time.now_ms()
     if st.holder.window_locked() {
         // A locked window shows none of it: the lock screen counts who waits.
@@ -65,8 +65,8 @@ fn access_state(st: GuiState, store: LockedVaultStore, presence: OsPresence) -> 
 }
 
 // The open vault's catalog, or an empty one when it is locked.
-fn held_catalog(st: GuiState, store: LockedVaultStore) -> Catalog {
-    empty := Catalog{ groups: [], hosts: [], keys: [], creds: [] }
+fn held_catalog(st: GuiState, store: vault.LockedVaultStore) -> domain.Catalog {
+    empty := domain.Catalog{ groups: [], hosts: [], keys: [], creds: [] }
     st.hold()
     defer st.release()
     if !st.unlocked() {
@@ -76,14 +76,14 @@ fn held_catalog(st: GuiState, store: LockedVaultStore) -> Catalog {
 }
 
 // What the window shows: run on the UI thread, it never asks the OS.
-fn rpc_access_state(st: GuiState, store: LockedVaultStore, presence: OsPresence) -> str! {
+fn rpc_access_state(st: GuiState, store: vault.LockedVaultStore, presence: uievents.OsPresence) -> str! {
     return json.stringify(access_state(st, store, presence))
 }
 
 // The owner answers approval `id`. Allow first proves presence (the OS's check, or
 // the master password checked against the key held), then becomes a grant. Runs on
 // a worker: Touch ID and polkit block until the person answers.
-fn rpc_access_answer(req: AccessAnswer, c: Sodium, store: LockedVaultStore, presence: OsPresence, st: GuiState, mut app: webui.App) -> AccessState! {
+fn rpc_access_answer(req: AccessAnswer, c: crypto.Sodium, store: vault.LockedVaultStore, presence: uievents.OsPresence, st: GuiState, mut app: webui.App) -> AccessState! {
     try st.require_unlocked()
     ap := find_approval(st.holder.access_book(), req.id) or {
         return error(coded(ERR_NOT_FOUND, "this request is no longer waiting"))
@@ -102,7 +102,7 @@ fn rpc_access_answer(req: AccessAnswer, c: Sodium, store: LockedVaultStore, pres
     if ap.sudo.host.len() > 0 {
         // `exec --sudo`: allowed for this one command, or for a root period on its one
         // host (milestone 57, Principle 12), never as a grant.
-        mut period: Grant? = none
+        mut period: domain.Grant? = none
         if req.period.len() > 0 {
             // Checked before presence, so a period that cannot be given never shows
             // the OS dialog.
@@ -142,7 +142,7 @@ fn rpc_access_answer(req: AccessAnswer, c: Sodium, store: LockedVaultStore, pres
             given.expires_ms = root_period_expiry(given.created_ms, given.duration) or p.expires_ms
             sbook.grants.push(given)
             if req.sudo_password.len() > 0 {
-                sbook.period_typed.push(SudoTyped{ id: given.id, password: req.sudo_password })
+                sbook.period_typed.push(domain.SudoTyped{ id: given.id, password: req.sudo_password })
             }
             st.holder.put_access_book(sbook)
             st.holder.access_release()
@@ -197,7 +197,7 @@ fn rpc_access_answer(req: AccessAnswer, c: Sodium, store: LockedVaultStore, pres
 }
 
 // Ends grant `id`, or every grant when `id` is "".
-fn rpc_access_revoke(params: str, st: GuiState, store: LockedVaultStore, presence: OsPresence, mut app: webui.App) -> str! {
+fn rpc_access_revoke(params: str, st: GuiState, store: vault.LockedVaultStore, presence: uievents.OsPresence, mut app: webui.App) -> str! {
     try st.require_open_window()
     req := try parse_req[NameReq](params)
     st.holder.access_hold()
@@ -220,7 +220,7 @@ type GrantNotifyReq struct {
 }
 
 // The bell of a grant in Settings → Access (26d1): its notice on or off from now on.
-fn rpc_access_notify(params: str, st: GuiState, store: LockedVaultStore, presence: OsPresence, mut app: webui.App) -> str! {
+fn rpc_access_notify(params: str, st: GuiState, store: vault.LockedVaultStore, presence: uievents.OsPresence, mut app: webui.App) -> str! {
     try st.require_open_window()
     req := try parse_req[GrantNotifyReq](params)
     st.holder.access_hold()
@@ -237,7 +237,7 @@ fn rpc_access_notify(params: str, st: GuiState, store: LockedVaultStore, presenc
 
 // What a grant ran, newest first, for its notice's View (26b1). The page asks only
 // for grants it has a notice of; the entries are the activity log's own.
-fn rpc_grant_activity(params: str, st: GuiState, store: LockedVaultStore) -> str! {
+fn rpc_grant_activity(params: str, st: GuiState, store: vault.LockedVaultStore) -> str! {
     try st.require_open_window()
     req := try parse_req[NameReq](params)
     st.hold()
@@ -250,7 +250,7 @@ fn rpc_grant_activity(params: str, st: GuiState, store: LockedVaultStore) -> str
 
 type TokensState struct {
     now_s:  i64         `json:"now_s"`
-    tokens: []TokenView `json:"tokens"`
+    tokens: []application.TokenView `json:"tokens"`
 }
 
 type ActivityReq struct {
@@ -259,10 +259,10 @@ type ActivityReq struct {
 }
 
 type ActivityPage struct {
-    entries: []ActivityEntry `json:"entries"`
+    entries: []domain.ActivityEntry `json:"entries"`
 }
 
-fn rpc_tokens_list(st: GuiState, store: LockedVaultStore) -> str! {
+fn rpc_tokens_list(st: GuiState, store: vault.LockedVaultStore) -> str! {
     st.hold()
     defer st.release()
     try st.require_unlocked()
@@ -271,7 +271,7 @@ fn rpc_tokens_list(st: GuiState, store: LockedVaultStore) -> str! {
 }
 
 // The owner revokes a token from Settings → Access. Narrowing access needs no presence.
-fn rpc_token_revoke(params: str, st: GuiState, store: LockedVaultStore, mut app: webui.App) -> str! {
+fn rpc_token_revoke(params: str, st: GuiState, store: vault.LockedVaultStore, mut app: webui.App) -> str! {
     req := try parse_req[NameReq](params)
     st.hold()
     defer st.release()
@@ -283,7 +283,7 @@ fn rpc_token_revoke(params: str, st: GuiState, store: LockedVaultStore, mut app:
     return json.stringify(TokensState{ now_s: now, tokens: try list_tokens(store, store, now) })
 }
 
-fn rpc_activity_log(params: str, st: GuiState, store: LockedVaultStore) -> str! {
+fn rpc_activity_log(params: str, st: GuiState, store: vault.LockedVaultStore) -> str! {
     req := try parse_req[ActivityReq](params)
     st.hold()
     defer st.release()
@@ -313,7 +313,7 @@ type RetentionSet struct {
     removed: i64 `json:"removed"`
 }
 
-fn rpc_activity_retention(st: GuiState, store: LockedVaultStore) -> str! {
+fn rpc_activity_retention(st: GuiState, store: vault.LockedVaultStore) -> str! {
     st.hold()
     defer st.release()
     try st.require_unlocked()
@@ -322,7 +322,7 @@ fn rpc_activity_retention(st: GuiState, store: LockedVaultStore) -> str! {
 }
 
 // How many entries a shorter retention would remove, for the page to ask first.
-fn rpc_activity_retention_preview(params: str, st: GuiState, store: LockedVaultStore) -> str! {
+fn rpc_activity_retention_preview(params: str, st: GuiState, store: vault.LockedVaultStore) -> str! {
     req := try parse_req[RetentionReq](params)
     st.hold()
     defer st.release()
@@ -332,7 +332,7 @@ fn rpc_activity_retention_preview(params: str, st: GuiState, store: LockedVaultS
 
 // Only the person at the window sets it: no CLI command does (D-052), so a caller
 // with a grant to change the vault cannot shorten the log of what it did.
-fn rpc_activity_retention_set(params: str, st: GuiState, store: LockedVaultStore, mut app: webui.App) -> str! {
+fn rpc_activity_retention_set(params: str, st: GuiState, store: vault.LockedVaultStore, mut app: webui.App) -> str! {
     req := try parse_req[RetentionReq](params)
     st.hold()
     defer st.release()
@@ -350,7 +350,7 @@ type ActivityBackupReq struct {
 
 // Settings → Activity → Back up activity… (milestone 39): the path the save dialog
 // returned; the file is copied still encrypted.
-fn rpc_activity_backup(params: str, st: GuiState, store: LockedVaultStore) -> str! {
+fn rpc_activity_backup(params: str, st: GuiState, store: vault.LockedVaultStore) -> str! {
     req := try parse_req[ActivityBackupReq](params)
     st.hold()
     defer st.release()

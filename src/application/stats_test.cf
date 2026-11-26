@@ -61,15 +61,15 @@ fn (mut self: FakeStats) stats_send(data: str) -> void! {
     self.sent += 1
 }
 
-fn (mut self: FakeStats) stats_read(timeout_ms: i64) -> ExecChunk! {
+fn (mut self: FakeStats) stats_read(timeout_ms: i64) -> domain.ExecChunk! {
     if self.pending.len() > 0 {
         out := self.pending
         self.pending = ""
-        return ExecChunk{ stdout: out, stderr: "", done: false, exit_code: 0, signal: "" }
+        return domain.ExecChunk{ stdout: out, stderr: "", done: false, exit_code: 0, signal: "" }
     }
     self.clock.now = self.clock.now + timeout_ms
     done := self.end_after && self.sent >= i64(self.replies.len())
-    return ExecChunk{ stdout: "", stderr: "", done: done, exit_code: 0, signal: "" }
+    return domain.ExecChunk{ stdout: "", stderr: "", done: done, exit_code: 0, signal: "" }
 }
 
 fn (mut self: FakeStats) stats_stopped() -> bool {
@@ -81,14 +81,14 @@ fn (mut self: FakeStats) stats_close() {
 }
 
 type FakeStatsSink struct {
-    samples: []ServerSample
+    samples: []domain.ServerSample
 }
 
-fn (mut self: FakeStatsSink) stats_emit(sample: ServerSample) {
+fn (mut self: FakeStatsSink) stats_emit(sample: domain.ServerSample) {
     self.samples.push(sample)
 }
 
-fn accepts_stats[C: ServerStats, S: StatsSink](c: C, s: S) -> bool {
+fn accepts_stats[C: ports.ServerStats, S: ports.StatsSink](c: C, s: S) -> bool {
     return true
 }
 

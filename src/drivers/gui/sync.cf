@@ -15,7 +15,7 @@ import "core:time"
 import "core:os"
 import "../../adapters/config"
 import "../../adapters/crypto"
-import "../../adapters/keychain"
+import "../../adapters/keychain" as flint_keychain
 import "../../adapters/vault"
 import "../../adapters/vaultremote"
 import "../../application"
@@ -33,7 +33,7 @@ SYNC_HINT_TOKEN: str = "token"
 
 // Applies a `<hint>:<path>` to the clock and returns the hint the tick goes on with
 // (`now` after a new token, "" after the others); any other hint comes back as it is.
-fn apply_sync_hint(mut clock: SyncClock, hint: str) -> str {
+fn apply_sync_hint(mut clock: domain.SyncClock, hint: str) -> str {
     colon := hint.index_of(":") or { return hint }
     what := str(hint[..colon])
     about := str(hint[colon + 1..])
@@ -62,7 +62,7 @@ type SyncEvent struct {
     // SYNC_STATE_SYNCING, SYNC_IN_STEP, SYNC_UPLOADED, SYNC_MERGED, or "error".
     state:   str         `json:"state"`
     version: i64         `json:"version"`
-    report:  MergeReport `json:"report"`
+    report:  domain.MergeReport `json:"report"`
     // The error's code and message when `state` is "error" (never a secret).
     code:    str         `json:"code"`
     message: str         `json:"message"`
@@ -82,13 +82,13 @@ fn rpc_vault_sync_hint(params: str, st: GuiState) -> str! {
     return ok_json()
 }
 
-fn run_sync_loop(c: Sodium, mut store: LockedVaultStore, kc: OsKeychain, settings_store: JsonSettingsStore, st: GuiState, mut app: webui.App) {
+fn run_sync_loop(c: crypto.Sodium, mut store: vault.LockedVaultStore, kc: flint_keychain.OsKeychain, settings_store: config.JsonSettingsStore, st: GuiState, mut app: webui.App) {
     links := new_json_remote_link_store(flint_config_dir())
     remote := new_http_vault_remote()
     mut clock := new_sync_clock()
     // FLINT_SYNC_DIAG=1: one stderr line per tick with what the loop saw (paths are
     // the vault's file path, already in the recents list; nothing from inside it).
-    diag := os.getenv("FLINT_SYNC_DIAG") == "1"
+    diag := (os.getenv("FLINT_SYNC_DIAG") or "") == "1"
     for !st.holder.quitting() {
         received := st.sync_hints.recv_timeout(SYNC_TICK_MS) or ""
         hint := apply_sync_hint(mut clock, received)

@@ -16,7 +16,7 @@ fn hex_of(b: []byte) -> str {
 }
 
 // Compiles only if Sodium satisfies the Crypto port.
-fn port_roundtrip[C: Crypto](c: C) -> bool {
+fn port_roundtrip[C: ports.Crypto](c: C) -> bool {
     key := c.random_bytes(32)
     msg: []byte = [byte(7), byte(7)]
     sealed := c.seal(key, msg, []) or err { return false }
@@ -117,7 +117,7 @@ test "the port's wipe zeroes the caller's buffer and text in place" {
     c.wipe_text("")
 }
 
-fn wipe_through_port[C: Crypto](c: C, text: str) -> bool {
+fn wipe_through_port[C: ports.Crypto](c: C, text: str) -> bool {
     c.wipe_text(text)
     for b in text.bytes() {
         if u8(b) != 0 {
@@ -192,7 +192,7 @@ test "Ed25519 signatures verify as RFC 8032 says, and nothing else does" {
 
 test "a file's SHA-256 through libsodium, as sha256sum prints it" {
     c := try new_sodium()
-    path := "{os.getenv("TMPDIR", "/tmp")}/flint-sha-{time.now_ms()}.txt"
+    path := "{(os.getenv("TMPDIR") or "/tmp")}/flint-sha-{time.now_ms()}.txt"
     try fs.write_text(path, "abc")
     defer { fs.remove(path) or {} }
     assert_eq(try c.update_file_sha256(path), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")

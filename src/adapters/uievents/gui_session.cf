@@ -87,7 +87,7 @@ fn gui_session_input(session_id: str, data: str) -> void! {
 }
 
 fn gui_session_resize(session_id: str, cols: i32, rows: i32) -> void! {
-    size := TerminalSize{ cols: cols, rows: rows }
+    size := domain.TerminalSize{ cols: cols, rows: rows }
     if !size.is_valid() {
         return error(coded(ERR_INVALID, "terminal size {cols}x{rows} is out of range"))
     }
@@ -144,7 +144,7 @@ type HostKeyPayload struct {
     valid_to:          str `json:"valid_to"`
 }
 
-fn host_key_payload(q: HostKeyQuestion) -> HostKeyPayload {
+fn host_key_payload(q: domain.HostKeyQuestion) -> HostKeyPayload {
     return HostKeyPayload{ alias: q.alias, addr: q.addr, key_type: q.key_type, fingerprint: q.fingerprint, known_key_type: q.known_key_type, known_fingerprint: q.known_fingerprint, subject: q.subject, issuer: q.issuer, valid_from: q.valid_from, valid_to: q.valid_to }
 }
 
@@ -159,9 +159,9 @@ type SessionPrompt struct {
 
 // The core's message for an event's `code` and `message`: an empty id when there is no
 // error or the core does not name it.
-fn event_message(code: str, message: str) -> CoreMessage {
+fn event_message(code: str, message: str) -> domain.CoreMessage {
     if code.len() == 0 {
-        return CoreMessage{ code: "", id: "", params: [], message: message }
+        return domain.CoreMessage{ code: "", id: "", params: [], message: message }
     }
     return core_message_of(coded(code, message))
 }
@@ -171,8 +171,8 @@ fn emit_session_state(mut app: webui.App, session_id: str, state: str, code: str
     app.emit("session:state", SessionState{ session: session_id, state: state, code: code, message: message, id: m.id, params: m.params, exit_code: exit_code })
 }
 
-fn empty_host_key_question() -> HostKeyQuestion {
-    return HostKeyQuestion{ alias: "", addr: "", key_type: "", fingerprint: "", known_key_type: "", known_fingerprint: "" }
+fn empty_host_key_question() -> domain.HostKeyQuestion {
+    return domain.HostKeyQuestion{ alias: "", addr: "", key_type: "", fingerprint: "", known_key_type: "", known_fingerprint: "" }
 }
 
 // ---- Terminal port ----------------------------------------------------------------
@@ -186,7 +186,7 @@ fn new_gui_terminal(app: webui.App, session_id: str) -> GuiTerminal {
     return GuiTerminal{ app: app, session: session_id }
 }
 
-fn (self: GuiTerminal) term_size() -> TerminalSize {
+fn (self: GuiTerminal) term_size() -> domain.TerminalSize {
     mut cols: i32 = 0
     mut rows: i32 = 0
     sid := self.session
@@ -197,7 +197,7 @@ fn (self: GuiTerminal) term_size() -> TerminalSize {
         cols = c;
         rows = r;
     }
-    return TerminalSize{ cols: cols, rows: rows }
+    return domain.TerminalSize{ cols: cols, rows: rows }
 }
 
 // The shell is open: tell the page the session is ready.
@@ -262,7 +262,7 @@ fn (self: GuiPrompter) prompt_available() -> bool {
 
 // Emits a prompt and blocks this worker until the page answers it. Returns the
 // answer; "" with `cancelled` set when the person cancelled.
-fn (self: GuiPrompter) ask(kind: str, user: str, alias: str, q: HostKeyQuestion) -> PromptAnswer! {
+fn (self: GuiPrompter) ask(kind: str, user: str, alias: str, q: domain.HostKeyQuestion) -> PromptAnswer! {
     mut seq: i64 = 0
     // CFIRE-UPSTREAM: CF-026
     cpp {
@@ -295,12 +295,12 @@ fn (self: GuiPrompter) ask(kind: str, user: str, alias: str, q: HostKeyQuestion)
     return PromptAnswer{ value: got, cancelled: rc == 1 }
 }
 
-fn (self: GuiPrompter) prompt_host_key(q: HostKeyQuestion) -> bool! {
+fn (self: GuiPrompter) prompt_host_key(q: domain.HostKeyQuestion) -> bool! {
     a := try self.ask("host_key", "", q.alias, q)
     return !a.cancelled
 }
 
-fn (self: GuiPrompter) host_key_changed(q: HostKeyQuestion) {
+fn (self: GuiPrompter) host_key_changed(q: domain.HostKeyQuestion) {
     mut app := self.app
     app.emit("session:prompt", SessionPrompt{ session: self.session, prompt: "", kind: "host_key_changed", user: "", alias: q.alias, host_key: host_key_payload(q) })
 }
@@ -336,7 +336,7 @@ fn new_gui_desktop_sink(app: webui.App) -> GuiDesktopSink {
     return GuiDesktopSink{ app: app }
 }
 
-fn (mut self: GuiDesktopSink) desktop_ready(tab: str, d: RdpDesktop) {
+fn (mut self: GuiDesktopSink) desktop_ready(tab: str, d: domain.RdpDesktop) {
     self.app.emit("rdp:ready", DesktopReady{ tab: tab, width: d.width, height: d.height, frame_port: d.frame_port, frame_token: d.frame_token, graphics: d.graphics, rtt_ms: d.rtt_ms })
 }
 
@@ -361,10 +361,10 @@ type DesktopCursor struct {
     rgba:   str `json:"rgba"`
 }
 
-fn (mut self: GuiDesktopSink) desktop_cursor(tab: str, c: RdpCursor) {
+fn (mut self: GuiDesktopSink) desktop_cursor(tab: str, c: domain.RdpCursor) {
     self.app.emit("rdp:cursor", DesktopCursor{ tab: tab, action: c.action, id: c.id, width: c.width, height: c.height, hot_x: c.hot_x, hot_y: c.hot_y, rgba: c.rgba })
 }
 
-fn (mut self: GuiDesktopSink) desktop_graphics(tab: str, graphics: str, sw: RdpModeSwitch) {
+fn (mut self: GuiDesktopSink) desktop_graphics(tab: str, graphics: str, sw: domain.RdpModeSwitch) {
     self.app.emit("rdp:graphics", DesktopGraphics{ tab: tab, graphics: graphics, engine: sw.graphics, rtt_ms: sw.rtt_ms, message: sw.why })
 }

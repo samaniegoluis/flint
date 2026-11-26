@@ -50,7 +50,7 @@ type RelayPrompt struct {
     kind:     str             `json:"kind"`
     user:     str             `json:"user"`
     alias:    str             `json:"alias"`
-    question: HostKeyQuestion `json:"question"`
+    question: domain.HostKeyQuestion `json:"question"`
 }
 
 type RelayAnswer struct {
@@ -162,8 +162,8 @@ fn new_socket_terminal(link: RelayLink) -> SocketTerminal {
     return SocketTerminal{ link: link }
 }
 
-fn (self: SocketTerminal) term_size() -> TerminalSize {
-    return TerminalSize{ cols: self.link.cols, rows: self.link.rows }
+fn (self: SocketTerminal) term_size() -> domain.TerminalSize {
+    return domain.TerminalSize{ cols: self.link.cols, rows: self.link.rows }
 }
 
 fn (mut self: SocketTerminal) term_raw_enter() -> void! {
@@ -259,12 +259,12 @@ fn (self: SocketPrompter) ask(p: RelayPrompt) -> RelayAnswer! {
     return error(coded(ERR_TIMEOUT, "nobody answered the prompt within {RELAY_PROMPT_WAIT_MS / 1000}s"))
 }
 
-fn (self: SocketPrompter) prompt_host_key(q: HostKeyQuestion) -> bool! {
+fn (self: SocketPrompter) prompt_host_key(q: domain.HostKeyQuestion) -> bool! {
     a := try self.ask(RelayPrompt{ kind: "host_key", user: "", alias: q.alias, question: q })
     return a.ok
 }
 
-fn (self: SocketPrompter) host_key_changed(q: HostKeyQuestion) {
+fn (self: SocketPrompter) host_key_changed(q: domain.HostKeyQuestion) {
 }
 
 fn (self: SocketPrompter) prompt_password(user: str, alias: str) -> str! {
@@ -275,6 +275,6 @@ fn (self: SocketPrompter) prompt_password(user: str, alias: str) -> str! {
     return a.value
 }
 
-fn empty_question() -> HostKeyQuestion {
-    return HostKeyQuestion{ alias: "", addr: "", key_type: "", fingerprint: "", known_key_type: "", known_fingerprint: "" }
+fn empty_question() -> domain.HostKeyQuestion {
+    return domain.HostKeyQuestion{ alias: "", addr: "", key_type: "", fingerprint: "", known_key_type: "", known_fingerprint: "" }
 }

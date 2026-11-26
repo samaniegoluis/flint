@@ -5,11 +5,11 @@ import "core:time"
 import "../../ports"
 import "../../domain"
 
-fn accepts_terminal[M: Terminal](mut m: M) -> TerminalSize {
+fn accepts_terminal[M: ports.Terminal](mut m: M) -> domain.TerminalSize {
     return m.term_size()
 }
 
-fn accepts_prompter[P: Prompter](p: P) -> bool {
+fn accepts_prompter[P: ports.Prompter](p: P) -> bool {
     return p.prompt_available()
 }
 
@@ -103,7 +103,7 @@ test "the GUI prompter blocks until the page answers or cancels" {
     // The emitted prompt names the user and host but carries no secret.
     assert(app.last_emitted_payload("session:prompt").contains("\"user\":\"luis\""))
     assert(!app.last_emitted_payload("session:prompt").contains("s3cret"))
-    q := HostKeyQuestion{ alias: "web", addr: "web.lan", key_type: "ssh-ed25519", fingerprint: "SHA256:abc", known_key_type: "", known_fingerprint: "" }
+    q := domain.HostKeyQuestion{ alias: "web", addr: "web.lan", key_type: "ssh-ed25519", fingerprint: "SHA256:abc", known_key_type: "", known_fingerprint: "" }
     async.scope(workers: 1) |scope| {
         scope.spawn || {
             mut a := app

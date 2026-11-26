@@ -35,12 +35,12 @@ type RelayFileReply struct {
     ok:      bool        `json:"ok"`
     // The error, as a coded message, when not ok.
     err:     str         `json:"err"`
-    entry:   FileEntry   `json:"entry"`
-    entries: []FileEntry `json:"entries"`
+    entry:   domain.FileEntry   `json:"entry"`
+    entries: []domain.FileEntry `json:"entries"`
 }
 
-fn empty_file_entry() -> FileEntry {
-    return FileEntry{ name: "", path: "", kind: "", size: 0, mtime: 0, mode: 0, uid: 0 }
+fn empty_file_entry() -> domain.FileEntry {
+    return domain.FileEntry{ name: "", path: "", kind: "", size: 0, mtime: 0, mode: 0, uid: 0 }
 }
 
 fn file_op(op: str, path: str) -> RelayFileOp {
@@ -119,12 +119,12 @@ fn (self: SocketLocalFiles) ask(op: RelayFileOp, data: str) -> (RelayFileReply, 
     return error(client_gone())
 }
 
-fn (self: SocketLocalFiles) local_stat(path: str) -> FileEntry! {
+fn (self: SocketLocalFiles) local_stat(path: str) -> domain.FileEntry! {
     (r, _) := try self.ask(file_op("stat", path), "")
     return r.entry
 }
 
-fn (self: SocketLocalFiles) local_list(path: str) -> []FileEntry! {
+fn (self: SocketLocalFiles) local_list(path: str) -> []domain.FileEntry! {
     (r, _) := try self.ask(file_op("list", path), "")
     return r.entries
 }
@@ -168,7 +168,7 @@ fn new_socket_transfer_sink(link: RelayLink) -> SocketTransferSink {
     return SocketTransferSink{ link: link }
 }
 
-fn (mut self: SocketTransferSink) transfer_progress(p: TransferProgress) {
+fn (mut self: SocketTransferSink) transfer_progress(p: domain.TransferProgress) {
     self.link.put(TAG_PROGRESS, json.stringify(p))
 }
 

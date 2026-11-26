@@ -221,7 +221,7 @@ fn (self: TtyPrompter) prompt_available() -> bool {
 }
 
 // Only "yes" or "y" (any case) confirms.
-fn (self: TtyPrompter) prompt_host_key(q: HostKeyQuestion) -> bool! {
+fn (self: TtyPrompter) prompt_host_key(q: domain.HostKeyQuestion) -> bool! {
     if !self.enabled {
         return error(coded(ERR_USAGE, "no terminal to confirm on"))
     }
@@ -231,14 +231,14 @@ fn (self: TtyPrompter) prompt_host_key(q: HostKeyQuestion) -> bool! {
 }
 
 // The CLI reports a changed key through the error that follows.
-fn (self: TtyPrompter) host_key_changed(q: HostKeyQuestion) {
+fn (self: TtyPrompter) host_key_changed(q: domain.HostKeyQuestion) {
 }
 
 fn (self: TtyPrompter) prompt_password(user: str, alias: str) -> str! {
     if !self.enabled {
         return error(coded(ERR_USAGE, "no terminal to prompt on"))
     }
-    return read_secret_line("{user}@{alias}'s password: ")
+    return try read_secret_line("{user}@{alias}'s password: ")
 }
 
 // The `Terminal` port on stdin/stdout.
@@ -250,7 +250,7 @@ fn new_stdio_terminal() -> StdioTerminal {
     return StdioTerminal{ ready: true }
 }
 
-fn (self: StdioTerminal) term_size() -> TerminalSize {
+fn (self: StdioTerminal) term_size() -> domain.TerminalSize {
     mut cols: i32 = 0
     mut rows: i32 = 0
     // CFIRE-UPSTREAM: CF-042
@@ -260,7 +260,7 @@ fn (self: StdioTerminal) term_size() -> TerminalSize {
         cols = c;
         rows = r;
     }
-    return TerminalSize{ cols: cols, rows: rows }
+    return domain.TerminalSize{ cols: cols, rows: rows }
 }
 
 fn (mut self: StdioTerminal) term_raw_enter() -> void! {
@@ -374,7 +374,7 @@ fn new_stderr_transfer_sink(as_json: bool) -> StderrTransferSink {
     return StderrTransferSink{ on: !as_json && stderr_is_terminal(), last_ms: 0, files_done: 0 }
 }
 
-fn (mut self: StderrTransferSink) transfer_progress(p: TransferProgress) {
+fn (mut self: StderrTransferSink) transfer_progress(p: domain.TransferProgress) {
     if !self.on {
         return
     }

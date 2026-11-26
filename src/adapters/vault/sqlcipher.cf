@@ -262,7 +262,7 @@ fn cell_bytes(c: SqlCell) -> []byte {
 
 // The SQLCipher version string, e.g. "4.6.1 community".
 fn (self: CipherDb) cipher_version() -> str! {
-    return self.query_text("PRAGMA cipher_version;")
+    return try self.query_text("PRAGMA cipher_version;")
 }
 
 // "<sqlite version> (SQLCipher <cipher version>)", read from an in-memory database.

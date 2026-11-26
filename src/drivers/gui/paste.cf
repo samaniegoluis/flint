@@ -9,7 +9,7 @@ package main
 import "core:json"
 import "../../adapters/config"
 import "../../adapters/process"
-import "../../adapters/ssh"
+import "../../adapters/ssh" as flint_ssh
 import "../../adapters/uievents"
 import "../../application"
 import "../../domain"
@@ -24,7 +24,7 @@ type TerminalPasteReq struct {
     kind:    str `json:"kind"`
 }
 
-fn rpc_terminal_paste(req: TerminalPasteReq, mut stage: FsDropStage, settings: JsonSettingsStore, st: GuiState) -> PasteResult! {
+fn rpc_terminal_paste(req: TerminalPasteReq, mut stage: process.FsDropStage, settings: config.JsonSettingsStore, st: GuiState) -> application.PasteResult! {
     try st.require_open_window()
     if !valid_drop_id(req.drop) || !valid_drop_path(req.rel) {
         return error(coded(ERR_INVALID, "a paste needs its staged file"))
@@ -33,7 +33,7 @@ fn rpc_terminal_paste(req: TerminalPasteReq, mut stage: FsDropStage, settings: J
     mut link := try borrow_transfer(req.session, req.drop)
     defer give_back_transfer(req.session, req.drop, mut link)
     mut local := new_local_fs()
-    paste := PasteRequest{ id: req.drop, local: remote_join(stage.stage_folder(req.drop), req.rel), name: req.name, kind: req.kind, limit_mb: 0 }
+    paste := application.PasteRequest{ id: req.drop, local: remote_join(stage.stage_folder(req.drop), req.rel), name: req.name, kind: req.kind, limit_mb: 0 }
     return paste_over_session(mut link, mut local, settings, paste)
 }
 
@@ -45,7 +45,7 @@ type ClipboardPasteReq struct {
 // The page's paste event arrived empty (WebKitGTK): the core reads the clipboard and
 // stages an image in the drop the page named, for `terminal_paste` to write. Bound
 // synchronously: GTK's clipboard is read on the UI thread.
-fn rpc_terminal_clipboard_read(params: str, mut clip: OsClipboard, mut stage: FsDropStage, st: GuiState) -> str! {
+fn rpc_terminal_clipboard_read(params: str, mut clip: uievents.OsClipboard, mut stage: process.FsDropStage, st: GuiState) -> str! {
     try st.require_open_window()
     req := try parse_req[ClipboardPasteReq](params)
     return json.stringify(try stage_clipboard(mut clip, mut stage, req.drop, req.rel))
@@ -56,11 +56,11 @@ fn rpc_terminal_clipboard_read(params: str, mut clip: OsClipboard, mut stage: Fs
 // permission. Bound synchronously, like `terminal_clipboard_read` (GTK's clipboard is
 // read on the UI thread). The lock screen's master password field pastes too: the
 // clipboard is not the vault, and Flint's own secret is refused either way.
-fn rpc_field_clipboard_read(mut clip: OsClipboard) -> str! {
+fn rpc_field_clipboard_read(mut clip: uievents.OsClipboard) -> str! {
     return json.stringify(try field_paste_text(mut clip))
 }
 
-fn rpc_field_clipboard_copy(params: str, mut clip: OsClipboard) -> str! {
+fn rpc_field_clipboard_copy(params: str, mut clip: uievents.OsClipboard) -> str! {
     req := try parse_req[NameReq](params)
     try field_copy_text(mut clip, req.name)
     return ok_json()

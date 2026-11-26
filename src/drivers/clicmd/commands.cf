@@ -10,9 +10,9 @@ import "core:os"
 import "core:json"
 import "../../adapters/config"
 import "../../adapters/crypto"
-import "../../adapters/keychain"
+import "../../adapters/keychain" as flint_keychain
 import "../../adapters/process"
-import "../../adapters/ssh"
+import "../../adapters/ssh" as flint_ssh
 import "../../adapters/vault"
 import "../../application"
 import "../../domain"
@@ -44,20 +44,20 @@ fn vault_selector(p: ParsedArgs) -> str {
 // CLI on its own), or the vault the running app holds (a command served over the
 // socket; `session` is that vault, already attached to the store).
 type VaultSource struct {
-    kc:      OsKeychain
+    kc:      flint_keychain.OsKeychain
     served:  bool
-    session: VaultSession
+    session: application.VaultSession
 }
 
-fn local_vault_source(kc: OsKeychain) -> VaultSource {
-    return VaultSource{ kc: kc, served: false, session: VaultSession{ path: "", name: "", id: "", secrets_key: [], cached: false } }
+fn local_vault_source(kc: flint_keychain.OsKeychain) -> VaultSource {
+    return VaultSource{ kc: kc, served: false, session: application.VaultSession{ path: "", name: "", id: "", secrets_key: [], cached: false } }
 }
 
-fn served_vault_source(kc: OsKeychain, session: VaultSession) -> VaultSource {
+fn served_vault_source(kc: flint_keychain.OsKeychain, session: application.VaultSession) -> VaultSource {
     return VaultSource{ kc: kc, served: true, session: session }
 }
 
-fn open_target(p: ParsedArgs, sec: SecretInput, c: Sodium, mut store: LockedVaultStore, src: VaultSource, recents: JsonRecentStore) -> VaultSession! {
+fn open_target(p: ParsedArgs, sec: SecretInput, c: crypto.Sodium, mut store: vault.LockedVaultStore, src: VaultSource, recents: config.JsonRecentStore) -> application.VaultSession! {
     target := try resolve_vault(recents, vault_selector(p))
     if src.served {
         // The app checked the target before running the command; this is a guard.
@@ -66,26 +66,26 @@ fn open_target(p: ParsedArgs, sec: SecretInput, c: Sodium, mut store: LockedVaul
         }
         return src.session
     }
-    return unlock_cached_or_typed(c, mut store, src.kc, recents, target.path, target.name, sec)
+    return try unlock_cached_or_typed(c, mut store, src.kc, recents, target.path, target.name, sec)
 }
 
 // Unlocks `path` with the key the keychain caches for it, or else with the master
 // password (from stdin or typed).
-fn unlock_cached_or_typed(c: Sodium, mut store: LockedVaultStore, kc: OsKeychain, recents: JsonRecentStore, path: str, name: str, sec: SecretInput) -> VaultSession! {
+fn unlock_cached_or_typed(c: crypto.Sodium, mut store: vault.LockedVaultStore, kc: flint_keychain.OsKeychain, recents: config.JsonRecentStore, path: str, name: str, sec: SecretInput) -> application.VaultSession! {
     cached := unlock_vault(c, mut store, kc, recents, path, "", false) or err {
         msg := "{err.message()}"
         if error_code_of(msg) != ERR_LOCKED {
             return error(msg)
         }
         password := try master_password_for(sec, name)
-        return unlock_vault(c, mut store, kc, recents, path, password, false)
+        return try unlock_vault(c, mut store, kc, recents, path, password, false)
     }
     return cached
 }
 
 // ---- vault ---------------------------------------------------------------------
 
-fn cmd_vault(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store: LockedVaultStore, src: VaultSource, recents: JsonRecentStore) -> void! {
+fn cmd_vault(p: ParsedArgs, sec: SecretInput, as_json: bool, c: crypto.Sodium, mut store: vault.LockedVaultStore, src: VaultSource, recents: config.JsonRecentStore) -> void! {
     verb := p.positional(1)
     if verb == "create" {
         try p.allow_flags("vault create", ["--name"])
@@ -134,7 +134,7 @@ fn cmd_vault(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut stor
         target := try resolve_vault(recents, vault_selector(p))
         try lock_vault(mut store, src.kc, target.path)
         if as_json {
-            say(json.stringify(VaultInfo{ path: target.path, name: target.name, format: VAULT_FORMAT_V1, cached: false }))
+            say(json.stringify(application.VaultInfo{ path: target.path, name: target.name, format: VAULT_FORMAT_V1, cached: false }))
         } else {
             say("Locked vault '{target.name}': Flint holds no key for it and none is cached on this machine.")
         }
@@ -144,7 +144,7 @@ fn cmd_vault(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut stor
         try p.allow_flags("vault status", [])
         try p.expect_args("vault status", 0, "[--vault <name|path>]")
         target := try resolve_vault(recents, vault_selector(p))
-        mut st := VaultStatus{ path: "", name: "", exists: false, unlocked: false, cached: false, groups: 0, hosts: 0, keys: 0, credentials: 0, activity_days: -1, remote: no_remote_status(), lock_reason: "", lock_detail: "" }
+        mut st := application.VaultStatus{ path: "", name: "", exists: false, unlocked: false, cached: false, groups: 0, hosts: 0, keys: 0, credentials: 0, activity_days: -1, remote: no_remote_status(), lock_reason: "", lock_detail: "" }
         if src.served && same_file_path(target.path, src.session.path) {
             // Unlocked in the app: counts from the open store, no keychain read.
             st = try open_vault_status(store, store, src.session)
@@ -267,14 +267,14 @@ type PasswdReport struct {
     path:       str              `json:"path"`
     name:       str              `json:"name"`
     remembered: bool             `json:"remembered"`
-    strength:   PasswordStrength `json:"strength"`
+    strength:   domain.PasswordStrength `json:"strength"`
 }
 
 // `flint vault passwd` (milestone 40, D-095): the current master password, then the
 // new one twice (or both on stdin, one per line). Refused while the app holds the
 // vault unlocked: one holder of an unlocked vault (v3); Settings → Vault changes it
 // there.
-fn cmd_vault_passwd(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store: LockedVaultStore, src: VaultSource, recents: JsonRecentStore) -> void! {
+fn cmd_vault_passwd(p: ParsedArgs, sec: SecretInput, as_json: bool, c: crypto.Sodium, mut store: vault.LockedVaultStore, src: VaultSource, recents: config.JsonRecentStore) -> void! {
     target := try resolve_vault(recents, vault_selector(p))
     if src.served || app_holds_unlocked(target) {
         return error(coded(ERR_CONFLICT, "Flint has vault '{target.name}' unlocked; change its master password there (Settings → Vault), or lock it in Flint first"))
@@ -315,7 +315,7 @@ fn cmd_vault_passwd(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, m
 // the vault (a cloud folder's) into it, record by record, and prints what changed.
 // The master password typed for this command opens both (Principle 11). Refused while
 // the app holds the vault unlocked: one holder of an unlocked vault (v3).
-fn cmd_vault_merge(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store: LockedVaultStore, src: VaultSource, recents: JsonRecentStore) -> void! {
+fn cmd_vault_merge(p: ParsedArgs, sec: SecretInput, as_json: bool, c: crypto.Sodium, mut store: vault.LockedVaultStore, src: VaultSource, recents: config.JsonRecentStore) -> void! {
     target := try resolve_vault(recents, vault_selector(p))
     if src.served || app_holds_unlocked(target) {
         return error(coded(ERR_CONFLICT, "Flint has vault '{target.name}' unlocked; lock it in Flint first, then merge"))
@@ -339,7 +339,7 @@ fn cmd_vault_merge(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mu
 
 // ---- group ---------------------------------------------------------------------
 
-fn cmd_group(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store: LockedVaultStore, src: VaultSource, recents: JsonRecentStore) -> void! {
+fn cmd_group(p: ParsedArgs, sec: SecretInput, as_json: bool, c: crypto.Sodium, mut store: vault.LockedVaultStore, src: VaultSource, recents: config.JsonRecentStore) -> void! {
     verb := p.positional(1)
     if verb != "add" && verb != "list" && verb != "rename" && verb != "rm" {
         return error(coded(ERR_USAGE, "unknown command `flint group {verb}`; see `flint help`"))
@@ -364,7 +364,7 @@ fn cmd_group(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut stor
         }
         return
     }
-    mut g := GroupView{ path: "", name: "", hosts: 0, subgroups: 0 }
+    mut g := application.GroupView{ path: "", name: "", hosts: 0, subgroups: 0 }
     mut done := ""
     if verb == "add" {
         g = try add_group(c, mut store, p.positional(2))
@@ -385,7 +385,7 @@ fn cmd_group(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut stor
 
 // ---- host ----------------------------------------------------------------------
 
-fn host_patch_from_flags(p: ParsedArgs, sec: SecretInput) -> HostPatch! {
+fn host_patch_from_flags(p: ParsedArgs, sec: SecretInput) -> application.HostPatch! {
     mut patch := empty_host_patch()
     if p.has_flag("--alias") {
         patch.alias = p.flag_value("--alias")
@@ -496,7 +496,7 @@ fn host_field_flags() -> []str {
     return ["--label", "--hostname", "--port", "--user", "--group", "--tag", "--no-tags", "--color", "--notes", "--jump", "--cred", "--key", "--password", "--password-stdin", "--sudo-password", "--sudo-password-stdin", "--command", "--keep-shell", "--no-keep-shell", "--type", "--domain", "--audio", "--microphone", "--no-microphone"]
 }
 
-fn cmd_host(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store: LockedVaultStore, src: VaultSource, recents: JsonRecentStore) -> void! {
+fn cmd_host(p: ParsedArgs, sec: SecretInput, as_json: bool, c: crypto.Sodium, mut store: vault.LockedVaultStore, src: VaultSource, recents: config.JsonRecentStore) -> void! {
     verb := p.positional(1)
     if verb == "add" {
         try p.allow_flags("host add", host_field_flags())
@@ -571,7 +571,7 @@ fn cmd_host(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store
 
 // ---- key -----------------------------------------------------------------------
 
-fn cmd_key(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store: LockedVaultStore, src: VaultSource, recents: JsonRecentStore, inspector: LibsshKeyInspector) -> void! {
+fn cmd_key(p: ParsedArgs, sec: SecretInput, as_json: bool, c: crypto.Sodium, mut store: vault.LockedVaultStore, src: VaultSource, recents: config.JsonRecentStore, inspector: flint_ssh.LibsshKeyInspector) -> void! {
     verb := p.positional(1)
     if verb == "add" {
         try p.allow_flags("key add", ["--file", "--key-stdin", "--passphrase", "--passphrase-stdin"])
@@ -661,7 +661,7 @@ fn read_key_file(path: str) -> str! {
 
 // ---- cred ----------------------------------------------------------------------
 
-fn cred_patch_from_flags(p: ParsedArgs, sec: SecretInput) -> CredPatch! {
+fn cred_patch_from_flags(p: ParsedArgs, sec: SecretInput) -> application.CredPatch! {
     mut patch := empty_cred_patch()
     if p.has_flag("--name") {
         patch.name = p.flag_value("--name")
@@ -688,7 +688,7 @@ fn cred_patch_from_flags(p: ParsedArgs, sec: SecretInput) -> CredPatch! {
     return patch
 }
 
-fn cmd_cred(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store: LockedVaultStore, src: VaultSource, recents: JsonRecentStore) -> void! {
+fn cmd_cred(p: ParsedArgs, sec: SecretInput, as_json: bool, c: crypto.Sodium, mut store: vault.LockedVaultStore, src: VaultSource, recents: config.JsonRecentStore) -> void! {
     verb := p.positional(1)
     if verb == "add" {
         try p.allow_flags("cred add", ["--user", "--key", "--password", "--password-stdin"])

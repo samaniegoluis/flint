@@ -65,7 +65,7 @@ fn rdp_error(code: i64, detail: str) -> str {
     return core_msg(MSG_RDP_FAILED, [detail])
 }
 
-fn (self: FreeRdpDesktop) rd_open(tab: str, t: RdpTarget, timeout_ms: i64) -> RdpDesktop! {
+fn (self: FreeRdpDesktop) rd_open(tab: str, t: domain.RdpTarget, timeout_ms: i64) -> domain.RdpDesktop! {
     if t.hostname.len() == 0 || t.user.len() == 0 {
         return error(coded(ERR_INVALID, "an RDP host needs an address and a user"))
     }
@@ -101,10 +101,10 @@ fn (self: FreeRdpDesktop) rd_open(tab: str, t: RdpTarget, timeout_ms: i64) -> Rd
     if rc != 0 {
         return error(rdp_error(i64(rc), detail))
     }
-    return RdpDesktop{ width: i64(w), height: i64(h), frame_port: i64(port), frame_token: token, graphics: graphics, rtt_ms: t.rtt_ms }
+    return domain.RdpDesktop{ width: i64(w), height: i64(h), frame_port: i64(port), frame_token: token, graphics: graphics, rtt_ms: t.rtt_ms }
 }
 
-fn (self: FreeRdpDesktop) rd_presented_cert(tab: str) -> RdpCert {
+fn (self: FreeRdpDesktop) rd_presented_cert(tab: str) -> domain.RdpCert {
     mut subject := ""
     mut issuer := ""
     mut fp := ""
@@ -114,7 +114,7 @@ fn (self: FreeRdpDesktop) rd_presented_cert(tab: str) -> RdpCert {
     cpp {
         flint_rdp::presented_cert(tab, subject, issuer, fp, from, to);
     }
-    return RdpCert{ subject: subject, issuer: issuer, fingerprint: fp, valid_from: from, valid_to: to }
+    return domain.RdpCert{ subject: subject, issuer: issuer, fingerprint: fp, valid_from: from, valid_to: to }
 }
 
 fn (self: FreeRdpDesktop) rd_resize(tab: str, width: i64, height: i64) -> void! {
@@ -131,7 +131,7 @@ fn (self: FreeRdpDesktop) rd_resize(tab: str, width: i64, height: i64) -> void! 
 }
 
 // A layout as the shim reads it (milestone 38): "x,y,w,h,p;..." with the primary first.
-fn layout_text(ms: []RdpMonitor) -> str {
+fn layout_text(ms: []domain.RdpMonitor) -> str {
     mut s := ""
     for i, m in ms {
         if i > 0 {
@@ -148,8 +148,8 @@ fn layout_text(ms: []RdpMonitor) -> str {
 
 // The shim's layout text back as monitors; the local ids are not the shim's, so they
 // are left empty (the core keeps them where it needs them).
-fn parse_layout_text(s: str) -> []RdpMonitor {
-    mut res: []RdpMonitor = []
+fn parse_layout_text(s: str) -> []domain.RdpMonitor {
+    mut res: []domain.RdpMonitor = []
     if s.len() == 0 {
         return res
     }
@@ -162,12 +162,12 @@ fn parse_layout_text(s: str) -> []RdpMonitor {
         y := i64.parse(f[1]) or { return [] }
         w := i64.parse(f[2]) or { return [] }
         h := i64.parse(f[3]) or { return [] }
-        res.push(RdpMonitor{ local_id: "", x: x, y: y, width: w, height: h, primary: f[4] == "1" })
+        res.push(domain.RdpMonitor{ local_id: "", x: x, y: y, width: w, height: h, primary: f[4] == "1" })
     }
     return res
 }
 
-fn (self: FreeRdpDesktop) rd_set_layout(tab: str, monitors: []RdpMonitor) -> void! {
+fn (self: FreeRdpDesktop) rd_set_layout(tab: str, monitors: []domain.RdpMonitor) -> void! {
     try check_rdp_layout(monitors)
     mut rc: i32 = 0
     layout := layout_text(monitors)
@@ -180,7 +180,7 @@ fn (self: FreeRdpDesktop) rd_set_layout(tab: str, monitors: []RdpMonitor) -> voi
     }
 }
 
-fn (self: FreeRdpDesktop) rd_wait(tab: str, wait_ms: i64) -> RdpEvent {
+fn (self: FreeRdpDesktop) rd_wait(tab: str, wait_ms: i64) -> domain.RdpEvent {
     mut kind: i32 = 0
     mut code: i32 = 0
     mut detail := ""
@@ -196,24 +196,24 @@ fn (self: FreeRdpDesktop) rd_wait(tab: str, wait_ms: i64) -> RdpEvent {
         if code != 0 {
             msg = rdp_error(i64(code), detail)
         }
-        return RdpEvent{ kind: RDP_EVENT_ENDED, message: msg, width: 0, height: 0 }
+        return domain.RdpEvent{ kind: RDP_EVENT_ENDED, message: msg, width: 0, height: 0 }
     }
     if kind == 2 {
-        return RdpEvent{ kind: RDP_EVENT_RESIZE, message: "", width: i64(w), height: i64(h), monitors: parse_layout_text(layout) }
+        return domain.RdpEvent{ kind: RDP_EVENT_RESIZE, message: "", width: i64(w), height: i64(h), monitors: parse_layout_text(layout) }
     }
     if kind == 3 {
-        return RdpEvent{ kind: RDP_EVENT_CLIP_TEXT, message: detail, width: 0, height: 0 }
+        return domain.RdpEvent{ kind: RDP_EVENT_CLIP_TEXT, message: detail, width: 0, height: 0 }
     }
     if kind == 4 {
-        return RdpEvent{ kind: RDP_EVENT_CLIP_REQUEST, message: "", width: 0, height: 0 }
+        return domain.RdpEvent{ kind: RDP_EVENT_CLIP_REQUEST, message: "", width: 0, height: 0 }
     }
     if kind == 5 {
-        return RdpEvent{ kind: RDP_EVENT_GRAPHICS, message: detail, width: i64(w), height: i64(h), monitors: parse_layout_text(layout) }
+        return domain.RdpEvent{ kind: RDP_EVENT_GRAPHICS, message: detail, width: i64(w), height: i64(h), monitors: parse_layout_text(layout) }
     }
     if kind == 6 {
-        return RdpEvent{ kind: RDP_EVENT_POINTER, message: "", width: 0, height: 0, cursor: parse_cursor(detail) }
+        return domain.RdpEvent{ kind: RDP_EVENT_POINTER, message: "", width: 0, height: 0, cursor: parse_cursor(detail) }
     }
-    return RdpEvent{ kind: RDP_EVENT_RUNNING, message: "", width: 0, height: 0 }
+    return domain.RdpEvent{ kind: RDP_EVENT_RUNNING, message: "", width: 0, height: 0 }
 }
 
 fn (self: FreeRdpDesktop) rd_clip_announce(tab: str, has_text: bool) -> void! {
@@ -255,9 +255,9 @@ fn cursor_num(s: str) -> i64 {
     return i64.parse(s) or 0
 }
 
-fn parse_cursor(line: str) -> RdpCursor {
+fn parse_cursor(line: str) -> domain.RdpCursor {
     parts := line.split(" ")
-    mut c := RdpCursor{ action: RDP_CURSOR_DEFAULT, id: 0, width: 0, height: 0, hot_x: 0, hot_y: 0, rgba: "" }
+    mut c := domain.RdpCursor{ action: RDP_CURSOR_DEFAULT, id: 0, width: 0, height: 0, hot_x: 0, hot_y: 0, rgba: "" }
     if parts.len() == 7 && parts[0] == "image" {
         c.action = RDP_CURSOR_IMAGE
         c.id = cursor_num(parts[1])
@@ -309,7 +309,7 @@ fn (self: FreeRdpDesktop) rd_keyboard_layout(tab: str) -> i64 {
     return v
 }
 
-fn (self: FreeRdpDesktop) rd_type_event(tab: str, e: RdpKeyEvent) -> void! {
+fn (self: FreeRdpDesktop) rd_type_event(tab: str, e: domain.RdpKeyEvent) -> void! {
     mut kind: i32 = 0
     if e.kind == RDP_KEY_EVENT_UNICODE {
         kind = 1
@@ -357,7 +357,7 @@ fn pointer_kind(kind: str) -> i32 {
     return 0
 }
 
-fn (self: FreeRdpDesktop) rd_pointer(tab: str, p: RdpPointer) -> void! {
+fn (self: FreeRdpDesktop) rd_pointer(tab: str, p: domain.RdpPointer) -> void! {
     mut rc: i32 = 0
     kind := pointer_kind(p.kind)
     button := i32(p.button)
@@ -373,7 +373,7 @@ fn (self: FreeRdpDesktop) rd_pointer(tab: str, p: RdpPointer) -> void! {
     }
 }
 
-fn (self: FreeRdpDesktop) rd_stats(tab: str) -> RdpStats! {
+fn (self: FreeRdpDesktop) rd_stats(tab: str) -> domain.RdpStats! {
     mut rc: i32 = 0
     mut updates: i64 = 0
     mut bytes_in: i64 = 0
@@ -395,7 +395,7 @@ fn (self: FreeRdpDesktop) rd_stats(tab: str) -> RdpStats! {
     if rc != 0 {
         return error(rdp_error(i64(rc), "stats"))
     }
-    return RdpStats{ updates: updates, bytes_in: bytes_in, commands: commands, decode_us: decode_us, frames_read: frames_read, pipeline: pipeline, codec: codec, h264: h264, rereads: rereads, stale_px: stale_px, link_kbps: link_kbps, link_rtt_ms: link_rtt_ms, mode: mode }
+    return domain.RdpStats{ updates: updates, bytes_in: bytes_in, commands: commands, decode_us: decode_us, frames_read: frames_read, pipeline: pipeline, codec: codec, h264: h264, rereads: rereads, stale_px: stale_px, link_kbps: link_kbps, link_rtt_ms: link_rtt_ms, mode: mode }
 }
 
 fn (self: FreeRdpDesktop) rd_probe_rtt(host: str, port: i64, timeout_ms: i64) -> i64 {

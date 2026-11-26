@@ -41,7 +41,7 @@ fn (self: SshConn) last_error() -> str {
 // Opens a TCP connection and completes the SSH handshake. The host key is NOT
 // verified here; call `host_key_sha256` and check it before authenticating.
 fn ssh_dial(host: str, port: i32, user: str, timeout_secs: i64) -> SshConn! {
-    return ssh_dial_over(host, port, user, timeout_secs, -1, "")
+    return try ssh_dial_over(host, port, user, timeout_secs, -1, "")
 }
 
 // Like ssh_dial, but over an already connected socket `fd` (a jump-host tunnel)

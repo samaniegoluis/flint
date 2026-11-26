@@ -11,7 +11,7 @@ import "core:time"
 import "core:sync"
 import "../../ports"
 
-fn accepts_tunnels[R: TunnelRunner](r: R) -> bool {
+fn accepts_tunnels[R: ports.TunnelRunner](r: R) -> bool {
     return true
 }
 
@@ -21,7 +21,7 @@ test "NativeTunnels satisfies the TunnelRunner port" {
 
 fn tunnel_key_link(port: i32, key: str) -> SshLink! {
     mut link := new_ssh_link()
-    try link.link_dial("127.0.0.1", i64(port), os.getenv("USER"), 5, "")
+    try link.link_dial("127.0.0.1", i64(port), (os.getenv("USER") or ""), 5, "")
     try link.link_auth_key(key, "")
     return link
 }
@@ -30,7 +30,7 @@ fn tunnel_key_link(port: i32, key: str) -> SshLink! {
 // `n` bytes, and returns how many arrived.
 fn bytes_through(local: i64, key: str, n: i64) -> i64! {
     mut link := new_ssh_link()
-    try link.link_dial("127.0.0.1", local, os.getenv("USER"), 5, "")
+    try link.link_dial("127.0.0.1", local, (os.getenv("USER") or ""), 5, "")
     defer link.link_hangup()
     try link.link_auth_key(key, "")
     try link.link_exec_start("head -c {n} /dev/zero | tr '\\000' a")
@@ -81,7 +81,7 @@ test "two connections stream through one tunnel while a terminal runs on the hos
         try term.link_channel_write("echo term-$((40+2))\n")
         mut heard := ""
         for _ in 0..200 {
-            chunk := term.link_channel_read(50) or ExecChunk{ stdout: "", stderr: "", done: false, exit_code: 0, signal: "" }
+            chunk := term.link_channel_read(50) or domain.ExecChunk{ stdout: "", stderr: "", done: false, exit_code: 0, signal: "" }
             heard = heard + chunk.stdout
             if heard.contains("term-42") {
                 break
@@ -220,13 +220,13 @@ fn pretend_gone(port: i64, check_ms: i64) {
     }
 }
 
-fn live_of(runner: NativeTunnels, host: str, id: str) -> TunnelLive {
+fn live_of(runner: NativeTunnels, host: str, id: str) -> domain.TunnelLive {
     for l in runner.tunnel_live() {
         if l.host_id == host && l.tunnel_id == id {
             return l
         }
     }
-    return TunnelLive{ host_id: "", tunnel_id: "", up: false, down: false, port: 0, connections: 0, opened: 0, failed: 0, error: "" }
+    return domain.TunnelLive{ host_id: "", tunnel_id: "", up: false, down: false, port: 0, connections: 0, opened: 0, failed: 0, error: "" }
 }
 
 test "a tunnel reads up only while the system lists its port, and says why when not" {

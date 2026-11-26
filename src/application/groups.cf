@@ -6,7 +6,7 @@ package application
 import "../domain"
 import "../ports"
 
-fn group_by_id(groups: []Group, id: str) -> i64 {
+fn group_by_id(groups: []domain.Group, id: str) -> i64 {
     for i, g in groups {
         if g.id == id {
             return i64(i)
@@ -16,7 +16,7 @@ fn group_by_id(groups: []Group, id: str) -> i64 {
 }
 
 // "a/b/c" for a group id, or "" for none.
-fn group_path_of(groups: []Group, id: str) -> str {
+fn group_path_of(groups: []domain.Group, id: str) -> str {
     mut parts: []str = []
     mut cur := id
     mut guard := 0
@@ -42,7 +42,7 @@ fn group_path_of(groups: []Group, id: str) -> str {
     return path
 }
 
-fn child_group(groups: []Group, parent_id: str, name: str) -> i64 {
+fn child_group(groups: []domain.Group, parent_id: str, name: str) -> i64 {
     for i, g in groups {
         if g.parent_id == parent_id && lower_ascii(g.name) == lower_ascii(name) {
             return i64(i)
@@ -52,7 +52,7 @@ fn child_group(groups: []Group, parent_id: str, name: str) -> i64 {
 }
 
 // The id of the group at `path`, or "" when no such group exists.
-fn find_group_id(groups: []Group, path: str) -> str {
+fn find_group_id(groups: []domain.Group, path: str) -> str {
     mut parent := ""
     for seg in split_group_path(path) {
         idx := child_group(groups, parent, seg)
@@ -64,7 +64,7 @@ fn find_group_id(groups: []Group, path: str) -> str {
     return parent
 }
 
-fn require_group_id(groups: []Group, path: str) -> str! {
+fn require_group_id(groups: []domain.Group, path: str) -> str! {
     if split_group_path(path).len() == 0 {
         return error(coded(ERR_INVALID, "group path must not be empty"))
     }
@@ -77,7 +77,7 @@ fn require_group_id(groups: []Group, path: str) -> str! {
 
 // Creates every missing group along `path` and returns the last one's id. Runs
 // inside the caller's transaction.
-fn ensure_group_path[C: Crypto, S: VaultStore](crypto: C, mut store: S, path: str) -> str! {
+fn ensure_group_path[C: ports.Crypto, S: ports.VaultStore](crypto: C, mut store: S, path: str) -> str! {
     segments := split_group_path(path)
     if segments.len() == 0 {
         return error(coded(ERR_INVALID, "group path must not be empty"))
@@ -93,7 +93,7 @@ fn ensure_group_path[C: Crypto, S: VaultStore](crypto: C, mut store: S, path: st
         if idx >= 0 {
             parent = groups[usize(idx)].id
         } else {
-            g := Group{ id: new_row_id(crypto), parent_id: parent, name: seg }
+            g := domain.Group{ id: new_row_id(crypto), parent_id: parent, name: seg }
             try store.group_put(g)
             groups.push(g)
             parent = g.id
@@ -102,7 +102,7 @@ fn ensure_group_path[C: Crypto, S: VaultStore](crypto: C, mut store: S, path: st
     return parent
 }
 
-fn group_view(groups: []Group, hosts: []Host, g: Group) -> GroupView {
+fn group_view(groups: []domain.Group, hosts: []domain.Host, g: domain.Group) -> GroupView {
     mut n_hosts: i64 = 0
     for h in hosts {
         if h.group_id == g.id {
@@ -118,7 +118,7 @@ fn group_view(groups: []Group, hosts: []Host, g: Group) -> GroupView {
     return GroupView{ path: group_path_of(groups, g.id), name: g.name, hosts: n_hosts, subgroups: n_sub }
 }
 
-fn add_group[C: Crypto, S: VaultStore](crypto: C, mut store: S, path: str) -> GroupView! {
+fn add_group[C: ports.Crypto, S: ports.VaultStore](crypto: C, mut store: S, path: str) -> GroupView! {
     before := try store.groups_all()
     if split_group_path(path).len() > 0 && find_group_id(before, path).len() > 0 {
         return error(coded(ERR_CONFLICT, "group '{path}' already exists"))
@@ -134,7 +134,7 @@ fn add_group[C: Crypto, S: VaultStore](crypto: C, mut store: S, path: str) -> Gr
 }
 
 // Every group, sorted by path.
-fn list_groups[S: VaultStore](store: S) -> []GroupView! {
+fn list_groups[S: ports.VaultStore](store: S) -> []GroupView! {
     groups := try store.groups_all()
     hosts := try store.hosts_all()
     mut views: []GroupView = []
@@ -154,7 +154,7 @@ fn list_groups[S: VaultStore](store: S) -> []GroupView! {
     return views
 }
 
-fn rename_group[S: VaultStore](mut store: S, path: str, new_name: str) -> GroupView! {
+fn rename_group[S: ports.VaultStore](mut store: S, path: str, new_name: str) -> GroupView! {
     try check_group_name(new_name)
     groups := try store.groups_all()
     id := try require_group_id(groups, path)
@@ -170,7 +170,7 @@ fn rename_group[S: VaultStore](mut store: S, path: str, new_name: str) -> GroupV
 }
 
 // Removes an empty group. A group that still holds hosts or subgroups is refused.
-fn remove_group[S: VaultStore](mut store: S, path: str) -> GroupView! {
+fn remove_group[S: ports.VaultStore](mut store: S, path: str) -> GroupView! {
     groups := try store.groups_all()
     hosts := try store.hosts_all()
     id := try require_group_id(groups, path)

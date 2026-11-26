@@ -28,7 +28,7 @@ fn (self: OsScreens) screens_unsupported() -> str {
     return why
 }
 
-fn (self: OsScreens) screens_list() -> []LocalMonitor {
+fn (self: OsScreens) screens_list() -> []domain.LocalMonitor {
     mut text := ""
     // CFIRE-UPSTREAM: CF-126
     cpp {
@@ -48,8 +48,8 @@ fn (self: OsScreens) screens_main() -> str {
 
 // The shim's lines (id, name, x, y, w, h, scale, primary, physical, tab-separated) as
 // monitors; a line that does not read is left out.
-fn parse_monitor_lines(text: str) -> []LocalMonitor {
-    mut res: []LocalMonitor = []
+fn parse_monitor_lines(text: str) -> []domain.LocalMonitor {
+    mut res: []domain.LocalMonitor = []
     for line in text.split("\n") {
         f := line.split("\t")
         if f.len() != 9 || f[0].len() == 0 {
@@ -63,7 +63,7 @@ fn parse_monitor_lines(text: str) -> []LocalMonitor {
         if w <= 0 || h <= 0 {
             continue
         }
-        res.push(LocalMonitor{ id: f[0], name: f[1], x: x, y: y, width: w, height: h, scale: scale, primary: f[7] == "1", physical: f[8] == "1" })
+        res.push(domain.LocalMonitor{ id: f[0], name: f[1], x: x, y: y, width: w, height: h, scale: scale, primary: f[7] == "1", physical: f[8] == "1" })
     }
     return res
 }

@@ -6,8 +6,8 @@ import "../domain"
 // ---- Token store ---------------------------------------------------------------
 
 type FakeTokenStore struct {
-    tokens:   []Token
-    activity: []ActivityEntry
+    tokens:   []domain.Token
+    activity: []domain.ActivityEntry
     next_id:  i64
     retention: i64
 }
@@ -23,11 +23,11 @@ fn new_fake_token_store() -> FakeTokenStore {
     return FakeTokenStore{ tokens: [], activity: [], next_id: 1, retention: -1 }
 }
 
-fn (self: FakeTokenStore) tokens_all() -> []Token! {
+fn (self: FakeTokenStore) tokens_all() -> []domain.Token! {
     return self.tokens
 }
 
-fn (mut self: FakeTokenStore) token_put(t: Token) -> void! {
+fn (mut self: FakeTokenStore) token_put(t: domain.Token) -> void! {
     for i, o in self.tokens {
         if o.id == t.id {
             self.tokens[i] = t
@@ -37,7 +37,7 @@ fn (mut self: FakeTokenStore) token_put(t: Token) -> void! {
     self.tokens.push(t)
 }
 
-fn (mut self: FakeTokenStore) activity_add(e: ActivityEntry, keep: ActivityKeep) -> i64! {
+fn (mut self: FakeTokenStore) activity_add(e: domain.ActivityEntry, keep: domain.ActivityKeep) -> i64! {
     mut row := e
     row.id = self.next_id
     self.next_id = self.next_id + 1
@@ -46,7 +46,7 @@ fn (mut self: FakeTokenStore) activity_add(e: ActivityEntry, keep: ActivityKeep)
     return row.id
 }
 
-fn (mut self: FakeTokenStore) activity_finish(id: i64, end: ActivityEnd) -> bool! {
+fn (mut self: FakeTokenStore) activity_finish(id: i64, end: domain.ActivityEnd) -> bool! {
     for i in 0..self.activity.len() {
         if self.activity[i].id == id && self.activity[i].state == ACTIVITY_RUNNING {
             self.activity[i].state = ACTIVITY_ENDED
@@ -59,8 +59,8 @@ fn (mut self: FakeTokenStore) activity_finish(id: i64, end: ActivityEnd) -> bool
     return false
 }
 
-fn (self: FakeTokenStore) activity_of_grant(grant_id: str, limit: i64) -> []ActivityEntry! {
-    mut page: []ActivityEntry = []
+fn (self: FakeTokenStore) activity_of_grant(grant_id: str, limit: i64) -> []domain.ActivityEntry! {
+    mut page: []domain.ActivityEntry = []
     n := self.activity.len()
     for k in 0..n {
         a := self.activity[n - 1 - k]
@@ -72,8 +72,8 @@ fn (self: FakeTokenStore) activity_of_grant(grant_id: str, limit: i64) -> []Acti
 }
 
 // By age only: the size cap is the store's, tested with SQLCipher.
-fn (mut self: FakeTokenStore) activity_prune(keep: ActivityKeep) -> i64! {
-    mut kept: []ActivityEntry = []
+fn (mut self: FakeTokenStore) activity_prune(keep: domain.ActivityKeep) -> i64! {
+    mut kept: []domain.ActivityEntry = []
     n := self.activity.len()
     for i, a in self.activity {
         if a.at >= keep.since_at || i == n - 1 {
@@ -103,8 +103,8 @@ fn (mut self: FakeTokenStore) set_activity_retention(days: i64) -> void! {
     self.retention = days
 }
 
-fn (self: FakeTokenStore) activity_page(before_id: i64, limit: i64) -> []ActivityEntry! {
-    mut page: []ActivityEntry = []
+fn (self: FakeTokenStore) activity_page(before_id: i64, limit: i64) -> []domain.ActivityEntry! {
+    mut page: []domain.ActivityEntry = []
     n := self.activity.len()
     for k in 0..n {
         a := self.activity[n - 1 - k]
@@ -228,8 +228,8 @@ test "a token request says what it allows and where" {
     assert_eq(s.groups.len(), 1)
 }
 
-fn day_entry(day: i64) -> ActivityEntry {
-    return ActivityEntry{ id: 0, at: day * 86400, caller: "c", via: ACTIVITY_VIA_GRANT, token: "", action: ACCESS_EXEC, host: "h", command: "flint exec h -- true", outcome: ACTIVITY_ALLOWED, cut: 0 }
+fn day_entry(day: i64) -> domain.ActivityEntry {
+    return domain.ActivityEntry{ id: 0, at: day * 86400, caller: "c", via: ACTIVITY_VIA_GRANT, token: "", action: ACCESS_EXEC, host: "h", command: "flint exec h -- true", outcome: ACTIVITY_ALLOWED, cut: 0 }
 }
 
 test "the activity log keeps 90 days by default and pages back" {

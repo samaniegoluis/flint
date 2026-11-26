@@ -10,7 +10,7 @@ import "../../domain"
 // Where the tests write real files: FLINT_TEST_TMP, which scripts/test.sh sets on
 // Windows to the run's temp folder (a fixed /tmp there is C:\tmp, outside it), or /tmp.
 fn test_tmp() -> str {
-    return os.getenv("FLINT_TEST_TMP", "/tmp")
+    return (os.getenv("FLINT_TEST_TMP") or "/tmp")
 }
 
 // Migration 001 as shipped. An applied migration must never change (Principle 10);
@@ -62,12 +62,12 @@ fn test_salt_bytes() -> []byte {
     return s
 }
 
-fn marker_host() -> Host {
-    return Host{ id: "h1", alias: "flint-alias-marker", label: "flint-label-marker", hostname: "db01.internal.example.org", port: 2201, username: "flint-user-marker", group_id: "", tags: ["flint-tag-marker", "prod"], color: "#112233", notes: "flint-notes-marker", jump_host_id: "", credential_id: "", key_id: "", password: [byte(1), byte(2), byte(3)], initial_command: "flint-command-marker", keep_shell: false, sudo_password: [] }
+fn marker_host() -> domain.Host {
+    return domain.Host{ id: "h1", alias: "flint-alias-marker", label: "flint-label-marker", hostname: "db01.internal.example.org", port: 2201, username: "flint-user-marker", group_id: "", tags: ["flint-tag-marker", "prod"], color: "#112233", notes: "flint-notes-marker", jump_host_id: "", credential_id: "", key_id: "", password: [byte(1), byte(2), byte(3)], initial_command: "flint-command-marker", keep_shell: false, sudo_password: [] }
 }
 
 // Compiles only if SqlVaultStore satisfies the VaultStore port.
-fn store_port_check[S: VaultStore](mut s: S) -> bool {
+fn store_port_check[S: ports.VaultStore](mut s: S) -> bool {
     hosts := s.hosts_all() or err { return false }
     return hosts.len() >= 0
 }
@@ -76,7 +76,7 @@ test "a v1 vault keeps its salt in the header and leaks no plaintext" {
     path := temp_vault_path("v.flint")
     mut store := new_sql_vault_store()
     try store.vault_create(path, test_key(7), test_salt_bytes())
-    try store.group_put(Group{ id: "g1", parent_id: "", name: "flint-group-marker" })
+    try store.group_put(domain.Group{ id: "g1", parent_id: "", name: "flint-group-marker" })
     mut h := marker_host()
     h.group_id = "g1"
     try store.host_put(h)
@@ -128,8 +128,8 @@ test "rows round-trip and migrations are idempotent" {
 
     // Credentials round-trip too, insert and update (the host columns of migration
     // 003 are not theirs).
-    try store.cred_put(Credential{ id: "c1", name: "ops", username: "deploy", key_id: "", password: [byte(4), byte(5)] })
-    try store.cred_put(Credential{ id: "c1", name: "ops", username: "deploy2", key_id: "", password: [] })
+    try store.cred_put(domain.Credential{ id: "c1", name: "ops", username: "deploy", key_id: "", password: [byte(4), byte(5)] })
+    try store.cred_put(domain.Credential{ id: "c1", name: "ops", username: "deploy2", key_id: "", password: [] })
     creds := try store.creds_all()
     assert_eq(creds.len(), 1)
     assert_eq(creds[0].username, "deploy2")
@@ -267,7 +267,7 @@ test "an RDP host round-trips its type and domain, which never leak" {
     h.initial_command = ""
     h.domain = "flint-domain-marker"
     try store.host_put(h)
-    try store.known_host_put(KnownHost{ addr: "rdp://db01.internal.example.org:3389", key_type: "x509", fingerprint: "AB:CD", host_id: "h1", added_at: "" })
+    try store.known_host_put(domain.KnownHost{ addr: "rdp://db01.internal.example.org:3389", key_type: "x509", fingerprint: "AB:CD", host_id: "h1", added_at: "" })
     hosts := try store.hosts_all()
     assert_eq(hosts[0].host_type, "rdp")
     assert_eq(hosts[0].domain, "flint-domain-marker")
@@ -377,8 +377,8 @@ test "known hosts round-trip, replace by address and survive host removal" {
     mut store := new_sql_vault_store()
     try store.vault_create(path, test_key(7), test_salt_bytes())
     try store.host_put(marker_host())
-    try store.known_host_put(KnownHost{ addr: "[db01.internal.example.org]:2201", key_type: "ssh-ed25519", fingerprint: "SHA256:one", host_id: "h1", added_at: "" })
-    try store.known_host_put(KnownHost{ addr: "[DB01.internal.example.org]:2201", key_type: "ssh-ed25519", fingerprint: "SHA256:two", host_id: "h1", added_at: "" })
+    try store.known_host_put(domain.KnownHost{ addr: "[db01.internal.example.org]:2201", key_type: "ssh-ed25519", fingerprint: "SHA256:one", host_id: "h1", added_at: "" })
+    try store.known_host_put(domain.KnownHost{ addr: "[DB01.internal.example.org]:2201", key_type: "ssh-ed25519", fingerprint: "SHA256:two", host_id: "h1", added_at: "" })
     list := try store.known_hosts_all()
     assert_eq(list.len(), 1)
     assert_eq(list[0].fingerprint, "SHA256:two")
@@ -415,12 +415,12 @@ test "control: an unkeyed sqlite file does expose the hostname" {
     try fs.remove(fs.dirname(path))
 }
 
-fn marker_token(id: str, name: str, revoked_at: i64) -> Token {
-    return Token{ id: id, name: name, hash: "ab" + id, scope: AccessScope{ all: false, groups: ["g1", "g2"], hosts: ["h1"] }, read: true, exec: true, write: false, created_at: 100, expires_at: 200, revoked_at: revoked_at }
+fn marker_token(id: str, name: str, revoked_at: i64) -> domain.Token {
+    return domain.Token{ id: id, name: name, hash: "ab" + id, scope: domain.AccessScope{ all: false, groups: ["g1", "g2"], hosts: ["h1"] }, read: true, exec: true, write: false, created_at: 100, expires_at: 200, revoked_at: revoked_at }
 }
 
-fn marker_entry(n: i64) -> ActivityEntry {
-    return ActivityEntry{ id: 0, at: 1000 + n, caller: "flint-caller-marker", via: ACTIVITY_VIA_GRANT, token: "", action: ACCESS_EXEC, host: "flint-activity-host-marker", command: "flint exec web -- flint-activity-command-marker {n}", outcome: ACTIVITY_ALLOWED, cut: 0 }
+fn marker_entry(n: i64) -> domain.ActivityEntry {
+    return domain.ActivityEntry{ id: 0, at: 1000 + n, caller: "flint-caller-marker", via: ACTIVITY_VIA_GRANT, token: "", action: ACCESS_EXEC, host: "flint-activity-host-marker", command: "flint exec web -- flint-activity-command-marker {n}", outcome: ACTIVITY_ALLOWED, cut: 0 }
 }
 
 test "tokens and activity round-trip, stay encrypted, and the log keeps by age" {
@@ -445,7 +445,7 @@ test "tokens and activity round-trip, stay encrypted, and the log keeps by age" 
 
     // Kept from 1002 on: the two oldest go as the later ones arrive.
     for n in 0..5 {
-        _ = try store.activity_add(marker_entry(n), ActivityKeep{ since_at: 1002, max_bytes: ACTIVITY_MAX_BYTES })
+        _ = try store.activity_add(marker_entry(n), domain.ActivityKeep{ since_at: 1002, max_bytes: ACTIVITY_MAX_BYTES })
     }
     page := try store.activity_page(0, 10)
     assert_eq(page.len(), 3)
@@ -559,7 +559,7 @@ test "the activity log keeps a cut, its retention, and stays under its size cap"
     try attach_test_activity(mut store, path, 8)
     mut e := marker_entry(0)
     e.cut = 42
-    _ = try store.activity_add(e, ActivityKeep{ since_at: 0, max_bytes: ACTIVITY_MAX_BYTES })
+    _ = try store.activity_add(e, domain.ActivityKeep{ since_at: 0, max_bytes: ACTIVITY_MAX_BYTES })
     assert_eq((try store.activity_page(0, 1))[0].cut, 42)
 
     try store.set_activity_retention(365)
@@ -569,19 +569,19 @@ test "the activity log keeps a cut, its retention, and stays under its size cap"
 
     // Each marker entry is about 160 bytes with its row cost: a cap of 500 keeps 3.
     for n in 1..10 {
-        _ = try store.activity_add(marker_entry(n), ActivityKeep{ since_at: 0, max_bytes: 500 })
+        _ = try store.activity_add(marker_entry(n), domain.ActivityKeep{ since_at: 0, max_bytes: 500 })
     }
     kept := try store.activity_page(0, 20)
     assert(kept.len() >= 1 && kept.len() <= 3, "kept {kept.len()}")
     assert_eq(kept[0].at, 1009)
     // A single entry over the cap is still kept: the newest always stays.
-    assert_eq(try store.activity_prune(ActivityKeep{ since_at: 0, max_bytes: 1 }), i64(kept.len()) - 1)
+    assert_eq(try store.activity_prune(domain.ActivityKeep{ since_at: 0, max_bytes: 1 }), i64(kept.len()) - 1)
     assert_eq((try store.activity_page(0, 20)).len(), 1)
 
     assert_eq(try store.activity_count_before(2000), 1)
     assert_eq(try store.activity_count_before(1009), 0)
     // The newest stays even when it is older than the retention.
-    assert_eq(try store.activity_prune(ActivityKeep{ since_at: 5000, max_bytes: 0 }), 0)
+    assert_eq(try store.activity_prune(domain.ActivityKeep{ since_at: 5000, max_bytes: 0 }), 0)
     store.vault_detach()
     try fs.remove(fs.dirname(path))
 }
@@ -600,7 +600,7 @@ test "a vault at schema 6 gains tunnels that round-trip, stay encrypted and go w
     assert_eq((try store.tunnels_all()).len(), 0)
     h := marker_host()
     try store.host_put(h)
-    t := Tunnel{ id: "t1", host_id: h.id, name: "flint-tunnel-marker", local_port: 15432, dest_host: "flint-dest-marker.internal", dest_port: 5432, open_on_connect: true }
+    t := domain.Tunnel{ id: "t1", host_id: h.id, name: "flint-tunnel-marker", local_port: 15432, dest_host: "flint-dest-marker.internal", dest_port: 5432, open_on_connect: true }
     try store.tunnel_put(t)
     mut moved := t
     moved.local_port = 15433
@@ -613,11 +613,11 @@ test "a vault at schema 6 gains tunnels that round-trip, stay encrypted and go w
     assert_eq(got[0].dest_host, "flint-dest-marker.internal")
     // A name is unique in its host, whatever its case.
     mut r := ""
-    store.tunnel_put(Tunnel{ id: "t2", host_id: h.id, name: "FLINT-TUNNEL-MARKER", local_port: 1, dest_host: "x", dest_port: 1, open_on_connect: false }) or err { r = "{err.message()}" }
+    store.tunnel_put(domain.Tunnel{ id: "t2", host_id: h.id, name: "FLINT-TUNNEL-MARKER", local_port: 1, dest_host: "x", dest_port: 1, open_on_connect: false }) or err { r = "{err.message()}" }
     assert(r.len() > 0)
     // A tunnel needs its host.
     r = ""
-    store.tunnel_put(Tunnel{ id: "t3", host_id: "nobody", name: "x", local_port: 1, dest_host: "x", dest_port: 1, open_on_connect: false }) or err { r = "{err.message()}" }
+    store.tunnel_put(domain.Tunnel{ id: "t3", host_id: "nobody", name: "x", local_port: 1, dest_host: "x", dest_port: 1, open_on_connect: false }) or err { r = "{err.message()}" }
     assert(r.len() > 0)
     store.vault_detach()
     raw := try fs.read_text(path)
@@ -670,7 +670,7 @@ test "an older vault's activity moves to the machine's file, whole, and leaves t
     assert(!(try has_table(store, "activity_moving")))
     assert_eq(try store.vault_get_meta("activity_retention_days"), "")
     // New entries follow the moved ones.
-    _ = try store.activity_add(marker_entry(9), ActivityKeep{ since_at: 0, max_bytes: ACTIVITY_MAX_BYTES })
+    _ = try store.activity_add(marker_entry(9), domain.ActivityKeep{ since_at: 0, max_bytes: ACTIVITY_MAX_BYTES })
     assert_eq((try store.activity_page(0, 10)).len(), 4)
     store.vault_detach()
     raw := try fs.read_text(path)
@@ -715,7 +715,7 @@ test "the activity file is private, closes with the vault, and a key it refuses 
     store.activity_attach("../escape", test_key(8), test_salt_bytes()) or err { bad = "{err.message()}" }
     assert(bad.contains("bad vault id"), bad)
     try store.activity_attach(TEST_VAULT_ID, test_key(8), test_salt_bytes())
-    _ = try store.activity_add(marker_entry(1), ActivityKeep{ since_at: 0, max_bytes: ACTIVITY_MAX_BYTES })
+    _ = try store.activity_add(marker_entry(1), domain.ActivityKeep{ since_at: 0, max_bytes: ACTIVITY_MAX_BYTES })
     mut mode: i64 = 0
     mut dir_mode: i64 = 0
     mut windows := false
@@ -751,7 +751,7 @@ test "an activity backup is the encrypted file, opened only with its key" {
     mut store := new_sql_vault_store()
     try store.vault_create(path, test_key(7), test_salt_bytes())
     try attach_test_activity(mut store, path, 8)
-    _ = try store.activity_add(marker_entry(1), ActivityKeep{ since_at: 0, max_bytes: ACTIVITY_MAX_BYTES })
+    _ = try store.activity_add(marker_entry(1), domain.ActivityKeep{ since_at: 0, max_bytes: ACTIVITY_MAX_BYTES })
     dest := fs.dirname(path) + "/backup.db"
     try store.activity_backup(dest)
     mut inside := ""
@@ -779,8 +779,8 @@ fn other_salt() -> []byte {
     return s
 }
 
-fn resealed(store: SqlVaultStore) -> VaultSecrets! {
-    mut out_s := VaultSecrets{ hosts: [], keys: [], creds: [] }
+fn resealed(store: SqlVaultStore) -> domain.VaultSecrets! {
+    mut out_s := domain.VaultSecrets{ hosts: [], keys: [], creds: [] }
     for h0 in try store.hosts_all() {
         mut h := h0
         h.password = [byte(9), byte(9)]
@@ -797,7 +797,7 @@ test "a re-key writes a copy under the new key, and its rename is the commit poi
     try attach_test_activity(mut store, path, 8)
     try store.host_put(marker_host())
     try store.vault_set_meta(VAULT_META_ID, TEST_VAULT_ID)
-    _ = try store.activity_add(marker_entry(1), ActivityKeep{ since_at: 0, max_bytes: ACTIVITY_MAX_BYTES })
+    _ = try store.activity_add(marker_entry(1), domain.ActivityKeep{ since_at: 0, max_bytes: ACTIVITY_MAX_BYTES })
     secrets := try resealed(store)
 
     try store.vault_rekey_prepare(path, test_key(17), other_salt(), secrets)
@@ -871,7 +871,7 @@ test "a change cut short leaves files that open: a stale copy goes, a pending ac
     try store.vault_create(path, test_key(7), test_salt_bytes())
     try attach_test_activity(mut store, path, 8)
     try store.host_put(marker_host())
-    _ = try store.activity_add(marker_entry(1), ActivityKeep{ since_at: 0, max_bytes: ACTIVITY_MAX_BYTES })
+    _ = try store.activity_add(marker_entry(1), domain.ActivityKeep{ since_at: 0, max_bytes: ACTIVITY_MAX_BYTES })
     secrets := try resealed(store)
 
     // Cut before the vault's rename: the old vault opens and the copies go.
@@ -933,12 +933,12 @@ test "an activity file at version 1 gains results, and an entry ends once (miles
     mut e := marker_entry(1)
     e.grant = "g1"
     e.state = ACTIVITY_RUNNING
-    id := try store.activity_add(e, ActivityKeep{ since_at: 0, max_bytes: ACTIVITY_MAX_BYTES })
+    id := try store.activity_add(e, domain.ActivityKeep{ since_at: 0, max_bytes: ACTIVITY_MAX_BYTES })
     assert(id > before[0].id)
     mut e2 := marker_entry(2)
     e2.grant = "g2"
     e2.state = ACTIVITY_RUNNING
-    _ = try store.activity_add(e2, ActivityKeep{ since_at: 0, max_bytes: ACTIVITY_MAX_BYTES })
+    _ = try store.activity_add(e2, domain.ActivityKeep{ since_at: 0, max_bytes: ACTIVITY_MAX_BYTES })
     running := try store.activity_of_grant("g1", 10)
     assert_eq(running.len(), 1)
     assert_eq(running[0].id, id)
@@ -980,8 +980,8 @@ test "an activity file at version 2 gains alerted, older rows read false (milest
     e.via = ACTIVITY_VIA_WINDOW
     e.outcome = ACTIVITY_TIMEOUT
     e.alerted = true
-    _ = try store.activity_add(e, ActivityKeep{ since_at: 0, max_bytes: ACTIVITY_MAX_BYTES })
-    _ = try store.activity_add(marker_entry(2), ActivityKeep{ since_at: 0, max_bytes: ACTIVITY_MAX_BYTES })
+    _ = try store.activity_add(e, domain.ActivityKeep{ since_at: 0, max_bytes: ACTIVITY_MAX_BYTES })
+    _ = try store.activity_add(marker_entry(2), domain.ActivityKeep{ since_at: 0, max_bytes: ACTIVITY_MAX_BYTES })
     page := try store.activity_page(0, 10)
     assert_eq(page.len(), 3)
     assert(!page[0].alerted)

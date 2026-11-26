@@ -6,21 +6,21 @@ import "../domain"
 PKG_HOME: str = "/home/ana"
 LIB: str = "/usr/lib/flint"
 
-fn pkg_paths() -> UpdatePaths {
+fn pkg_paths() -> domain.UpdatePaths {
     return update_package_paths(PKG_HOME, PACKAGE_DEB, LIB)
 }
 
 fn deb_manifest_json(version: str, sha: str) -> str {
     base := "https://github.com/samaniegoluis/flint/releases/download/v{version}/"
-    m := UpdateManifest{
+    m := domain.UpdateManifest{
         version: version, date: "2026-11-21", summary: "New things.",
         page: "https://github.com/samaniegoluis/flint/releases/tag/v{version}",
-        assets: [UpdateAsset{ key: UPDATE_ASSET_DEB, name: "flint_{version}_amd64.deb", url: base + "flint_{version}_amd64.deb", size: 5000, sha256: sha }],
+        assets: [domain.UpdateAsset{ key: UPDATE_ASSET_DEB, name: "flint_{version}_amd64.deb", url: base + "flint_{version}_amd64.deb", size: 5000, sha256: sha }],
     }
     return json.stringify(m)
 }
 
-fn deb_offer(version: str) -> UpdateStatus {
+fn deb_offer(version: str) -> domain.UpdateStatus {
     mut s := update_status_idle("0.20.0", true, 1)
     s.state = UPDATE_AVAILABLE
     s.version = version
@@ -88,12 +88,12 @@ test "a package download whose SHA-256 or manifest is wrong leaves nothing" {
 }
 
 type FakeRootRunner struct {
-    run:  RootRun
+    run:  domain.RootRun
     fail: str
     runs: i64
 }
 
-fn (mut self: FakeRootRunner) run_root_helper(helper: str) -> RootRun! {
+fn (mut self: FakeRootRunner) run_root_helper(helper: str) -> domain.RootRun! {
     self.runs += 1
     if self.fail.len() > 0 {
         return error(coded(self.fail, "pkexec is not installed"))
@@ -113,8 +113,8 @@ fn staged_package() -> FakeUpdateFiles {
 test "Relaunch: root installs, then the new CLI restarts Flint" {
     mut files := staged_package()
     mut procs := fake_procs()
-    done := RootOutcome{ installed: true, version: "0.21.0", code: "", message: "", discard: false }
-    mut runner := FakeRootRunner{ run: RootRun{ exit_code: 0, stdout: json.stringify(done) + "\n" }, fail: "", runs: 0 }
+    done := domain.RootOutcome{ installed: true, version: "0.21.0", code: "", message: "", discard: false }
+    mut runner := FakeRootRunner{ run: domain.RootRun{ exit_code: 0, stdout: json.stringify(done) + "\n" }, fail: "", runs: 0 }
     r := relaunch_package_update(mut files, mut procs, mut runner, pkg_paths(), LIB + "/flint-update-root", "0.20.0", 42, "")
     assert(r.installed)
     assert_eq(procs.spawned.len(), 1)
@@ -128,15 +128,15 @@ test "Relaunch: root installs, then the new CLI restarts Flint" {
 test "Relaunch: a dismissed password keeps the package, a failed check discards it" {
     mut files := staged_package()
     mut procs := fake_procs()
-    mut runner := FakeRootRunner{ run: RootRun{ exit_code: 126, stdout: "" }, fail: "", runs: 0 }
+    mut runner := FakeRootRunner{ run: domain.RootRun{ exit_code: 126, stdout: "" }, fail: "", runs: 0 }
     r := relaunch_package_update(mut files, mut procs, mut runner, pkg_paths(), LIB + "/flint-update-root", "0.20.0", 42, "")
     assert(!r.installed && !r.discard)
     assert(r.message.contains("password"))
     assert_eq(procs.spawned.len(), 0)
     assert_eq(staged_update_at(mut files, pkg_paths(), "0.20.0"), "0.21.0")
 
-    refused := RootOutcome{ installed: false, version: "0.21.0", code: ERR_INVALID, message: "the package did not match the release's SHA-256", discard: true }
-    runner.run = RootRun{ exit_code: 3, stdout: json.stringify(refused) }
+    refused := domain.RootOutcome{ installed: false, version: "0.21.0", code: ERR_INVALID, message: "the package did not match the release's SHA-256", discard: true }
+    runner.run = domain.RootRun{ exit_code: 3, stdout: json.stringify(refused) }
     d := relaunch_package_update(mut files, mut procs, mut runner, pkg_paths(), LIB + "/flint-update-root", "0.20.0", 42, "")
     assert(d.discard)
     assert(d.message.contains("SHA-256"))
@@ -152,16 +152,16 @@ test "Relaunch: a dismissed password keeps the package, a failed check discards 
 test "Relaunch: apt failing keeps the package for another try" {
     mut files := staged_package()
     mut procs := fake_procs()
-    busy := RootOutcome{ installed: false, version: "0.21.0", code: ERR_IO, message: "apt-get could not install it: Could not get lock /var/lib/dpkg/lock-frontend", discard: false }
-    mut runner := FakeRootRunner{ run: RootRun{ exit_code: 4, stdout: json.stringify(busy) }, fail: "", runs: 0 }
+    busy := domain.RootOutcome{ installed: false, version: "0.21.0", code: ERR_IO, message: "apt-get could not install it: Could not get lock /var/lib/dpkg/lock-frontend", discard: false }
+    mut runner := FakeRootRunner{ run: domain.RootRun{ exit_code: 4, stdout: json.stringify(busy) }, fail: "", runs: 0 }
     r := relaunch_package_update(mut files, mut procs, mut runner, pkg_paths(), LIB + "/flint-update-root", "0.20.0", 42, "")
     assert(!r.installed && !r.discard)
     assert(r.message.contains("lock"))
     assert_eq(staged_update_at(mut files, pkg_paths(), "0.20.0"), "0.21.0")
 }
 
-fn start_request() -> ApplyRequest {
-    return ApplyRequest{ wait_pid: 42, from: "", to: LIB, os: "linux", app_log: "", start_only: true, staging: PKG_HOME + "/.cache/flint/update" }
+fn start_request() -> domain.ApplyRequest {
+    return domain.ApplyRequest{ wait_pid: 42, from: "", to: LIB, os: "linux", app_log: "", start_only: true, staging: PKG_HOME + "/.cache/flint/update" }
 }
 
 test "update-apply --start waits for the old app and starts the new one" {
@@ -296,7 +296,7 @@ test "root installs a package that passes its own checks" {
     assert(stage.done)
 }
 
-fn refused_by_root(mut stage: FakeRootStage, sha: str, installed: str) -> RootOutcome {
+fn refused_by_root(mut stage: FakeRootStage, sha: str, installed: str) -> domain.RootOutcome {
     mut inst := FakeInstaller{ installed: [], fail: "" }
     o := root_install_update(mut stage, FakeUpdateVerifier{}, ContentHasher{ good: sha }, mut inst, root_req(installed))
     assert_eq(inst.installed.len(), 0)

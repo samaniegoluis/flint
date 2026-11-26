@@ -5,10 +5,10 @@ import "core:os"
 
 test "a link is made, read back, replaced and removed in a folder this process writes" {
     // macOS's and Linux's links; Windows puts a folder on the Path instead (below).
-    if os.getenv("OS") == "Windows_NT" {
+    if (os.getenv("OS") or "") == "Windows_NT" {
         return
     }
-    mut tmp := os.getenv("TMPDIR")
+    mut tmp := (os.getenv("TMPDIR") or "")
     if tmp.len() == 0 {
         tmp = "/tmp"   // unset in the Linux check's container
     }
@@ -39,10 +39,10 @@ test "a link is made, read back, replaced and removed in a folder this process w
 
 // Windows only: a registry key of the test's own stands in for HKCU\Environment.
 test "Windows: the user's Path is read as written, written back and its entries probed" {
-    if os.getenv("OS") != "Windows_NT" {
+    if (os.getenv("OS") or "") != "Windows_NT" {
         return
     }
-    tmp := os.getenv("FLINT_TEST_TMP")
+    tmp := (os.getenv("FLINT_TEST_TMP") or "")
     if tmp.len() == 0 {
         return
     }
@@ -72,12 +72,12 @@ test "Windows: the user's Path is read as written, written back and its entries 
 // terminal started afterwards finds flint. The caller saved the value before and puts
 // it back after (windows/vm/path-check.sh).
 test "Windows: the user's real Path takes the bin folder (opt-in)" {
-    bin := os.getenv("FLINT_TEST_REAL_PATH_BIN")
-    if os.getenv("OS") != "Windows_NT" || bin.len() == 0 {
+    bin := (os.getenv("FLINT_TEST_REAL_PATH_BIN") or "")
+    if (os.getenv("OS") or "") != "Windows_NT" || bin.len() == 0 {
         return
     }
     mut env := new_os_cli_path(CLI_PATH_KEY)
-    mut probes: []PathEntryProbe = []
+    mut probes: []domain.PathEntryProbe = []
     for e in split_path_value(try env.cli_path_read()) {
         probes.push(env.cli_path_probe(e))
     }

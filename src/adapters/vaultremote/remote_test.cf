@@ -12,7 +12,7 @@ VID_A: str = "00112233445566778899aabbccddeeff"
 VID_B: str = "ffeeddccbbaa99887766554433221100"
 
 fn base_url() -> str {
-    base := os.getenv("FLINT_TEST_VAULT_URL")
+    base := (os.getenv("FLINT_TEST_VAULT_URL") or "")
     assert(base.len() > 0, "run through scripts/test.sh, which starts a vault server")
     return base
 }
@@ -22,7 +22,7 @@ fn vault_url() -> str {
 }
 
 fn token() -> str {
-    return os.getenv("FLINT_TEST_VAULT_TOKEN")
+    return (os.getenv("FLINT_TEST_VAULT_TOKEN") or "")
 }
 
 fn bytes_of(s: str) -> []byte {
@@ -121,7 +121,7 @@ test "an unreachable server is network, a path that is not a vault server is not
     mut msg := ""
     r.remote_get("http://127.0.0.1:9/v1/vault", token(), 0) or err { msg = "{err.message()}" }
     assert_eq(error_code_of(msg), ERR_NETWORK)
-    base := os.getenv("FLINT_TEST_VAULT_URL")
+    base := (os.getenv("FLINT_TEST_VAULT_URL") or "")
     msg = ""
     r.remote_get(base + "/nope", token(), 0) or err { msg = "{err.message()}" }
     assert_eq(error_code_of(msg), ERR_NOT_FOUND)

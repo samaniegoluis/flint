@@ -23,8 +23,8 @@ fn (self: FakeNotifier) alert_publish(server: str, topic: str, kind: str) -> voi
     self.sent.items.push("{server}|{topic}|{kind}")
 }
 
-fn on_target() -> AlertTarget {
-    return AlertTarget{ on: true, server: "https://ntfy.sh", topic: "flint-abc" }
+fn on_target() -> domain.AlertTarget {
+    return domain.AlertTarget{ on: true, server: "https://ntfy.sh", topic: "flint-abc" }
 }
 
 test "an alert goes out only when on, with a topic, nobody at the window, once" {

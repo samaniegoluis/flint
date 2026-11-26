@@ -85,7 +85,7 @@ type CatalogView struct {
     known_hosts: []KnownHostView `json:"known_hosts"`
 }
 
-fn catalog_view[S: VaultStore](store: S) -> CatalogView! {
+fn catalog_view[S: ports.VaultStore](store: S) -> CatalogView! {
     return CatalogView{
         groups: try list_groups(store),
         hosts: try list_hosts(store, "", ""),
@@ -97,6 +97,6 @@ fn catalog_view[S: VaultStore](store: S) -> CatalogView! {
 
 // Closes the open vault: the file is detached and its keys leave memory with the
 // session the driver drops. The keychain cache is left alone (that is lock_vault).
-fn close_vault[S: VaultStore](mut store: S) {
+fn close_vault[S: ports.VaultStore](mut store: S) {
     store.vault_detach()
 }

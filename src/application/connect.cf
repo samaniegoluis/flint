@@ -24,7 +24,7 @@ fn default_connect_options() -> ConnectOptions {
     return ConnectOptions{ timeout_secs: SSH_CONNECT_TIMEOUT_SECS, accept_new_host_key: false, run_initial_command: true, ask_password: true }
 }
 
-fn key_index_by_id(keys: []SshKey, id: str) -> i64 {
+fn key_index_by_id(keys: []domain.SshKey, id: str) -> i64 {
     for i, k in keys {
         if k.id == id {
             return i64(i)
@@ -33,7 +33,7 @@ fn key_index_by_id(keys: []SshKey, id: str) -> i64 {
     return -1
 }
 
-fn cred_index_by_id(creds: []Credential, id: str) -> i64 {
+fn cred_index_by_id(creds: []domain.Credential, id: str) -> i64 {
     for i, c in creds {
         if c.id == id {
             return i64(i)
@@ -45,8 +45,8 @@ fn cred_index_by_id(creds: []Credential, id: str) -> i64 {
 // ---- Planning (pure) -------------------------------------------------------------
 
 // The hops to dial, outermost jump host first and `target` last.
-fn jump_chain(cat: Catalog, target: Host) -> []Host! {
-    mut rev: []Host = [target]
+fn jump_chain(cat: domain.Catalog, target: domain.Host) -> []domain.Host! {
+    mut rev: []domain.Host = [target]
     mut cur := target.jump_host_id
     for cur.len() > 0 {
         if rev.len() > cat.hosts.len() {
@@ -60,7 +60,7 @@ fn jump_chain(cat: Catalog, target: Host) -> []Host! {
         rev.push(hop)
         cur = hop.jump_host_id
     }
-    mut chain: []Host = []
+    mut chain: []domain.Host = []
     mut i := rev.len()
     for i > 0 {
         i -= 1
@@ -70,7 +70,7 @@ fn jump_chain(cat: Catalog, target: Host) -> []Host! {
 }
 
 // The login user: the host's own, else its credential's.
-fn auth_user(cat: Catalog, h: Host) -> str! {
+fn auth_user(cat: domain.Catalog, h: domain.Host) -> str! {
     if h.username.len() > 0 {
         return h.username
     }
@@ -86,32 +86,32 @@ fn auth_user(cat: Catalog, h: Host) -> str! {
 // The auth methods to try, in order: the host's key, the host's password, the
 // credential's key, the credential's password, then the SSH agent. The host's own
 // settings come first because they are the more specific ones.
-fn auth_steps(cat: Catalog, h: Host) -> []AuthStep {
-    mut steps: []AuthStep = []
+fn auth_steps(cat: domain.Catalog, h: domain.Host) -> []domain.AuthStep {
+    mut steps: []domain.AuthStep = []
     if h.key_id.len() > 0 {
-        steps.push(AuthStep{ kind: "key", source: "host", ref_id: h.key_id })
+        steps.push(domain.AuthStep{ kind: "key", source: "host", ref_id: h.key_id })
     }
     if h.password.len() > 0 {
-        steps.push(AuthStep{ kind: "password", source: "host", ref_id: h.id })
+        steps.push(domain.AuthStep{ kind: "password", source: "host", ref_id: h.id })
     }
     if h.credential_id.len() > 0 {
         idx := cred_index_by_id(cat.creds, h.credential_id)
         if idx >= 0 {
             c := cat.creds[usize(idx)]
             if c.key_id.len() > 0 && c.key_id != h.key_id {
-                steps.push(AuthStep{ kind: "key", source: "credential", ref_id: c.key_id })
+                steps.push(domain.AuthStep{ kind: "key", source: "credential", ref_id: c.key_id })
             }
             if c.password.len() > 0 {
-                steps.push(AuthStep{ kind: "password", source: "credential", ref_id: c.id })
+                steps.push(domain.AuthStep{ kind: "password", source: "credential", ref_id: c.id })
             }
         }
     }
-    steps.push(AuthStep{ kind: "agent", source: "", ref_id: "" })
+    steps.push(domain.AuthStep{ kind: "agent", source: "", ref_id: "" })
     return steps
 }
 
 // How a step is named in an error. Names only, never a secret.
-fn step_label(cat: Catalog, s: AuthStep) -> str {
+fn step_label(cat: domain.Catalog, s: domain.AuthStep) -> str {
     if s.kind == "key" {
         return "key '" + key_name_of(cat.keys, s.ref_id) + "'"
     }
@@ -140,7 +140,7 @@ fn join_labels(list: []str) -> str {
 // Checks a server key against the known hosts. A new key is recorded when the
 // person confirms it (or `accept_new_host_key` is set); a changed key is always
 // refused. Returns "known" or "new".
-fn verify_host_key[S: VaultStore, P: Prompter](mut store: S, prompter: P, h: Host, key: ServerKey, opts: ConnectOptions) -> str! {
+fn verify_host_key[S: ports.VaultStore, P: ports.Prompter](mut store: S, prompter: P, h: domain.Host, key: domain.ServerKey, opts: ConnectOptions) -> str! {
     addr := known_host_addr(h.hostname, h.port)
     known := try store.known_hosts_all()
     status := check_server_key(known, addr, key)
@@ -148,7 +148,7 @@ fn verify_host_key[S: VaultStore, P: Prompter](mut store: S, prompter: P, h: Hos
         return status
     }
     if status == HOST_KEY_CHANGED {
-        mut q := HostKeyQuestion{ alias: h.alias, addr: addr, key_type: key.key_type, fingerprint: key.fingerprint, known_key_type: "", known_fingerprint: "" }
+        mut q := domain.HostKeyQuestion{ alias: h.alias, addr: addr, key_type: key.key_type, fingerprint: key.fingerprint, known_key_type: "", known_fingerprint: "" }
         for k in known {
             if k.addr == addr {
                 q.known_key_type = k.key_type
@@ -163,18 +163,18 @@ fn verify_host_key[S: VaultStore, P: Prompter](mut store: S, prompter: P, h: Hos
         if !prompter.prompt_available() {
             return error(core_msg(MSG_SSH_HOST_KEY_UNKNOWN, [h.alias, addr, key.key_type, key.fingerprint]))
         }
-        trusted = try prompter.prompt_host_key(HostKeyQuestion{ alias: h.alias, addr: addr, key_type: key.key_type, fingerprint: key.fingerprint, known_key_type: "", known_fingerprint: "" })
+        trusted = try prompter.prompt_host_key(domain.HostKeyQuestion{ alias: h.alias, addr: addr, key_type: key.key_type, fingerprint: key.fingerprint, known_key_type: "", known_fingerprint: "" })
     }
     if !trusted {
         return error(core_msg(MSG_SSH_HOST_KEY_NOT_TRUSTED, [h.alias]))
     }
-    try store.known_host_put(KnownHost{ addr: addr, key_type: key.key_type, fingerprint: key.fingerprint, host_id: h.id, added_at: "" })
+    try store.known_host_put(domain.KnownHost{ addr: addr, key_type: key.key_type, fingerprint: key.fingerprint, host_id: h.id, added_at: "" })
     return status
 }
 
 // ---- Authentication --------------------------------------------------------------
 
-fn try_auth_step[C: Crypto, T: SshTransport](crypto: C, session: VaultSession, cat: Catalog, mut link: T, s: AuthStep) -> void! {
+fn try_auth_step[C: ports.Crypto, T: ports.SshTransport](crypto: C, session: VaultSession, cat: domain.Catalog, mut link: T, s: domain.AuthStep) -> void! {
     if s.kind == "key" {
         idx := key_index_by_id(cat.keys, s.ref_id)
         if idx < 0 {
@@ -215,7 +215,7 @@ fn try_auth_step[C: Crypto, T: SshTransport](crypto: C, session: VaultSession, c
 // Tries each auth step until one is accepted. A rejected step moves on; a network
 // failure stops at once. When every step fails and there is a terminal, the
 // password is asked for once.
-fn authenticate_hop[C: Crypto, T: SshTransport, P: Prompter](crypto: C, session: VaultSession, cat: Catalog, mut link: T, prompter: P, h: Host, user: str, ask_password: bool) -> void! {
+fn authenticate_hop[C: ports.Crypto, T: ports.SshTransport, P: ports.Prompter](crypto: C, session: VaultSession, cat: domain.Catalog, mut link: T, prompter: P, h: domain.Host, user: str, ask_password: bool) -> void! {
     mut tried: []str = []
     for s in auth_steps(cat, h) {
         try_auth_step(crypto, session, cat, mut link, s) or err {
@@ -253,7 +253,7 @@ fn authenticate_hop[C: Crypto, T: SshTransport, P: Prompter](crypto: C, session:
 
 // Dials every hop of `alias`, verifying and authenticating each one. On failure the
 // link is hung up. Returns the target host.
-fn open_link[C: Crypto, S: VaultStore, T: SshTransport, P: Prompter](crypto: C, mut store: S, session: VaultSession, mut link: T, prompter: P, alias: str, opts: ConnectOptions) -> Host! {
+fn open_link[C: ports.Crypto, S: ports.VaultStore, T: ports.SshTransport, P: ports.Prompter](crypto: C, mut store: S, session: VaultSession, mut link: T, prompter: P, alias: str, opts: ConnectOptions) -> domain.Host! {
     cat := try load_catalog(store)
     target := try require_host(cat.hosts, alias)
     _ = try open_link_in(crypto, mut store, session, cat, mut link, prompter, target, opts)
@@ -262,7 +262,7 @@ fn open_link[C: Crypto, S: VaultStore, T: SshTransport, P: Prompter](crypto: C, 
 
 // Dials every hop of `target`, a host of `cat` (which may hold an unsaved draft).
 // Returns the number of hops.
-fn open_link_in[C: Crypto, S: VaultStore, T: SshTransport, P: Prompter](crypto: C, mut store: S, session: VaultSession, cat: Catalog, mut link: T, prompter: P, target: Host, opts: ConnectOptions) -> i64! {
+fn open_link_in[C: ports.Crypto, S: ports.VaultStore, T: ports.SshTransport, P: ports.Prompter](crypto: C, mut store: S, session: VaultSession, cat: domain.Catalog, mut link: T, prompter: P, target: domain.Host, opts: ConnectOptions) -> i64! {
     if opts.timeout_secs <= 0 {
         return error(coded(ERR_INVALID, "the connect timeout must be positive"))
     }
@@ -282,7 +282,7 @@ fn open_link_in[C: Crypto, S: VaultStore, T: SshTransport, P: Prompter](crypto: 
     return i64(chain.len())
 }
 
-fn open_hop[C: Crypto, S: VaultStore, T: SshTransport, P: Prompter](crypto: C, mut store: S, session: VaultSession, cat: Catalog, mut link: T, prompter: P, hop: Host, user: str, opts: ConnectOptions) -> void! {
+fn open_hop[C: ports.Crypto, S: ports.VaultStore, T: ports.SshTransport, P: ports.Prompter](crypto: C, mut store: S, session: VaultSession, cat: domain.Catalog, mut link: T, prompter: P, hop: domain.Host, user: str, opts: ConnectOptions) -> void! {
     algos := preferred_host_key_algos(try store.known_hosts_all(), known_host_addr(hop.hostname, hop.port))
     try link.link_dial(hop.hostname, hop.port, user, opts.timeout_secs, algos)
     key := try link.link_server_key()
@@ -294,7 +294,7 @@ fn open_hop[C: Crypto, S: VaultStore, T: SshTransport, P: Prompter](crypto: C, m
 // the remote side closes it or local input ends. Returns the remote exit status (-1
 // when the shell died by a signal). After SSH_KEEPALIVE_SECS with nothing heard from
 // the server it sends a keepalive; one that cannot be sent ends the session.
-fn run_shell[T: SshTransport, M: Terminal, K: Clock](mut link: T, mut term: M, mut clock: K, term_name: str, command: str) -> i64! {
+fn run_shell[T: ports.SshTransport, M: ports.Terminal, K: ports.Clock](mut link: T, mut term: M, mut clock: K, term_name: str, command: str) -> i64! {
     mut size := term.term_size()
     if !size.is_valid() {
         size = default_terminal_size()
@@ -362,7 +362,7 @@ fn run_shell[T: SshTransport, M: Terminal, K: Clock](mut link: T, mut term: M, m
 
 // Runs one command. With `capture`, stdout and stderr are collected into the
 // result (for --json); otherwise they stream to `sink` as they arrive.
-fn run_exec[T: SshTransport, O: ExecSink, K: Clock](mut link: T, mut sink: O, mut clock: K, alias: str, command: str, timeout_secs: i64, capture: bool) -> ExecResult! {
+fn run_exec[T: ports.SshTransport, O: ports.ExecSink, K: ports.Clock](mut link: T, mut sink: O, mut clock: K, alias: str, command: str, timeout_secs: i64, capture: bool) -> domain.ExecResult! {
     if command.len() == 0 {
         return error(coded(ERR_USAGE, "no command given; use `flint exec <alias> -- <command>`"))
     }
@@ -372,7 +372,7 @@ fn run_exec[T: SshTransport, O: ExecSink, K: Clock](mut link: T, mut sink: O, mu
     start := clock.clock_now_ms()
     deadline := start + timeout_secs * 1000
     try link.link_exec_start(command)
-    mut res := ExecResult{ host: alias, exit_code: 0, signal: "", stdout: "", stderr: "", duration_ms: 0 }
+    mut res := domain.ExecResult{ host: alias, exit_code: 0, signal: "", stdout: "", stderr: "", duration_ms: 0 }
     mut running := true
     for running {
         if clock.clock_now_ms() > deadline {
@@ -404,19 +404,19 @@ fn run_exec[T: SshTransport, O: ExecSink, K: Clock](mut link: T, mut sink: O, mu
 }
 
 // Connects to `alias` and runs one command on it.
-fn exec_on_host[C: Crypto, S: VaultStore, T: SshTransport, P: Prompter, O: ExecSink, K: Clock](crypto: C, mut store: S, session: VaultSession, mut link: T, prompter: P, mut sink: O, mut clock: K, alias: str, command: str, opts: ConnectOptions, exec_timeout_secs: i64, capture: bool) -> ExecResult! {
+fn exec_on_host[C: ports.Crypto, S: ports.VaultStore, T: ports.SshTransport, P: ports.Prompter, O: ports.ExecSink, K: ports.Clock](crypto: C, mut store: S, session: VaultSession, mut link: T, prompter: P, mut sink: O, mut clock: K, alias: str, command: str, opts: ConnectOptions, exec_timeout_secs: i64, capture: bool) -> domain.ExecResult! {
     if command.len() == 0 {
         return error(coded(ERR_USAGE, "no command given; use `flint exec <alias> -- <command>`"))
     }
     try require_ssh_alias(store, alias, "flint exec")
     target := try open_link(crypto, mut store, session, mut link, prompter, alias, opts)
     defer link.link_hangup()
-    return run_exec(mut link, mut sink, mut clock, target.alias, command, exec_timeout_secs, capture)
+    return try run_exec(mut link, mut sink, mut clock, target.alias, command, exec_timeout_secs, capture)
 }
 
 // The PTY command of a session on `h`: its initial command (D-031), unless the
 // options turn it off.
-fn session_command(h: Host, opts: ConnectOptions) -> str {
+fn session_command(h: domain.Host, opts: ConnectOptions) -> str {
     if !opts.run_initial_command {
         return ""
     }
@@ -425,10 +425,10 @@ fn session_command(h: Host, opts: ConnectOptions) -> str {
 
 // Connects to `alias` and runs an interactive shell on the local terminal, or the
 // host's initial command.
-fn connect_host[C: Crypto, S: VaultStore, T: SshTransport, P: Prompter, M: Terminal, K: Clock](crypto: C, mut store: S, session: VaultSession, mut link: T, prompter: P, mut term: M, mut clock: K, alias: str, term_name: str, opts: ConnectOptions) -> i64! {
+fn connect_host[C: ports.Crypto, S: ports.VaultStore, T: ports.SshTransport, P: ports.Prompter, M: ports.Terminal, K: ports.Clock](crypto: C, mut store: S, session: VaultSession, mut link: T, prompter: P, mut term: M, mut clock: K, alias: str, term_name: str, opts: ConnectOptions) -> i64! {
     target := try open_link(crypto, mut store, session, mut link, prompter, alias, opts)
     defer link.link_hangup()
-    return run_shell(mut link, mut term, mut clock, term_name, session_command(target, opts))
+    return try run_shell(mut link, mut term, mut clock, term_name, session_command(target, opts))
 }
 
 // The app's second Files pane on a host with no open tab (milestone 19, D-056):
@@ -437,7 +437,7 @@ fn connect_host[C: Crypto, S: VaultStore, T: SshTransport, P: Prompter, M: Termi
 // (`term` input ends: returns 0) or the connection is lost (a keepalive that cannot
 // be sent). `term` carries no bytes; it is only the pane's mailbox, and
 // `term_raw_enter` tells the page the session is ready. Hangs up either way.
-fn hold_files_session[C: Crypto, S: VaultStore, T: SshTransport, P: Prompter, M: Terminal, K: Clock](crypto: C, mut store: S, session: VaultSession, mut link: T, prompter: P, mut term: M, mut clock: K, alias: str, opts: ConnectOptions) -> i64! {
+fn hold_files_session[C: ports.Crypto, S: ports.VaultStore, T: ports.SshTransport, P: ports.Prompter, M: ports.Terminal, K: ports.Clock](crypto: C, mut store: S, session: VaultSession, mut link: T, prompter: P, mut term: M, mut clock: K, alias: str, opts: ConnectOptions) -> i64! {
     _ = try open_link(crypto, mut store, session, mut link, prompter, alias, opts)
     link.link_lend() or err {
         link.link_hangup()
@@ -479,7 +479,7 @@ fn hold_files_session[C: Crypto, S: VaultStore, T: SshTransport, P: Prompter, M:
 // authenticating every hop, then hangs up. No shell, no command, no password prompt:
 // a method that fails is reported (D-019 codes). A new host key is recorded as on a
 // real connect, once the person trusts it.
-fn test_link[C: Crypto, S: VaultStore, T: SshTransport, P: Prompter, K: Clock](crypto: C, mut store: S, session: VaultSession, cat: Catalog, mut link: T, prompter: P, mut clock: K, target: Host, opts: ConnectOptions) -> HostTestView! {
+fn test_link[C: ports.Crypto, S: ports.VaultStore, T: ports.SshTransport, P: ports.Prompter, K: ports.Clock](crypto: C, mut store: S, session: VaultSession, cat: domain.Catalog, mut link: T, prompter: P, mut clock: K, target: domain.Host, opts: ConnectOptions) -> HostTestView! {
     mut o := opts
     o.ask_password = false
     start := clock.clock_now_ms()
@@ -497,10 +497,10 @@ fn test_link[C: Crypto, S: VaultStore, T: SshTransport, P: Prompter, K: Clock](c
 }
 
 // `flint host test <alias>`: tests a saved host.
-fn test_host[C: Crypto, S: VaultStore, T: SshTransport, P: Prompter, K: Clock](crypto: C, mut store: S, session: VaultSession, mut link: T, prompter: P, mut clock: K, alias: str, opts: ConnectOptions) -> HostTestView! {
+fn test_host[C: ports.Crypto, S: ports.VaultStore, T: ports.SshTransport, P: ports.Prompter, K: ports.Clock](crypto: C, mut store: S, session: VaultSession, mut link: T, prompter: P, mut clock: K, alias: str, opts: ConnectOptions) -> HostTestView! {
     cat := try load_catalog(store)
     target := try require_host(cat.hosts, alias)
-    return test_link(crypto, mut store, session, cat, mut link, prompter, mut clock, target, opts)
+    return try test_link(crypto, mut store, session, cat, mut link, prompter, mut clock, target, opts)
 }
 
 // Tests the host editor's unsaved form: `p` applied to the host `alias` ("" for a new
@@ -508,9 +508,9 @@ fn test_host[C: Crypto, S: VaultStore, T: SshTransport, P: Prompter, K: Clock](c
 // and setting it could create groups). A new host has no id yet, so a key trusted
 // during the test is recorded with no host; add_host links it once the host is
 // saved.
-fn test_host_draft[C: Crypto, S: VaultStore, T: SshTransport, P: Prompter, K: Clock](crypto: C, mut store: S, session: VaultSession, mut link: T, prompter: P, mut clock: K, alias: str, p: HostPatch, opts: ConnectOptions) -> HostTestView! {
+fn test_host_draft[C: ports.Crypto, S: ports.VaultStore, T: ports.SshTransport, P: ports.Prompter, K: ports.Clock](crypto: C, mut store: S, session: VaultSession, mut link: T, prompter: P, mut clock: K, alias: str, p: HostPatch, opts: ConnectOptions) -> HostTestView! {
     cat := try load_catalog(store)
-    mut base := Host{ id: "", alias: "", label: "", hostname: "", port: 22, username: "", group_id: "", tags: [], color: "", notes: "", jump_host_id: "", credential_id: "", key_id: "", password: [], initial_command: "", keep_shell: true, sudo_password: [] }
+    mut base := domain.Host{ id: "", alias: "", label: "", hostname: "", port: 22, username: "", group_id: "", tags: [], color: "", notes: "", jump_host_id: "", credential_id: "", key_id: "", password: [], initial_command: "", keep_shell: true, sudo_password: [] }
     if alias.len() > 0 {
         base = try require_host(cat.hosts, alias)
     }
@@ -520,24 +520,24 @@ fn test_host_draft[C: Crypto, S: VaultStore, T: SshTransport, P: Prompter, K: Cl
     mut q := p
     q.set_group = false
     draft := try apply_host_patch(crypto, mut store, session, cat, base, q)
-    mut hosts: []Host = []
+    mut hosts: []domain.Host = []
     for h in cat.hosts {
         if h.id != draft.id {
             hosts.push(h)
         }
     }
     hosts.push(draft)
-    with_draft := Catalog{ groups: cat.groups, hosts: hosts, keys: cat.keys, creds: cat.creds }
-    return test_link(crypto, mut store, session, with_draft, mut link, prompter, mut clock, draft, opts)
+    with_draft := domain.Catalog{ groups: cat.groups, hosts: hosts, keys: cat.keys, creds: cat.creds }
+    return try test_link(crypto, mut store, session, with_draft, mut link, prompter, mut clock, draft, opts)
 }
 
 // ---- Known hosts -----------------------------------------------------------------
 
-fn known_host_view(cat: Catalog, k: KnownHost) -> KnownHostView {
+fn known_host_view(cat: domain.Catalog, k: domain.KnownHost) -> KnownHostView {
     return KnownHostView{ addr: k.addr, host: host_alias_of(cat.hosts, k.host_id), key_type: k.key_type, fingerprint: k.fingerprint, added_at: k.added_at }
 }
 
-fn list_known_hosts[S: VaultStore](store: S) -> []KnownHostView! {
+fn list_known_hosts[S: ports.VaultStore](store: S) -> []KnownHostView! {
     cat := try load_catalog(store)
     mut views: []KnownHostView = []
     for k in try store.known_hosts_all() {
@@ -548,7 +548,7 @@ fn list_known_hosts[S: VaultStore](store: S) -> []KnownHostView! {
 
 // Forgets a recorded key, by host alias or by address, so the next connect asks
 // again.
-fn remove_known_host[S: VaultStore](mut store: S, selector: str) -> KnownHostView! {
+fn remove_known_host[S: ports.VaultStore](mut store: S, selector: str) -> KnownHostView! {
     cat := try load_catalog(store)
     mut addr := selector
     idx := host_index_by_alias(cat.hosts, selector)

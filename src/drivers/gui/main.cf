@@ -15,10 +15,10 @@ import "../../adapters/clilink"
 import "../../adapters/config"
 import "../../adapters/crypto"
 import "../../adapters/fonts"
-import "../../adapters/keychain"
+import "../../adapters/keychain" as flint_keychain
 import "../../adapters/process"
 import "../../adapters/rdp"
-import "../../adapters/ssh"
+import "../../adapters/ssh" as flint_ssh
 import "../../adapters/uievents"
 import "../../adapters/vault"
 import "../../application"
@@ -27,7 +27,7 @@ import "../clicmd"
 // Where the built page is: $FLINT_UI_DIR, then the app bundle's Resources/ui, then
 // ui/ next to the executable, then ui/dist in a source checkout.
 fn find_ui_dir() -> str {
-    override := os.getenv("FLINT_UI_DIR")
+    override := (os.getenv("FLINT_UI_DIR") or "")
     if override.len() > 0 {
         return override
     }
@@ -43,7 +43,7 @@ fn find_ui_dir() -> str {
 
 // Once per machine, the keys earlier Flints cached on every unlock go (D-048); says
 // on stderr what happened.
-fn report_forget_cached_keys(mut settings_store: JsonSettingsStore, store: LockedVaultStore, kc: OsKeychain, recents: JsonRecentStore) {
+fn report_forget_cached_keys(mut settings_store: config.JsonSettingsStore, store: vault.LockedVaultStore, kc: flint_keychain.OsKeychain, recents: config.JsonRecentStore) {
     removed := forget_cached_keys_once(mut settings_store, store, kc, recents) or err {
         write_stderr("flint-gui: cached vault keys left in place: {err.message()}\n")
         return
@@ -55,7 +55,7 @@ fn report_forget_cached_keys(mut settings_store: JsonSettingsStore, store: Locke
 
 fn main() {
     ui_dir := find_ui_dir()
-    e2e_script: str = os.getenv("FLINT_GUI_E2E")
+    e2e_script: str = (os.getenv("FLINT_GUI_E2E") or "")
     e2e := e2e_script.len() > 0
 
     // Before any SSH session: libssh copies a terminal stdin's modes into each PTY
@@ -77,7 +77,7 @@ fn main() {
     rt := webview_runtime()
     if rt.state != "ok" {
         write_stderr("flint-gui: {webview_missing_text(rt.state)}\n")
-        if os.getenv("FLINT_WEBVIEW_CHECK") != "quiet" {
+        if (os.getenv("FLINT_WEBVIEW_CHECK") or "") != "quiet" {
             tell_webview_missing(rt.state)
         }
         os.exit(3)
@@ -107,7 +107,7 @@ fn main() {
     c := sodium_ok
     config_dir := flint_config_dir()
     mut store := new_locked_vault_store(config_dir + "/activity")
-    kc := new_os_keychain(os.getenv("FLINT_KEYCHAIN") != "off")
+    kc := new_os_keychain((os.getenv("FLINT_KEYCHAIN") or "") != "off")
     recents := new_json_recent_store(config_dir)
     mut settings_store := new_json_settings_store(config_dir)
     mut ui_state_store := new_json_ui_state_store(config_dir)
@@ -134,7 +134,7 @@ fn main() {
     st.holder.set_approval_wait(approval_wait_ms(first_settings.approval_wait, approval_wait_override_ms()))
     st.holder.set_alerts(alert_target(first_settings))
     // Once per machine: the keys earlier Flints cached on every unlock go (D-048).
-    if os.getenv("FLINT_KEYCHAIN") != "off" {
+    if (os.getenv("FLINT_KEYCHAIN") or "") != "off" {
         report_forget_cached_keys(mut settings_store, store, kc, recents)
     }
 
@@ -448,7 +448,7 @@ fn main() {
             req := host_test_check(params, st) or err {
                 return error("{err.message()}")
             }
-            patch := parse_req[HostPatch](params) or empty_host_patch()
+            patch := parse_req[application.HostPatch](params) or empty_host_patch()
             worker_app := app
             worker_store := store
             vs := st.vault_session()

@@ -122,7 +122,7 @@ test "a session waits longer for a slow exec than for a login" {
 }
 
 test "a locked error says what to do" {
-    t := RecentVault{ path: "/v.flint", name: "Home", id: "" }
+    t := domain.RecentVault{ path: "/v.flint", name: "Home", id: "" }
     assert(locked_error(t, AppState{ state: APP_ASKING, name: "" }).contains("Flint is asking"))
     assert(locked_error(t, AppState{ state: APP_OTHER, name: "Work" }).contains("'Work'"))
     assert(locked_error(t, AppState{ state: APP_LOCKED, name: "" }).contains("could not be started"))
@@ -170,7 +170,7 @@ test "a command waits as long as Flint says, or the default from an older Flint"
     older := json.parse[AppState](payload: "{\"state\":\"asking\",\"name\":\"\"}") or AppState{ state: "", name: "", wait_ms: -1 }
     assert_eq(older.wait_ms, i64(0))
     assert_eq(older.reason, "")
-    t := RecentVault{ path: "/v.flint", name: "Home", id: "" }
+    t := domain.RecentVault{ path: "/v.flint", name: "Home", id: "" }
     msg := not_unlocked_error(t, 300000)
     assert_eq(error_code_of(msg), ERR_LOCKED)
     assert(msg.contains("within 5 min"))

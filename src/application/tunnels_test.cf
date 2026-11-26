@@ -7,7 +7,7 @@ import "../domain"
 type FakeRunner struct {
     hosts: []str
     states: []i64
-    live: []TunnelLive
+    live: []domain.TunnelLive
     busy: []i64
     released: []str
     // "+host" on entering a host's gate, "-host" on leaving it.
@@ -36,11 +36,11 @@ fn (self: FakeRunner) tunnel_port_taken(port: i64) -> bool {
 }
 
 // A busy port is held by `postgres`, pid 812, as in design 16h2.
-fn (self: FakeRunner) tunnel_port_owner(port: i64) -> PortOwner {
+fn (self: FakeRunner) tunnel_port_owner(port: i64) -> domain.PortOwner {
     if self.tunnel_port_taken(port) {
-        return PortOwner{ name: "postgres", pid: 812 }
+        return domain.PortOwner{ name: "postgres", pid: 812 }
     }
-    return PortOwner{ name: "", pid: 0 }
+    return domain.PortOwner{ name: "", pid: 0 }
 }
 
 fn (self: FakeRunner) tunnel_host_state(host_id: str) -> i64 {
@@ -68,7 +68,7 @@ fn (mut self: FakeRunner) tunnel_listen(host_id: str, tunnel_id: str, local_port
         return error(coded(ERR_NETWORK, "the host's tunnel session is not connected"))
     }
     // A listener that went down is replaced, as the native registry does.
-    mut kept: []TunnelLive = []
+    mut kept: []domain.TunnelLive = []
     for l in self.live {
         if l.host_id == host_id && l.tunnel_id == tunnel_id {
             if !l.down {
@@ -84,13 +84,13 @@ fn (mut self: FakeRunner) tunnel_listen(host_id: str, tunnel_id: str, local_port
             return error(coded(ERR_PORT_IN_USE, "port {local_port} on 127.0.0.1 is already in use"))
         }
     }
-    self.live.push(TunnelLive{ host_id: host_id, tunnel_id: tunnel_id, up: true, down: false, port: local_port, connections: 0, opened: 0, failed: 0, error: "" })
+    self.live.push(domain.TunnelLive{ host_id: host_id, tunnel_id: tunnel_id, up: true, down: false, port: local_port, connections: 0, opened: 0, failed: 0, error: "" })
     return local_port
 }
 
 fn (mut self: FakeRunner) tunnel_unlisten(host_id: str, tunnel_id: str) -> bool {
     mut was := false
-    mut keep: []TunnelLive = []
+    mut keep: []domain.TunnelLive = []
     for l in self.live {
         if l.host_id == host_id && l.tunnel_id == tunnel_id {
             was = true
@@ -104,7 +104,7 @@ fn (mut self: FakeRunner) tunnel_unlisten(host_id: str, tunnel_id: str) -> bool 
 
 fn (mut self: FakeRunner) tunnel_release(host_id: str) {
     self.released.push(host_id)
-    mut keep: []TunnelLive = []
+    mut keep: []domain.TunnelLive = []
     for l in self.live {
         if l.host_id != host_id {
             keep.push(l)
@@ -123,7 +123,7 @@ fn (mut self: FakeRunner) tunnel_release(host_id: str) {
     self.states = st
 }
 
-fn (self: FakeRunner) tunnel_live() -> []TunnelLive {
+fn (self: FakeRunner) tunnel_live() -> []domain.TunnelLive {
     return self.live
 }
 

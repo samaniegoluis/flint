@@ -12,7 +12,7 @@ VID: str = "00112233445566778899aabbccddeeff"
 VID2: str = "ffeeddccbbaa99887766554433221100"
 
 fn temp_store_dir(name: str) -> str {
-    mut base := os.getenv("TMPDIR")
+    mut base := (os.getenv("TMPDIR") or "")
     if base.len() == 0 {
         base = "/tmp"
     }
@@ -30,7 +30,7 @@ fn every_byte() -> str {
     return str(b)
 }
 
-fn uses_port[B: BlobStore](mut b: B) -> i64 {
+fn uses_port[B: ports.BlobStore](mut b: B) -> i64 {
     h := b.blob_head(VID) or err {
         return -1
     }
@@ -266,7 +266,7 @@ test "a label is kept beside its vault, cleared with an empty one, and checked" 
 fn write_single_vault_store(dir: str) -> void! {
     try fs.mkdir_all(dir + "/versions")
     for n in 1..=2 {
-        meta := json.stringify(BlobVersion{ version: n, vault_id: VID, size: 3, stored_at: n * 100 })
+        meta := json.stringify(domain.BlobVersion{ version: n, vault_id: VID, size: 3, stored_at: n * 100 })
         try fs.write_text(dir + "/versions/{n}.blob", "v{n}!")
         try fs.write_text(dir + "/versions/{n}.json", meta)
         if n == 2 {

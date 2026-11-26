@@ -40,11 +40,11 @@ test "every write stamps its row, later each time, even with the clock behind" {
     try store.host_put(marker_host())
     assert_eq(try stamp_of(store, "hosts", "h1"), 9000000000001)
     // Every synced kind is stamped and read back with it.
-    try store.group_put(Group{ id: "g1", parent_id: "", name: "Prod" })
-    try store.key_put(SshKey{ id: "k1", name: "id", key_type: "ed25519", public_key: "p", fingerprint: "f", private_key: [byte(1)], passphrase: [] })
-    try store.cred_put(Credential{ id: "c1", name: "ops", username: "deploy", key_id: "k1", password: [] })
-    try store.tunnel_put(Tunnel{ id: "t1", host_id: "h1", name: "pg", local_port: 5432, dest_host: "localhost", dest_port: 5432 })
-    try store.known_host_put(KnownHost{ addr: "db01", key_type: "ssh-ed25519", fingerprint: "SHA256:x", host_id: "h1", added_at: "" })
+    try store.group_put(domain.Group{ id: "g1", parent_id: "", name: "Prod" })
+    try store.key_put(domain.SshKey{ id: "k1", name: "id", key_type: "ed25519", public_key: "p", fingerprint: "f", private_key: [byte(1)], passphrase: [] })
+    try store.cred_put(domain.Credential{ id: "c1", name: "ops", username: "deploy", key_id: "k1", password: [] })
+    try store.tunnel_put(domain.Tunnel{ id: "t1", host_id: "h1", name: "pg", local_port: 5432, dest_host: "localhost", dest_port: 5432 })
+    try store.known_host_put(domain.KnownHost{ addr: "db01", key_type: "ssh-ed25519", fingerprint: "SHA256:x", host_id: "h1", added_at: "" })
     try store.token_put(marker_token("tk1", "agent", 0))
     r := try store.vault_records()
     assert(r.groups[0].updated_at > first)
@@ -63,7 +63,7 @@ test "a delete leaves a tombstone later than the row, a host's tunnels theirs, a
     mut store := new_sql_vault_store()
     try store.vault_create(path, test_key(7), test_salt_bytes())
     try store.host_put(marker_host())
-    try store.tunnel_put(Tunnel{ id: "t1", host_id: "h1", name: "pg", local_port: 5432, dest_host: "localhost", dest_port: 5432 })
+    try store.tunnel_put(domain.Tunnel{ id: "t1", host_id: "h1", name: "pg", local_port: 5432, dest_host: "localhost", dest_port: 5432 })
     try store.conn().run_sql("UPDATE hosts SET updated_at = ?1 WHERE id = 'h1';", [sql_int(9000000000000)])
     try store.host_drop("h1")
     assert_eq((try store.hosts_all()).len(), 0)
@@ -75,13 +75,13 @@ test "a delete leaves a tombstone later than the row, a host's tunnels theirs, a
     assert_eq(try tomb_at(store, MERGE_KIND_HOST, "h1"), -1)
     assert_eq(try stamp_of(store, "hosts", "h1"), 9000000000002)
     // Each kind's drop leaves one.
-    try store.group_put(Group{ id: "g1", parent_id: "", name: "Prod" })
+    try store.group_put(domain.Group{ id: "g1", parent_id: "", name: "Prod" })
     try store.group_drop("g1")
-    try store.key_put(SshKey{ id: "k1", name: "id", key_type: "ed25519", public_key: "p", fingerprint: "f", private_key: [byte(1)], passphrase: [] })
+    try store.key_put(domain.SshKey{ id: "k1", name: "id", key_type: "ed25519", public_key: "p", fingerprint: "f", private_key: [byte(1)], passphrase: [] })
     try store.key_drop("k1")
-    try store.cred_put(Credential{ id: "c1", name: "ops", username: "deploy", key_id: "", password: [] })
+    try store.cred_put(domain.Credential{ id: "c1", name: "ops", username: "deploy", key_id: "", password: [] })
     try store.cred_drop("c1")
-    try store.known_host_put(KnownHost{ addr: "db01", key_type: "ssh-ed25519", fingerprint: "SHA256:x", host_id: "", added_at: "" })
+    try store.known_host_put(domain.KnownHost{ addr: "db01", key_type: "ssh-ed25519", fingerprint: "SHA256:x", host_id: "", added_at: "" })
     try store.known_host_drop("db01")
     tombs := try store.tombstones_all()
     mut kinds: []str = []
@@ -97,7 +97,7 @@ test "records replaced whole keep their stamps, in any order of references" {
     path := temp_vault_path("v.flint")
     mut store := new_sql_vault_store()
     try store.vault_create(path, test_key(7), test_salt_bytes())
-    try store.host_put(Host{ id: "old", alias: "gone", label: "", hostname: "x", port: 22, username: "u", tags: [], color: "", notes: "", password: [], sudo_password: [] })
+    try store.host_put(domain.Host{ id: "old", alias: "gone", label: "", hostname: "x", port: 22, username: "u", tags: [], color: "", notes: "", password: [], sudo_password: [] })
     // A child group before its parent, a host before its jump host: foreign keys are
     // checked at the commit.
     mut web := marker_host()
@@ -111,15 +111,15 @@ test "records replaced whole keep their stamps, in any order of references" {
     jump.id = "h3"
     jump.alias = "jump"
     jump.updated_at = 600
-    r := VaultRecords{
-            groups: [Group{ id: "g2", parent_id: "g1", name: "Child", updated_at: 20 }, Group{ id: "g1", parent_id: "", name: "Top", updated_at: 10 }],
+    r := domain.VaultRecords{
+            groups: [domain.Group{ id: "g2", parent_id: "g1", name: "Child", updated_at: 20 }, domain.Group{ id: "g1", parent_id: "", name: "Top", updated_at: 10 }],
             hosts: [web, jump],
-            keys: [SshKey{ id: "k1", name: "id", key_type: "ed25519", public_key: "p", fingerprint: "f", private_key: [byte(9)], passphrase: [], updated_at: 30 }],
-            creds: [Credential{ id: "c1", name: "ops", username: "deploy", key_id: "k1", password: [byte(8)], updated_at: 40 }],
-            known_hosts: [KnownHost{ addr: "web", key_type: "ssh-ed25519", fingerprint: "SHA256:y", host_id: "h2", added_at: "2026-01-02T03:04:05Z", updated_at: 50 }],
-            tunnels: [Tunnel{ id: "t1", host_id: "h2", name: "pg", local_port: 1, dest_host: "localhost", dest_port: 2, updated_at: 60 }],
+            keys: [domain.SshKey{ id: "k1", name: "id", key_type: "ed25519", public_key: "p", fingerprint: "f", private_key: [byte(9)], passphrase: [], updated_at: 30 }],
+            creds: [domain.Credential{ id: "c1", name: "ops", username: "deploy", key_id: "k1", password: [byte(8)], updated_at: 40 }],
+            known_hosts: [domain.KnownHost{ addr: "web", key_type: "ssh-ed25519", fingerprint: "SHA256:y", host_id: "h2", added_at: "2026-01-02T03:04:05Z", updated_at: 50 }],
+            tunnels: [domain.Tunnel{ id: "t1", host_id: "h2", name: "pg", local_port: 1, dest_host: "localhost", dest_port: 2, updated_at: 60 }],
             tokens: [marker_token("tk1", "agent", 7)],
-            tombstones: [Tombstone{ kind: MERGE_KIND_HOST, id: "old", deleted_at: 70 }],
+            tombstones: [domain.Tombstone{ kind: MERGE_KIND_HOST, id: "old", deleted_at: 70 }],
     }
     try store.vault_begin()
     try store.vault_replace_records(r)

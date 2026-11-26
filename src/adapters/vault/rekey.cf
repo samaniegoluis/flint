@@ -170,7 +170,7 @@ fn export_rekeyed(src: CipherDb, dest: str, key: []byte, salt: []byte) -> void! 
 // Replaces the secret columns of every row in the copy at `dest` with `secrets`, in
 // one transaction. Every row of each table must be named once: a row left with a
 // secret sealed under the old key would never open again.
-fn write_secrets(dest: str, key: []byte, salt: []byte, secrets: VaultSecrets) -> void! {
+fn write_secrets(dest: str, key: []byte, salt: []byte, secrets: domain.VaultSecrets) -> void! {
     mut db := try open_cipher_db(dest, key, salt, false)
     defer db.close_db()
     try db.exec("BEGIN IMMEDIATE;")
@@ -186,7 +186,7 @@ fn count_rows(db: CipherDb, table: str) -> i64! {
     return cell_i64(res[0][0])
 }
 
-fn write_secret_rows(db: CipherDb, secrets: VaultSecrets) -> void! {
+fn write_secret_rows(db: CipherDb, secrets: domain.VaultSecrets) -> void! {
     hosts := try count_rows(db, "hosts")
     keys := try count_rows(db, "ssh_keys")
     creds := try count_rows(db, "credentials")
@@ -218,7 +218,7 @@ fn (self: CipherDb) require_one_change(id: str) -> void! {
     }
 }
 
-fn (mut self: SqlVaultStore) vault_rekey_prepare(path: str, page_key: []byte, salt: []byte, secrets: VaultSecrets) -> void! {
+fn (mut self: SqlVaultStore) vault_rekey_prepare(path: str, page_key: []byte, salt: []byte, secrets: domain.VaultSecrets) -> void! {
     try self.require_open()
     dest := path + REKEY_SUFFIX
     try export_rekeyed(self.conn(), dest, page_key, salt)

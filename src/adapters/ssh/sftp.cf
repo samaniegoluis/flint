@@ -87,7 +87,7 @@ fn (mut self: SshLink) sftp_open() -> void! {
     self.sftp = sftp
 }
 
-fn (self: SshLink) sftp_stat(path: str) -> FileEntry! {
+fn (self: SshLink) sftp_stat(path: str) -> domain.FileEntry! {
     conn := try self.sftp_hop()
     mut name := ""
     mut kind := ""
@@ -106,11 +106,11 @@ fn (self: SshLink) sftp_stat(path: str) -> FileEntry! {
     if rc != 0 {
         return error(sftp_failure(rc, "read", path, conn, self.label))
     }
-    return FileEntry{ name: remote_base(path), path: path, kind: native_entry_kind(kind), size: size, mtime: mtime, mode: mode, uid: uid }
+    return domain.FileEntry{ name: remote_base(path), path: path, kind: native_entry_kind(kind), size: size, mtime: mtime, mode: mode, uid: uid }
 }
 
 // The entries of folder `path`, without `.` and `..`, links not followed.
-fn (self: SshLink) sftp_list(path: str) -> []FileEntry! {
+fn (self: SshLink) sftp_list(path: str) -> []domain.FileEntry! {
     conn := try self.sftp_hop()
     mut names: []str = []
     mut kinds: []str = []
@@ -132,9 +132,9 @@ fn (self: SshLink) sftp_list(path: str) -> []FileEntry! {
     if rc != 0 {
         return error(sftp_failure(rc, "list", path, conn, self.label))
     }
-    mut entries: []FileEntry = []
+    mut entries: []domain.FileEntry = []
     for i, n in names {
-        entries.push(FileEntry{ name: n, path: remote_join(path, n), kind: native_entry_kind(kinds[i]), size: sizes[i], mtime: mtimes[i], mode: modes[i], uid: uids[i] })
+        entries.push(domain.FileEntry{ name: n, path: remote_join(path, n), kind: native_entry_kind(kinds[i]), size: sizes[i], mtime: mtimes[i], mode: modes[i], uid: uids[i] })
     }
     return entries
 }

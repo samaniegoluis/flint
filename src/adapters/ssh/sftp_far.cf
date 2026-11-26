@@ -11,40 +11,46 @@ package ssh
 
 import "../../domain"
 
-fn (self: SshLink) local_stat(path: str) -> FileEntry! {
-    return self.sftp_stat(path)
+fn (self: SshLink) local_stat(path: str) -> domain.FileEntry! {
+    return try self.sftp_stat(path)
 }
 
-fn (self: SshLink) local_list(path: str) -> []FileEntry! {
-    return self.sftp_list(path)
+fn (self: SshLink) local_list(path: str) -> []domain.FileEntry! {
+    return try self.sftp_list(path)
 }
 
 fn (mut self: SshLink) local_file_open(path: str, write: bool, exclusive: bool) -> void! {
-    return self.sftp_file_open(path, write, exclusive)
+    try self.sftp_file_open(path, write, exclusive)
+    return
 }
 
 fn (mut self: SshLink) local_file_read() -> str! {
-    return self.sftp_file_read()
+    return try self.sftp_file_read()
 }
 
 fn (mut self: SshLink) local_file_write(data: str) -> void! {
-    return self.sftp_file_write(data)
+    try self.sftp_file_write(data)
+    return
 }
 
 fn (mut self: SshLink) local_file_close() -> void! {
-    return self.sftp_file_close()
+    try self.sftp_file_close()
+    return
 }
 
 // OpenSSH's server renames over an existing file (posix-rename, D-053); where a
 // server refuses, the copy removes the old file and renames again.
 fn (mut self: SshLink) local_rename(from: str, to: str) -> void! {
-    return self.sftp_rename(from, to)
+    try self.sftp_rename(from, to)
+    return
 }
 
 fn (mut self: SshLink) local_remove(path: str) -> void! {
-    return self.sftp_remove(path, false)
+    try self.sftp_remove(path, false)
+    return
 }
 
 fn (mut self: SshLink) local_mkdir(path: str) -> void! {
-    return self.sftp_mkdir(path)
+    try self.sftp_mkdir(path)
+    return
 }

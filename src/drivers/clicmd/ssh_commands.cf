@@ -8,9 +8,9 @@ import "core:os"
 import "core:json"
 import "../../adapters/config"
 import "../../adapters/crypto"
-import "../../adapters/keychain"
+import "../../adapters/keychain" as flint_keychain
 import "../../adapters/process"
-import "../../adapters/ssh"
+import "../../adapters/ssh" as flint_ssh
 import "../../adapters/vault"
 import "../../application"
 import "../../domain"
@@ -26,7 +26,7 @@ type ForgottenKey struct {
     fingerprint: str `json:"fingerprint"`
 }
 
-fn connect_options(p: ParsedArgs) -> ConnectOptions! {
+fn connect_options(p: ParsedArgs) -> application.ConnectOptions! {
     mut opts := default_connect_options()
     if p.has_flag("--timeout") {
         opts.timeout_secs = try parse_seconds_flag("--timeout", p.flag_value("--timeout"))
@@ -61,7 +61,7 @@ fn remote_command(p: ParsedArgs) -> str {
 
 // The terminal, prompter and output of a session command: the process's own stdio
 // for the CLI on its own, the client's connection when the app runs it (D-042).
-fn cmd_connect[M: Terminal, P: Prompter](p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store: LockedVaultStore, src: VaultSource, recents: JsonRecentStore, mut term: M, prompter: P, term_name: str) -> i32! {
+fn cmd_connect[M: ports.Terminal, P: ports.Prompter](p: ParsedArgs, sec: SecretInput, as_json: bool, c: crypto.Sodium, mut store: vault.LockedVaultStore, src: VaultSource, recents: config.JsonRecentStore, mut term: M, prompter: P, term_name: str) -> i32! {
     try p.allow_flags("connect", ["--timeout", "--accept-new-host-key", "--no-command"])
     if p.positionals.len() != 2 || p.has_rest {
         return error(coded(ERR_USAGE, "usage: flint connect <alias> [--timeout <secs>] [--accept-new-host-key] [--no-command]"))
@@ -83,7 +83,7 @@ fn cmd_connect[M: Terminal, P: Prompter](p: ParsedArgs, sec: SecretInput, as_jso
     return process_exit_code(code)
 }
 
-fn cmd_exec[P: Prompter, O: ExecSink](p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store: LockedVaultStore, src: VaultSource, recents: JsonRecentStore, prompter: P, mut sink: O) -> i32! {
+fn cmd_exec[P: ports.Prompter, O: ports.ExecSink](p: ParsedArgs, sec: SecretInput, as_json: bool, c: crypto.Sodium, mut store: vault.LockedVaultStore, src: VaultSource, recents: config.JsonRecentStore, prompter: P, mut sink: O) -> i32! {
     try p.allow_flags("exec", ["--timeout", "--exec-timeout", "--accept-new-host-key", "--sudo"])
     if p.positionals.len() != 2 || !p.has_rest || p.rest.len() == 0 {
         return error(coded(ERR_USAGE, "usage: flint exec <alias> [--timeout <secs>] [--exec-timeout <secs>] [--sudo] -- <command>"))
@@ -101,7 +101,7 @@ fn cmd_exec[P: Prompter, O: ExecSink](p: ParsedArgs, sec: SecretInput, as_json: 
     s := try open_target(p, sec, c, mut store, src, recents)
     mut link := new_ssh_link()
     mut clock := new_system_clock()
-    mut res := ExecResult{ host: "", exit_code: 0, signal: "", stdout: "", stderr: "", duration_ms: 0 }
+    mut res := domain.ExecResult{ host: "", exit_code: 0, signal: "", stdout: "", stderr: "", duration_ms: 0 }
     if p.has_flag("--sudo") {
         res = try exec_sudo_on_host(c, mut store, s, mut link, prompter, mut sink, mut clock, p.positional(1), p.rest, sec.sudo_typed, opts, exec_timeout, as_json)
     } else {
@@ -115,7 +115,7 @@ fn cmd_exec[P: Prompter, O: ExecSink](p: ParsedArgs, sec: SecretInput, as_json: 
 
 // `flint host test <alias>`: connect, verify, log in, hang up. Exits 0, or with the
 // error's code (11-14 for host_key, auth, network, timeout).
-fn cmd_host_test[P: Prompter](p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store: LockedVaultStore, src: VaultSource, recents: JsonRecentStore, prompter: P) -> void! {
+fn cmd_host_test[P: ports.Prompter](p: ParsedArgs, sec: SecretInput, as_json: bool, c: crypto.Sodium, mut store: vault.LockedVaultStore, src: VaultSource, recents: config.JsonRecentStore, prompter: P) -> void! {
     try p.allow_flags("host test", ["--timeout", "--accept-new-host-key"])
     try p.expect_args("host test", 1, "<alias> [--timeout <secs>] [--accept-new-host-key]")
     if p.has_rest {
@@ -139,7 +139,7 @@ fn cmd_host_test[P: Prompter](p: ParsedArgs, sec: SecretInput, as_json: bool, c:
     say("Connection to '{r.host}' works: {r.target}, host key verified, logged in ({r.duration_ms} ms{via}).")
 }
 
-fn cmd_known_host(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store: LockedVaultStore, src: VaultSource, recents: JsonRecentStore) -> void! {
+fn cmd_known_host(p: ParsedArgs, sec: SecretInput, as_json: bool, c: crypto.Sodium, mut store: vault.LockedVaultStore, src: VaultSource, recents: config.JsonRecentStore) -> void! {
     verb := p.positional(1)
     if verb == "list" {
         try p.allow_flags("known-host list", [])

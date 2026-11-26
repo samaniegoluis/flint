@@ -7,7 +7,7 @@ import "../ports"
 
 // Stored settings that no longer validate (an edited file, a field from a newer
 // version) fall back to the defaults field by field rather than failing the app.
-fn load_settings[T: SettingsStore](store: T) -> Settings! {
+fn load_settings[T: ports.SettingsStore](store: T) -> domain.Settings! {
     s := try store.settings_load()
     if settings_valid(s) {
         return s
@@ -122,7 +122,7 @@ fn load_settings[T: SettingsStore](store: T) -> Settings! {
 // `keys_cleared`, `webview_cleared`, `cli_offer_shown`, `update_toast_version` and `last_seen_version`
 // are the app's own records, not preferences:
 // the stored values are kept whatever the page sends.
-fn save_settings[T: SettingsStore](mut store: T, s: Settings) -> Settings! {
+fn save_settings[T: ports.SettingsStore](mut store: T, s: domain.Settings) -> domain.Settings! {
     try check_settings(s)
     mut saved := s
     stored := try load_settings(store)
@@ -140,7 +140,7 @@ fn save_settings[T: SettingsStore](mut store: T, s: Settings) -> Settings! {
 // Runs forget_cached_keys the first time a milestone-14 Flint starts on this
 // machine, and records that it did. Returns how many keys it removed (0 when it had
 // already run). A keychain that cannot be reached leaves it for the next start.
-fn forget_cached_keys_once[T: SettingsStore, S: VaultStore, K: Keychain, R: RecentStore](mut settings: T, store: S, keychain: K, recents: R) -> i64! {
+fn forget_cached_keys_once[T: ports.SettingsStore, S: ports.VaultStore, K: ports.Keychain, R: ports.RecentStore](mut settings: T, store: S, keychain: K, recents: R) -> i64! {
     mut s := try load_settings(settings)
     if s.keys_cleared {
         return 0
@@ -155,7 +155,7 @@ fn forget_cached_keys_once[T: SettingsStore, S: VaultStore, K: Keychain, R: Rece
 // the first time a Flint that turns autofill off starts on this machine, and records
 // that it did. Returns how many files it removed (0 when it had already run). A file it
 // cannot remove leaves it for the next start.
-fn clear_webview_autofill_once[T: SettingsStore, W: WebviewData](mut settings: T, mut webview: W) -> i64! {
+fn clear_webview_autofill_once[T: ports.SettingsStore, W: ports.WebviewData](mut settings: T, mut webview: W) -> i64! {
     mut s := try load_settings(settings)
     if s.webview_cleared {
         return 0
@@ -167,7 +167,7 @@ fn clear_webview_autofill_once[T: SettingsStore, W: WebviewData](mut settings: T
 }
 
 // Installed monospaced families, sorted and without duplicates.
-fn list_mono_fonts[F: FontCatalog](fonts: F) -> []str! {
+fn list_mono_fonts[F: ports.FontCatalog](fonts: F) -> []str! {
     raw := try fonts.mono_font_families()
     mut names: []str = []
     for name in raw {
@@ -199,7 +199,7 @@ fn list_mono_fonts[F: FontCatalog](fonts: F) -> []str! {
 
 // What ✕ does now (milestone 65, D-138 (3)): CLOSE_HIDE, CLOSE_QUIT or CLOSE_ASK, by
 // the tray and the person's answer kept in this machine's settings.
-fn window_close_action[T: SettingsStore](store: T, has_tray: bool) -> str {
+fn window_close_action[T: ports.SettingsStore](store: T, has_tray: bool) -> str {
     s := load_settings(store) or default_settings()
     return close_decision(has_tray, s.close_action)
 }

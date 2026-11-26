@@ -59,7 +59,7 @@ type WhatsNewReq struct {
 type WhatsNewReply struct {
     current:  str             `json:"current"`
     since:    str             `json:"since"`
-    versions: []ChangeVersion `json:"versions"`
+    versions: []domain.ChangeVersion `json:"versions"`
 }
 
 type OpenUrlReq struct {
@@ -91,14 +91,14 @@ fn real_install_kind() -> str {
     return install_kind_of(fs.read_text(install_kind_file()) or "")
 }
 
-fn update_here() -> UpdateHere {
+fn update_here() -> domain.UpdateHere {
     kind := real_install_kind()
     root := install_root()
     writable := folder_writable(root) && folder_writable(fs.dirname(root))
-    mut here := UpdateHere{ version: version.FLINT_VERSION, os: os_name(), arch: cpu_arch(), kind: kind, writable: writable, source: "" }
+    mut here := domain.UpdateHere{ version: version.FLINT_VERSION, os: os_name(), arch: cpu_arch(), kind: kind, writable: writable, source: "" }
     // A build from source, under test, may pretend to be a package (FLINT_UPDATE_TEST_KIND).
-    test_kind := os.getenv("FLINT_UPDATE_TEST_KIND")
-    if test_kind.len() > 0 && update_override_allowed(kind, os.getenv("FLINT_UPDATE_FEED")) {
+    test_kind := (os.getenv("FLINT_UPDATE_TEST_KIND") or "")
+    if test_kind.len() > 0 && update_override_allowed(kind, (os.getenv("FLINT_UPDATE_FEED") or "")) {
         here.kind = install_kind_of(test_kind)
         here.writable = true
     }
@@ -112,34 +112,34 @@ fn update_here() -> UpdateHere {
 // Where this copy's update is staged: beside the folder (milestone 53), or for a .deb
 // or .rpm in the person's cache (milestone 54; the helper finds it by uid, so the home
 // is the one HOME names when Flint starts).
-fn update_stage_paths(here: UpdateHere, root: str) -> UpdatePaths {
+fn update_stage_paths(here: domain.UpdateHere, root: str) -> domain.UpdatePaths {
     format := package_format(here.kind)
     if format.len() > 0 {
-        return update_package_paths(os.getenv("HOME"), format, root)
+        return update_package_paths((os.getenv("HOME") or ""), format, root)
     }
     return update_paths(root, os_name())
 }
 
 // The feed and key: always Flint's, except for a build from source checking a local
 // feed with a test key (domain's update_override_allowed, D-116).
-fn update_source(kind: str) -> UpdateSource {
+fn update_source(kind: str) -> application.UpdateSource {
     key := hex.decode(UPDATE_PUBLIC_KEY_HEX) or []
     // A test package (milestone 54, `package.sh linux --test-feed`): its local feed and
     // key are compiled in, and nothing else is checked. A release has neither.
     if version.UPDATE_TEST_KEY_HEX.len() > 0 {
         write_stderr("flint-gui: a test package: update check against {version.UPDATE_TEST_FEED}\n")
-        return UpdateSource{ manifest_url: version.UPDATE_TEST_FEED, public_key: hex.decode(version.UPDATE_TEST_KEY_HEX) or [] }
+        return application.UpdateSource{ manifest_url: version.UPDATE_TEST_FEED, public_key: hex.decode(version.UPDATE_TEST_KEY_HEX) or [] }
     }
-    feed := os.getenv("FLINT_UPDATE_FEED")
+    feed := (os.getenv("FLINT_UPDATE_FEED") or "")
     if feed.len() > 0 && update_override_allowed(kind, feed) {
-        test_key := hex.decode(os.getenv("FLINT_UPDATE_TEST_KEY")) or []
+        test_key := hex.decode((os.getenv("FLINT_UPDATE_TEST_KEY") or "")) or []
         write_stderr("flint-gui: update check against the test feed {feed}\n")
-        return UpdateSource{ manifest_url: feed, public_key: test_key }
+        return application.UpdateSource{ manifest_url: feed, public_key: test_key }
     }
     if feed.len() > 0 {
         write_stderr("flint-gui: FLINT_UPDATE_FEED ignored: only a build from source checks a local feed\n")
     }
-    return UpdateSource{ manifest_url: UPDATE_FEED_URL, public_key: key }
+    return application.UpdateSource{ manifest_url: UPDATE_FEED_URL, public_key: key }
 }
 
 fn rpc_update_hint(params: str, st: GuiState) -> str! {
@@ -162,7 +162,7 @@ fn find_changelog() -> str {
     return ""
 }
 
-fn rpc_whats_new(params: str, mut settings: JsonSettingsStore) -> str! {
+fn rpc_whats_new(params: str, mut settings: config.JsonSettingsStore) -> str! {
     req := try parse_req[WhatsNewReq](params)
     changes := find_changelog()
     if req.launch {
@@ -188,7 +188,7 @@ fn rpc_open_url(params: str, e2e: bool) -> str! {
 
 // A check's outcome with what is on disk: the version found already unpacked is Ready;
 // a newer one than the unpacked replaces it (the staging folder goes).
-fn with_staged(s: UpdateStatus, staged: str, mut files: OsUpdateFiles, p: UpdatePaths) -> (UpdateStatus, str) {
+fn with_staged(s: domain.UpdateStatus, staged: str, mut files: process.OsUpdateFiles, p: domain.UpdatePaths) -> (domain.UpdateStatus, str) {
     if staged.len() == 0 {
         return (s, staged)
     }
@@ -220,7 +220,7 @@ fn run_update_progress(st: GuiState, mut app: webui.App) {
     }
 }
 
-fn run_update_loop(c: Sodium, settings_store: JsonSettingsStore, st: GuiState, mut app: webui.App) {
+fn run_update_loop(c: crypto.Sodium, settings_store: config.JsonSettingsStore, st: GuiState, mut app: webui.App) {
     feed := new_http_update_feed()
     mut dl := new_http_update_downloader()
     mut files := new_os_update_files()
@@ -253,7 +253,7 @@ fn run_update_loop(c: Sodium, settings_store: JsonSettingsStore, st: GuiState, m
     mut said_started := false
     mut next_auto := time.now_ms() + UPDATE_FIRST_CHECK_MS
     // An end-to-end run never checks GitHub on its own: only its own feed, or Check now.
-    quiet := os.getenv("FLINT_GUI_E2E").len() > 0 && os.getenv("FLINT_UPDATE_FEED").len() == 0
+    quiet := (os.getenv("FLINT_GUI_E2E") or "").len() > 0 && (os.getenv("FLINT_UPDATE_FEED") or "").len() == 0
     write_stderr("flint-gui: updates: {here.kind} {here.source} on {here.os}-{here.arch}, automatic check {first.update_check}\n")
     for !st.holder.quitting() {
         hint := st.update_hints.recv_timeout(UPDATE_TICK_MS) or ""

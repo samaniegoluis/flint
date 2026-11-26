@@ -33,9 +33,9 @@ type GrantView struct {
 }
 
 // The scope with ids for `s`. Every name must exist.
-fn access_scope_from_names(cat: Catalog, s: ScopeByName) -> AccessScope! {
+fn access_scope_from_names(cat: domain.Catalog, s: ScopeByName) -> domain.AccessScope! {
     if s.all {
-        return AccessScope{ all: true, groups: [], hosts: [] }
+        return domain.AccessScope{ all: true, groups: [], hosts: [] }
     }
     mut groups: []str = []
     for path in s.groups {
@@ -53,11 +53,11 @@ fn access_scope_from_names(cat: Catalog, s: ScopeByName) -> AccessScope! {
         }
         hosts.push(cat.hosts[usize(idx)].id)
     }
-    return AccessScope{ all: false, groups: groups, hosts: hosts }
+    return domain.AccessScope{ all: false, groups: groups, hosts: hosts }
 }
 
 // A grant with its scope by name. A host or group deleted since is left out.
-fn grant_view(g: Grant, cat: Catalog) -> GrantView {
+fn grant_view(g: domain.Grant, cat: domain.Catalog) -> GrantView {
     mut groups: []str = []
     for id in g.scope.groups {
         p := group_path_of(cat.groups, id)
@@ -76,7 +76,7 @@ fn grant_view(g: Grant, cat: Catalog) -> GrantView {
     return GrantView{ id: g.id, label: g.label, all: g.scope.all, groups: groups, hosts: hosts, read: g.read, exec: g.exec, write: g.write, created_ms: g.created_ms, expires_ms: g.expires_ms, anchor_pid: g.anchor_pid, notify: g.notify, root: g.root }
 }
 
-fn grant_views(grants: []Grant, cat: Catalog) -> []GrantView {
+fn grant_views(grants: []domain.Grant, cat: domain.Catalog) -> []GrantView {
     mut views: []GrantView = []
     for g in grants {
         views.push(grant_view(g, cat))
@@ -91,7 +91,7 @@ fn grant_views(grants: []Grant, cat: Catalog) -> []GrantView {
 // `password`, it must be the master password of the vault held; without one, the
 // OS's presence check (Touch ID, polkit) must pass. Where the OS has no check, only
 // the master password opens it.
-fn confirm_window_unlock[C: Crypto, S: VaultStore, P: Presence](crypto: C, store: S, presence: P, session: VaultSession, password: str) -> void! {
+fn confirm_window_unlock[C: ports.Crypto, S: ports.VaultStore, P: ports.Presence](crypto: C, store: S, presence: P, session: VaultSession, password: str) -> void! {
     if password.len() > 0 || presence.presence_method() == "password" {
         ok := try verify_master_password(crypto, store, session, password)
         if !ok {
@@ -105,13 +105,13 @@ fn confirm_window_unlock[C: Crypto, S: VaultStore, P: Presence](crypto: C, store
     }
 }
 
-fn confirm_presence[C: Crypto, S: VaultStore, P: Presence](crypto: C, store: S, presence: P, session: VaultSession, password: str, reason: PresenceReason) -> void! {
+fn confirm_presence[C: ports.Crypto, S: ports.VaultStore, P: ports.Presence](crypto: C, store: S, presence: P, session: VaultSession, password: str, reason: domain.PresenceReason) -> void! {
     try confirm_presence_for(crypto, store, presence, session, password, reason, "nothing was allowed")
 }
 
 // confirm_presence for any action: `reason` is what the OS dialog says the check is
 // for, `refused` what a refusal left undone ("nothing was typed"), in the error.
-fn confirm_presence_for[C: Crypto, S: VaultStore, P: Presence](crypto: C, store: S, presence: P, session: VaultSession, password: str, reason: PresenceReason, refused: str) -> void! {
+fn confirm_presence_for[C: ports.Crypto, S: ports.VaultStore, P: ports.Presence](crypto: C, store: S, presence: P, session: VaultSession, password: str, reason: domain.PresenceReason, refused: str) -> void! {
     if presence.presence_method() == "password" {
         ok := try verify_master_password(crypto, store, session, password)
         if !ok {

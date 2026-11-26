@@ -4,7 +4,7 @@ import "core:fs"
 import "core:os"
 import "../../ports"
 
-fn inspector_port_check[I: KeyInspector](i: I) -> bool {
+fn inspector_port_check[I: ports.KeyInspector](i: I) -> bool {
     i.inspect_private_key("nope", "") or {
         return true
     }
@@ -24,11 +24,11 @@ test "inspects plain and passphrase-protected keys and rejects bad input" {
     mut refused := 0
     // Under $TMPDIR, or /tmp where it is unset (Linux): Windows has no /tmp that a
     // native program and MSYS2's ssh-keygen read alike.
-    mut base := os.getenv("TMPDIR")
+    mut base := (os.getenv("TMPDIR") or "")
     if base.len() == 0 {
         base = "/tmp"
     }
-    dir := base + "/flint-keys-" + os.getenv("USER", "test")
+    dir := base + "/flint-keys-" + (os.getenv("USER") or "test")
     _ = fs.remove(dir)
     try fs.mkdir_all(dir)
     plain_path := try keygen(dir, "plain", "")

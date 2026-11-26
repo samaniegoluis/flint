@@ -16,7 +16,7 @@ type OsWebviewData struct {
 }
 
 fn new_os_webview_data() -> OsWebviewData {
-    base := os.getenv("LOCALAPPDATA")
+    base := (os.getenv("LOCALAPPDATA") or "")
     if base.len() == 0 {
         return OsWebviewData{ profile: "" }
     }

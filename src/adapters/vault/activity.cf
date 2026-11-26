@@ -62,8 +62,8 @@ ALTER TABLE activity ADD COLUMN alerted INTEGER NOT NULL DEFAULT 0;
 // The columns every read of an entry selects, in activity_row's order.
 ACTIVITY_COLUMNS: str = "id, at, caller, via, token_id, action, host, command, outcome, command_cut, grant_id, run_state, exit_status, duration_ms, result, alerted"
 
-fn activity_row(r: []SqlCell) -> ActivityEntry {
-    return ActivityEntry{ id: cell_i64(r[0]), at: cell_i64(r[1]), caller: cell_str(r[2]), via: cell_str(r[3]), token: cell_str(r[4]), action: cell_str(r[5]), host: cell_str(r[6]), command: cell_str(r[7]), outcome: cell_str(r[8]), cut: cell_i64(r[9]), grant: cell_str(r[10]), state: cell_str(r[11]), exit: cell_i64(r[12]), duration_ms: cell_i64(r[13]), result: cell_str(r[14]), alerted: cell_i64(r[15]) != 0 }
+fn activity_row(r: []SqlCell) -> domain.ActivityEntry {
+    return domain.ActivityEntry{ id: cell_i64(r[0]), at: cell_i64(r[1]), caller: cell_str(r[2]), via: cell_str(r[3]), token: cell_str(r[4]), action: cell_str(r[5]), host: cell_str(r[6]), command: cell_str(r[7]), outcome: cell_str(r[8]), cut: cell_i64(r[9]), grant: cell_str(r[10]), state: cell_str(r[11]), exit: cell_i64(r[12]), duration_ms: cell_i64(r[13]), result: cell_str(r[14]), alerted: cell_i64(r[15]) != 0 }
 }
 
 // A view of the activity file's connection; it does not own the handle.
@@ -148,16 +148,16 @@ fn (self: SqlVaultStore) activity_open_or_restart(path: str, key: []byte, new_sa
         if fs.exists(pending) {
             salt := try self.vault_read_salt(pending)
             mut probe := open_cipher_db(pending, key, salt, false) or {
-                return self.activity_set_aside(path, key, new_salt)
+                return try self.activity_set_aside(path, key, new_salt)
             }
             probe.close_db()
             // str(): a view here lowers like the C function of that name (CFIRE-UPSTREAM: CF-158)
             fs.rename(str(pending), str(path)) or err3 {
                 return error(coded(ERR_IO, "cannot put {pending} in place"))
             }
-            return self.activity_open(path, key, new_salt)
+            return try self.activity_open(path, key, new_salt)
         }
-        return self.activity_set_aside(path, key, new_salt)
+        return try self.activity_set_aside(path, key, new_salt)
     }
     if fs.exists(pending) {
         _ = fs.remove(pending)
@@ -172,7 +172,7 @@ fn (self: SqlVaultStore) activity_set_aside(path: str, key: []byte, new_salt: []
     fs.rename(str(path), str(aside)) or err2 {
         return error(coded(ERR_IO, "cannot move {path} aside"))
     }
-    return self.activity_open(path, key, new_salt)
+    return try self.activity_open(path, key, new_salt)
 }
 
 // Opens (or creates, 0600, with `new_salt`) the file at `path` and brings it up to
@@ -243,7 +243,7 @@ fn (self: SqlVaultStore) activity_copy(rows: [][]SqlCell, retention: str) -> voi
 
 // The insert and the prune in one savepoint, so a reader never sees a log that is
 // half pruned. Returns the new entry's id.
-fn (self: SqlVaultStore) activity_add(e: ActivityEntry, keep: ActivityKeep) -> i64! {
+fn (self: SqlVaultStore) activity_add(e: domain.ActivityEntry, keep: domain.ActivityKeep) -> i64! {
     try self.require_activity()
     try self.act().exec("SAVEPOINT activity_add;")
     id := self.activity_insert(e, keep) or err {
@@ -255,7 +255,7 @@ fn (self: SqlVaultStore) activity_add(e: ActivityEntry, keep: ActivityKeep) -> i
     return id
 }
 
-fn (self: SqlVaultStore) activity_insert(e: ActivityEntry, keep: ActivityKeep) -> i64! {
+fn (self: SqlVaultStore) activity_insert(e: domain.ActivityEntry, keep: domain.ActivityKeep) -> i64! {
     try self.act().run_sql("INSERT INTO activity (at, caller, via, token_id, action, host, command, outcome, command_cut, grant_id, run_state, exit_status, duration_ms, result, alerted) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15);", [
             sql_int(e.at), sql_text(e.caller), sql_text(e.via), sql_text(e.token), sql_text(e.action), sql_text(e.host), sql_text(e.command), sql_text(e.outcome), sql_int(e.cut),
             sql_text(e.grant), sql_text(e.state), sql_int(e.exit), sql_int(e.duration_ms), sql_text(e.result), sql_bool(e.alerted),
@@ -268,7 +268,7 @@ fn (self: SqlVaultStore) activity_insert(e: ActivityEntry, keep: ActivityKeep) -
 
 // Records how entry `id`'s command ended (milestone 56). An entry pruned meanwhile,
 // or one that never ran, is left as it is: false.
-fn (self: SqlVaultStore) activity_finish(id: i64, end: ActivityEnd) -> bool! {
+fn (self: SqlVaultStore) activity_finish(id: i64, end: domain.ActivityEnd) -> bool! {
     try self.require_activity()
     try self.act().run_sql("UPDATE activity SET run_state = ?2, exit_status = ?3, duration_ms = ?4, result = ?5 WHERE id = ?1 AND run_state = ?6;", [
             sql_int(id), sql_text(ACTIVITY_ENDED), sql_int(end.exit), sql_int(end.duration_ms), sql_text(end.result), sql_text(ACTIVITY_RUNNING),
@@ -278,13 +278,13 @@ fn (self: SqlVaultStore) activity_finish(id: i64, end: ActivityEnd) -> bool! {
 }
 
 // The newest `limit` entries grant `grant_id` allowed, newest first (View, 26b1).
-fn (self: SqlVaultStore) activity_of_grant(grant_id: str, limit: i64) -> []ActivityEntry! {
+fn (self: SqlVaultStore) activity_of_grant(grant_id: str, limit: i64) -> []domain.ActivityEntry! {
     try self.require_activity()
     if grant_id.len() == 0 {
         return []
     }
     res := try self.act().query_cells("SELECT {ACTIVITY_COLUMNS} FROM activity WHERE grant_id = ?1 ORDER BY id DESC LIMIT ?2;", [sql_text(grant_id), sql_int(limit)])
-    mut list: []ActivityEntry = []
+    mut list: []domain.ActivityEntry = []
     for r in res {
         list.push(activity_row(r))
     }
@@ -293,7 +293,7 @@ fn (self: SqlVaultStore) activity_of_grant(grant_id: str, limit: i64) -> []Activ
 
 // Deletes what `keep` no longer covers: entries older than `since_at`, then the
 // oldest ones while the log is over `max_bytes`. The newest entry always stays.
-fn (self: SqlVaultStore) activity_trim(keep: ActivityKeep) -> i64! {
+fn (self: SqlVaultStore) activity_trim(keep: domain.ActivityKeep) -> i64! {
     before := try self.activity_count()
     if keep.since_at > 0 {
         try self.act().run_sql("DELETE FROM activity WHERE at < ?1 AND id < (SELECT max(id) FROM activity);", [sql_int(keep.since_at)])
@@ -322,7 +322,7 @@ fn (self: SqlVaultStore) activity_bytes() -> i64! {
     return cell_i64(res[0][0])
 }
 
-fn (self: SqlVaultStore) activity_prune(keep: ActivityKeep) -> i64! {
+fn (self: SqlVaultStore) activity_prune(keep: domain.ActivityKeep) -> i64! {
     try self.require_activity()
     try self.act().exec("SAVEPOINT activity_prune;")
     done := self.activity_trim(keep) or err {
@@ -354,14 +354,14 @@ fn (self: SqlVaultStore) set_activity_retention(days: i64) -> void! {
     try self.act().run_sql("INSERT INTO meta (key, value) VALUES ('activity_retention_days', ?1) ON CONFLICT(key) DO UPDATE SET value = excluded.value;", [sql_text("{days}")])
 }
 
-fn (self: SqlVaultStore) activity_page(before_id: i64, limit: i64) -> []ActivityEntry! {
+fn (self: SqlVaultStore) activity_page(before_id: i64, limit: i64) -> []domain.ActivityEntry! {
     try self.require_activity()
     mut before := before_id
     if before <= 0 {
         before = 9223372036854775807
     }
     res := try self.act().query_cells("SELECT {ACTIVITY_COLUMNS} FROM activity WHERE id < ?1 ORDER BY id DESC LIMIT ?2;", [sql_int(before), sql_int(limit)])
-    mut list: []ActivityEntry = []
+    mut list: []domain.ActivityEntry = []
     for r in res {
         list.push(activity_row(r))
     }

@@ -6,7 +6,7 @@ import "core:time"
 import "../../domain"
 
 fn temp_dir(name: str) -> str {
-    mut base := os.getenv("TMPDIR")
+    mut base := (os.getenv("TMPDIR") or "")
     if base.len() == 0 {
         base = "/tmp"
     }

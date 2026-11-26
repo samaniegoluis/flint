@@ -22,15 +22,15 @@ fn empty_cred_patch() -> CredPatch {
     return CredPatch{ name: "", set_name: false, user: "", set_user: false, key: "", set_key: false, password: "", set_password: false }
 }
 
-fn key_view(k: SshKey) -> KeyView {
+fn key_view(k: domain.SshKey) -> KeyView {
     return KeyView{ name: k.name, key_type: k.key_type, public_key: k.public_key, fingerprint: k.fingerprint, has_passphrase: k.passphrase.len() > 0 }
 }
 
-fn cred_view(cat: Catalog, c: Credential) -> CredView {
+fn cred_view(cat: domain.Catalog, c: domain.Credential) -> CredView {
     return CredView{ name: c.name, user: c.username, key: key_name_of(cat.keys, c.key_id), has_password: c.password.len() > 0 }
 }
 
-fn require_key(keys: []SshKey, name: str) -> SshKey! {
+fn require_key(keys: []domain.SshKey, name: str) -> domain.SshKey! {
     idx := key_index_by_name(keys, name)
     if idx < 0 {
         return error(coded(ERR_NOT_FOUND, "no key '{name}'"))
@@ -38,7 +38,7 @@ fn require_key(keys: []SshKey, name: str) -> SshKey! {
     return keys[usize(idx)]
 }
 
-fn require_cred(creds: []Credential, name: str) -> Credential! {
+fn require_cred(creds: []domain.Credential, name: str) -> domain.Credential! {
     idx := cred_index_by_name(creds, name)
     if idx < 0 {
         return error(coded(ERR_NOT_FOUND, "no credential '{name}'"))
@@ -50,7 +50,7 @@ fn require_cred(creds: []Credential, name: str) -> Credential! {
 
 // Stores a private key by content. It is parsed first, so a bad key or a wrong
 // passphrase is refused before anything is written.
-fn add_key[C: Crypto, S: VaultStore, I: KeyInspector](crypto: C, mut store: S, inspector: I, session: VaultSession, name: str, private_key: str, passphrase: str) -> KeyView! {
+fn add_key[C: ports.Crypto, S: ports.VaultStore, I: ports.KeyInspector](crypto: C, mut store: S, inspector: I, session: VaultSession, name: str, private_key: str, passphrase: str) -> KeyView! {
     try check_name("key name", name)
     keys := try store.keys_all()
     if key_index_by_name(keys, name) >= 0 {
@@ -58,7 +58,7 @@ fn add_key[C: Crypto, S: VaultStore, I: KeyInspector](crypto: C, mut store: S, i
     }
     info := try inspector.inspect_private_key(private_key, passphrase)
     id := new_row_id(crypto)
-    k := SshKey{
+    k := domain.SshKey{
         id: id,
         name: name,
         key_type: info.key_type,
@@ -71,7 +71,7 @@ fn add_key[C: Crypto, S: VaultStore, I: KeyInspector](crypto: C, mut store: S, i
     return key_view(k)
 }
 
-fn list_keys[S: VaultStore](store: S) -> []KeyView! {
+fn list_keys[S: ports.VaultStore](store: S) -> []KeyView! {
     mut views: []KeyView = []
     for k in try store.keys_all() {
         views.push(key_view(k))
@@ -79,11 +79,11 @@ fn list_keys[S: VaultStore](store: S) -> []KeyView! {
     return views
 }
 
-fn show_key[S: VaultStore](store: S, name: str) -> KeyView! {
+fn show_key[S: ports.VaultStore](store: S, name: str) -> KeyView! {
     return key_view(try require_key(try store.keys_all(), name))
 }
 
-fn rename_key[S: VaultStore](mut store: S, name: str, new_name: str) -> KeyView! {
+fn rename_key[S: ports.VaultStore](mut store: S, name: str, new_name: str) -> KeyView! {
     try check_name("key name", new_name)
     keys := try store.keys_all()
     mut k := try require_key(keys, name)
@@ -97,7 +97,7 @@ fn rename_key[S: VaultStore](mut store: S, name: str, new_name: str) -> KeyView!
 }
 
 // Removes a key that no host or credential uses.
-fn remove_key[S: VaultStore](mut store: S, name: str) -> KeyView! {
+fn remove_key[S: ports.VaultStore](mut store: S, name: str) -> KeyView! {
     cat := try load_catalog(store)
     k := try require_key(cat.keys, name)
     for h in cat.hosts {
@@ -116,7 +116,7 @@ fn remove_key[S: VaultStore](mut store: S, name: str) -> KeyView! {
 
 // ---- Credentials ---------------------------------------------------------------
 
-fn apply_cred_patch[C: Crypto](crypto: C, session: VaultSession, cat: Catalog, base: Credential, p: CredPatch) -> Credential! {
+fn apply_cred_patch[C: ports.Crypto](crypto: C, session: VaultSession, cat: domain.Catalog, base: domain.Credential, p: CredPatch) -> domain.Credential! {
     mut c := base
     if p.set_name {
         try check_name("credential name", p.name)
@@ -146,7 +146,7 @@ fn apply_cred_patch[C: Crypto](crypto: C, session: VaultSession, cat: Catalog, b
     return c
 }
 
-fn add_cred[C: Crypto, S: VaultStore](crypto: C, mut store: S, session: VaultSession, p: CredPatch) -> CredView! {
+fn add_cred[C: ports.Crypto, S: ports.VaultStore](crypto: C, mut store: S, session: VaultSession, p: CredPatch) -> CredView! {
     if !p.set_name {
         return error(coded(ERR_USAGE, "a credential needs a name"))
     }
@@ -154,13 +154,13 @@ fn add_cred[C: Crypto, S: VaultStore](crypto: C, mut store: S, session: VaultSes
         return error(coded(ERR_USAGE, "a credential needs a user (--user)"))
     }
     cat := try load_catalog(store)
-    base := Credential{ id: new_row_id(crypto), name: "", username: "", key_id: "", password: [] }
+    base := domain.Credential{ id: new_row_id(crypto), name: "", username: "", key_id: "", password: [] }
     c := try apply_cred_patch(crypto, session, cat, base, p)
     try store.cred_put(c)
     return cred_view(cat, c)
 }
 
-fn edit_cred[C: Crypto, S: VaultStore](crypto: C, mut store: S, session: VaultSession, name: str, p: CredPatch) -> CredView! {
+fn edit_cred[C: ports.Crypto, S: ports.VaultStore](crypto: C, mut store: S, session: VaultSession, name: str, p: CredPatch) -> CredView! {
     cat := try load_catalog(store)
     base := try require_cred(cat.creds, name)
     c := try apply_cred_patch(crypto, session, cat, base, p)
@@ -168,7 +168,7 @@ fn edit_cred[C: Crypto, S: VaultStore](crypto: C, mut store: S, session: VaultSe
     return cred_view(cat, c)
 }
 
-fn list_creds[S: VaultStore](store: S) -> []CredView! {
+fn list_creds[S: ports.VaultStore](store: S) -> []CredView! {
     cat := try load_catalog(store)
     mut views: []CredView = []
     for c in cat.creds {
@@ -177,13 +177,13 @@ fn list_creds[S: VaultStore](store: S) -> []CredView! {
     return views
 }
 
-fn show_cred[S: VaultStore](store: S, name: str) -> CredView! {
+fn show_cred[S: ports.VaultStore](store: S, name: str) -> CredView! {
     cat := try load_catalog(store)
     return cred_view(cat, try require_cred(cat.creds, name))
 }
 
 // Removes a credential that no host uses.
-fn remove_cred[S: VaultStore](mut store: S, name: str) -> CredView! {
+fn remove_cred[S: ports.VaultStore](mut store: S, name: str) -> CredView! {
     cat := try load_catalog(store)
     c := try require_cred(cat.creds, name)
     for h in cat.hosts {

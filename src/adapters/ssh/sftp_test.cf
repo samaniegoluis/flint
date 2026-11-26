@@ -10,7 +10,7 @@ import "core:time"
 import "core:sync"
 import "../../ports"
 
-fn accepts_sftp[T: SftpTransport](t: T) -> bool {
+fn accepts_sftp[T: ports.SftpTransport](t: T) -> bool {
     return true
 }
 
@@ -30,7 +30,7 @@ test "sftp calls before sftp_open fail as internal" {
 fn sftp_link() -> SshLink! {
     (port, key_path) := test_target()
     mut link := new_ssh_link()
-    try link.link_dial("127.0.0.1", i64(port), os.getenv("USER"), 5, "")
+    try link.link_dial("127.0.0.1", i64(port), (os.getenv("USER") or ""), 5, "")
     try link.link_auth_key(try fs.read_text(key_path), "")
     try link.sftp_open()
     return link
@@ -40,7 +40,7 @@ fn sftp_link() -> SshLink! {
 // on the test's sshd, so a Windows $TMPDIR (C:\flint-work\tmp) takes MSYS2's form
 // (/c/flint-work/tmp), which that sshd's shell and SFTP server both read.
 fn scratch_dir(tag: str) -> str {
-    mut base := os.getenv("TMPDIR")
+    mut base := (os.getenv("TMPDIR") or "")
     if base.len() == 0 {
         base = "/tmp"
     }
@@ -185,7 +185,7 @@ test "sftp shares a session with a running PTY, in turn" {
     }
     mut link := new_ssh_link()
     defer link.link_hangup()
-    try link.link_dial("127.0.0.1", i64(port), os.getenv("USER"), 5, "")
+    try link.link_dial("127.0.0.1", i64(port), (os.getenv("USER") or ""), 5, "")
     try link.link_auth_key(try fs.read_text(key_path), "")
     // A plain sh on the PTY: a login shell's line editor and prompt take seconds.
     try link.link_shell_open("xterm-256color", 80, 24, "/bin/sh")
@@ -225,7 +225,7 @@ test "sftp shares a session with a PTY read on another thread" {
     }
     mut link := new_ssh_link()
     defer link.link_hangup()
-    try link.link_dial("127.0.0.1", i64(port), os.getenv("USER"), 5, "")
+    try link.link_dial("127.0.0.1", i64(port), (os.getenv("USER") or ""), 5, "")
     try link.link_auth_key(try fs.read_text(key_path), "")
     // A plain sh on the PTY: a login shell's line editor and prompt take seconds.
     try link.link_shell_open("xterm-256color", 80, 24, "/bin/sh")
@@ -272,15 +272,15 @@ test "sftp shares a session with a PTY read on another thread" {
 // (milestone 16's spike); skipped otherwise.
 test "an sftp request to a stalled server fails within the timeout" {
     (port, key_path) := test_target()
-    stall_port := os.getenv("FLINT_TEST_STALL_PORT")
-    stall_file := os.getenv("FLINT_TEST_STALL_FILE")
+    stall_port := (os.getenv("FLINT_TEST_STALL_PORT") or "")
+    stall_file := (os.getenv("FLINT_TEST_STALL_FILE") or "")
     if port == 0 || stall_port.len() == 0 {
         println("SKIP: FLINT_TEST_STALL_PORT not set")
         return
     }
     mut link := new_ssh_link()
     defer link.link_hangup()
-    try link.link_dial("127.0.0.1", i64(i64.parse(stall_port) or 0), os.getenv("USER"), 3, "")
+    try link.link_dial("127.0.0.1", i64(i64.parse(stall_port) or 0), (os.getenv("USER") or ""), 3, "")
     try link.link_auth_key(try fs.read_text(key_path), "")
     try link.sftp_open()
     try fs.write_text(stall_file, "stall")
@@ -317,7 +317,7 @@ test "a shared link lends its session once the shell is open, and takes it back 
     }
     id := "files-{time.now_ms()}"
     mut link := new_shared_link(id)
-    try link.link_dial("127.0.0.1", i64(port), os.getenv("USER"), 5, "")
+    try link.link_dial("127.0.0.1", i64(port), (os.getenv("USER") or ""), 5, "")
     try link.link_auth_key(try fs.read_text(key_path), "")
     assert(!files_available(id))
     try link.link_shell_open("xterm-256color", 80, 24, "/bin/sh")
@@ -343,7 +343,7 @@ test "a shared link lends its session once the shell is open, and takes it back 
     try link.link_channel_write("echo shared-$((40+2))\n")
     mut got := ""
     for _ in 0..100 {
-        chunk := link.link_channel_read(50) or ExecChunk{ stdout: "", stderr: "", done: false, exit_code: 0, signal: "" }
+        chunk := link.link_channel_read(50) or domain.ExecChunk{ stdout: "", stderr: "", done: false, exit_code: 0, signal: "" }
         got = got + chunk.stdout
         if got.contains("shared-42") {
             break
@@ -366,7 +366,7 @@ test "a shared link lends its session once the shell is open, and takes it back 
     assert(r.len() > 0)
 }
 
-fn list_files[T: SftpTransport](t: T, path: str) -> i64! {
+fn list_files[T: ports.SftpTransport](t: T, path: str) -> i64! {
     return i64((try t.sftp_list(path)).len())
 }
 
@@ -378,7 +378,7 @@ test "hangup waits for a request still using the session" {
     }
     id := "files-wait-{time.now_ms()}"
     mut link := new_shared_link(id)
-    try link.link_dial("127.0.0.1", i64(port), os.getenv("USER"), 5, "")
+    try link.link_dial("127.0.0.1", i64(port), (os.getenv("USER") or ""), 5, "")
     try link.link_auth_key(try fs.read_text(key_path), "")
     try link.link_shell_open("xterm-256color", 80, 24, "/bin/sh")
     mut held := try borrow_browse(id)
@@ -419,11 +419,11 @@ test "a shared link lends its session with no shell, and two lent sessions relay
     a := "pane-a-{time.now_ms()}"
     b := "pane-b-{time.now_ms()}"
     mut la := new_shared_link(a)
-    try la.link_dial("127.0.0.1", i64(port), os.getenv("USER"), 5, "")
+    try la.link_dial("127.0.0.1", i64(port), (os.getenv("USER") or ""), 5, "")
     try la.link_auth_key(key, "")
     try la.link_lend()
     mut lb := new_shared_link(b)
-    try lb.link_dial("127.0.0.1", i64(port), os.getenv("USER"), 5, "")
+    try lb.link_dial("127.0.0.1", i64(port), (os.getenv("USER") or ""), 5, "")
     try lb.link_auth_key(key, "")
     try lb.link_lend()
     assert(files_available(a))

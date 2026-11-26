@@ -20,13 +20,13 @@ type MergeOutcome struct {
     path:   str         `json:"path"`
     name:   str         `json:"name"`
     copy:   str         `json:"copy"`
-    report: MergeReport `json:"report"`
+    report: domain.MergeReport `json:"report"`
 }
 
 // Merges the vault at `copy_path` into the open vault (`store`, `session`), through
 // `copy`, a store of its own for the copy. `password` is the master password typed
 // for this command; empty, the key this computer remembers for the copy is used.
-fn merge_vault_copy[C: Crypto, S: VaultStore, P: VaultStore, K: Keychain](crypto: C, mut store: S, mut copy: P, keychain: K, session: VaultSession, copy_path: str, password: str) -> MergeOutcome! {
+fn merge_vault_copy[C: ports.Crypto, S: ports.VaultStore, P: ports.VaultStore, K: ports.Keychain](crypto: C, mut store: S, mut copy: P, keychain: K, session: VaultSession, copy_path: str, password: str) -> MergeOutcome! {
     try check_absolute(copy_path)
     if copy_path == session.path {
         return error(coded(ERR_INVALID, "{copy_path} is the vault itself; name the conflict copy to merge into it"))

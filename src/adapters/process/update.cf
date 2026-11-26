@@ -83,7 +83,7 @@ fn (mut self: OsUpdateFiles) upd_unzip(zip: str, dest: str) -> void! {
     } else if os_name() == "windows" {
         // Windows' own bsdtar, which reads a zip; an MSYS2 or Git tar earlier on the
         // PATH is GNU tar, which does not (milestone 50).
-        mut root := os.getenv("SystemRoot")
+        mut root := (os.getenv("SystemRoot") or "")
         if root.len() == 0 {
             root = "C:/Windows"
         }
@@ -165,7 +165,7 @@ fn (self: OsUpdateProcesses) proc_running_under(dir: str) -> []i64 {
 
 // Who holds a file open in `dir` (milestone 65, Windows' Restart Manager, CF-190);
 // none on macOS and Linux, and none when the query fails.
-fn (self: OsUpdateProcesses) proc_holders(dir: str) -> []FolderHolder {
+fn (self: OsUpdateProcesses) proc_holders(dir: str) -> []domain.FolderHolder {
     mut lines := ""
     // CFIRE-UPSTREAM: CF-190
     cpp {
@@ -238,7 +238,7 @@ fn current_pid() -> i64 {
 // A temporary folder of this machine's (TMPDIR, TEMP, or /tmp).
 fn temp_base() -> str {
     for name in ["TMPDIR", "TEMP", "TMP"] {
-        v := os.getenv(name)
+        v := (os.getenv(name) or "")
         if v.len() > 0 {
             return local_slashes("{v.trim_end()}").replace_all("//", "/")
         }
@@ -265,7 +265,7 @@ fn new_os_root_runner() -> OsRootRunner {
 
 // Waits for the person's answer in polkit's dialog and for apt or dnf: no deadline of
 // its own (the helper bounds the package manager, Principle 8).
-fn (mut self: OsRootRunner) run_root_helper(helper: str) -> RootRun! {
+fn (mut self: OsRootRunner) run_root_helper(helper: str) -> domain.RootRun! {
     if !fs.exists(self.pkexec) {
         return error(coded(ERR_UNSUPPORTED, "pkexec is not installed, so Flint cannot ask for the system password: install the update with your package manager"))
     }
@@ -275,7 +275,7 @@ fn (mut self: OsRootRunner) run_root_helper(helper: str) -> RootRun! {
     if res.stderr.trim().len() > 0 {
         write_stderr("flint-gui: {helper}: {res.stderr.trim()}\n")
     }
-    return RootRun{ exit_code: res.exit_code, stdout: res.stdout }
+    return domain.RootRun{ exit_code: res.exit_code, stdout: res.stdout }
 }
 
 type OsPackageSourceProbe struct {

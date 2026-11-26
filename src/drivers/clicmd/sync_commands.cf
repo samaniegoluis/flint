@@ -14,7 +14,7 @@ import "core:time"
 import "core:json"
 import "../../adapters/config"
 import "../../adapters/crypto"
-import "../../adapters/keychain"
+import "../../adapters/keychain" as flint_keychain
 import "../../adapters/vault"
 import "../../adapters/vaultremote"
 import "../../application"
@@ -24,11 +24,11 @@ fn wall_ms() -> i64 {
     return time.unix_seconds() * 1000
 }
 
-fn token_keychain() -> OsKeychain {
-    return new_os_keychain(os.getenv("FLINT_KEYCHAIN") != "off")
+fn token_keychain() -> flint_keychain.OsKeychain {
+    return new_os_keychain((os.getenv("FLINT_KEYCHAIN") or "") != "off")
 }
 
-fn remote_links() -> JsonRemoteLinkStore {
+fn remote_links() -> config.JsonRemoteLinkStore {
     return new_json_remote_link_store(flint_config_dir())
 }
 
@@ -40,7 +40,7 @@ fn server_token_for(sec: SecretInput) -> str! {
     if !has_terminal() {
         return error(coded(ERR_USAGE, "no terminal to type the server's token; pass it with --token-stdin"))
     }
-    return read_secret_line("Server token: ")
+    return try read_secret_line("Server token: ")
 }
 
 // "340 KB" or "1.2 MB" for a size in bytes.
@@ -79,7 +79,7 @@ fn cmd_vault_connect_list(url: str, sec: SecretInput, as_json: bool) -> void! {
 }
 
 // `flint vault connect <url> [--label <text>]`, `--to <path> [--id <id>]` or `--list`.
-fn cmd_vault_connect(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store: LockedVaultStore, src: VaultSource, recents: JsonRecentStore) -> void! {
+fn cmd_vault_connect(p: ParsedArgs, sec: SecretInput, as_json: bool, c: crypto.Sodium, mut store: vault.LockedVaultStore, src: VaultSource, recents: config.JsonRecentStore) -> void! {
     url := p.positional(2)
     to := p.flag_value("--to")
     id := p.flag_value("--id")
@@ -107,7 +107,7 @@ fn cmd_vault_connect(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, 
         s := try download_remote(c, mut store, links, remote, src.kc, tokens, recents, url, token, id, password, path, false, wall_ms())
         st := try remote_status(c, store, links, s.path)
         if as_json {
-            say(json.stringify(SyncOutcome{ path: s.path, name: s.name, url: st.url, result: "downloaded", version: st.version, uploaded: false, report: empty_merge_report(), rekeyed: false }))
+            say(json.stringify(application.SyncOutcome{ path: s.path, name: s.name, url: st.url, result: "downloaded", version: st.version, uploaded: false, report: empty_merge_report(), rekeyed: false }))
             return
         }
         say("Downloaded vault '{s.name}' from {st.url} to {s.path} (version {st.version}).")
@@ -141,7 +141,7 @@ fn cmd_vault_connect(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, 
 // `flint vault sync`: in the app when it holds the vault, else with the master
 // password typed for this command. A password changed on another machine is asked
 // for (or read with --new-master-stdin) and taken.
-fn cmd_vault_sync(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store: LockedVaultStore, src: VaultSource, recents: JsonRecentStore) -> void! {
+fn cmd_vault_sync(p: ParsedArgs, sec: SecretInput, as_json: bool, c: crypto.Sodium, mut store: vault.LockedVaultStore, src: VaultSource, recents: config.JsonRecentStore) -> void! {
     links := remote_links()
     remote := new_http_vault_remote()
     tokens := token_keychain()
@@ -169,7 +169,7 @@ fn cmd_vault_sync(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut
     print_sync(got, as_json)
 }
 
-fn print_sync(got: SyncOutcome, as_json: bool) {
+fn print_sync(got: application.SyncOutcome, as_json: bool) {
     if as_json {
         say(json.stringify(got))
         return
@@ -194,7 +194,7 @@ fn print_sync(got: SyncOutcome, as_json: bool) {
     print_sync_report(r)
 }
 
-fn print_sync_report(r: MergeReport) {
+fn print_sync_report(r: domain.MergeReport) {
     mut rows: [][]str = []
     for ch in r.changes {
         rows.push([ch.change, merge_kind_label(ch.kind), ch.name])
@@ -214,7 +214,7 @@ type DisconnectNote struct {
 }
 
 // `flint vault disconnect`: no key needed; the vault file and the server's copy stay.
-fn cmd_vault_disconnect(p: ParsedArgs, as_json: bool, recents: JsonRecentStore) -> void! {
+fn cmd_vault_disconnect(p: ParsedArgs, as_json: bool, recents: config.JsonRecentStore) -> void! {
     target := try resolve_vault(recents, vault_selector(p))
     gone := try disconnect_remote(remote_links(), token_keychain(), target.path)
     if as_json {
@@ -233,7 +233,7 @@ type TokenNote struct {
 // `flint vault token`: a new token for a connected vault, after the server's token
 // was rotated. No key needed; the new token is tried against the server before the
 // old one leaves the keychain.
-fn cmd_vault_token(p: ParsedArgs, sec: SecretInput, as_json: bool, recents: JsonRecentStore) -> void! {
+fn cmd_vault_token(p: ParsedArgs, sec: SecretInput, as_json: bool, recents: config.JsonRecentStore) -> void! {
     target := try resolve_vault(recents, vault_selector(p))
     if !remote_connected(remote_links(), target.path) {
         return error(coded(ERR_NOT_FOUND, "vault '{target.name}' is not connected to a server; `flint vault connect <url>` connects it"))
@@ -265,7 +265,7 @@ fn ago_label(ms: i64) -> str {
     return "{secs / 86400} days ago"
 }
 
-fn remote_status_fields(r: RemoteStatus) -> ([]str, []str) {
+fn remote_status_fields(r: application.RemoteStatus) -> ([]str, []str) {
     if !r.connected {
         n: []str = ["remote"]
         v: []str = ["none (a local vault; `flint vault connect <url>` to sync it)"]
@@ -287,7 +287,7 @@ fn remote_status_fields(r: RemoteStatus) -> ([]str, []str) {
 // After a command run here (not in the app) left a connected vault with changes
 // its server lacks: sync it now. A failure is a warning; the change waits for the
 // next sync (Principle 14: nothing is lost by waiting).
-fn sync_after_command(p: ParsedArgs, c: Sodium, mut store: LockedVaultStore, kc: OsKeychain, recents: JsonRecentStore) {
+fn sync_after_command(p: ParsedArgs, c: crypto.Sodium, mut store: vault.LockedVaultStore, kc: flint_keychain.OsKeychain, recents: config.JsonRecentStore) {
     if p.positional(0) == "vault" {
         verb := p.positional(1)
         if verb != "rename" && verb != "merge" {

@@ -24,7 +24,7 @@ fn os_language_tag() -> str {
         tag = flint_language::preferred();
     }
     if tag.len() == 0 {
-        tag = locale_of_env(os.getenv("LANGUAGE"), os.getenv("LC_ALL"), os.getenv("LC_MESSAGES"), os.getenv("LANG"))
+        tag = locale_of_env((os.getenv("LANGUAGE") or ""), (os.getenv("LC_ALL") or ""), (os.getenv("LC_MESSAGES") or ""), (os.getenv("LANG") or ""))
     }
     return tag
 }

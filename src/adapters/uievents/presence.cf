@@ -29,7 +29,7 @@ type OsPresence struct {
 }
 
 fn new_os_presence() -> OsPresence {
-    return OsPresence{ force_password: os.getenv("FLINT_PRESENCE") == "password", lang: make(sync.Mutex[str], "en") }
+    return OsPresence{ force_password: (os.getenv("FLINT_PRESENCE") or "") == "password", lang: make(sync.Mutex[str], "en") }
 }
 
 fn (self: OsPresence) set_language(lang: str) {
@@ -38,7 +38,7 @@ fn (self: OsPresence) set_language(lang: str) {
 
 // The reason in `lang`: Spanish from this table, English as the core wrote it
 // (Principle 21: the core never translates). A reason the table lacks reads English.
-fn presence_text(lang: str, reason: PresenceReason) -> str {
+fn presence_text(lang: str, reason: domain.PresenceReason) -> str {
     if lang != "es" {
         return reason.text
     }
@@ -83,7 +83,7 @@ fn (self: OsPresence) presence_method() -> str {
 // Asks the OS to confirm the person is there, showing `reason`. Blocks until they
 // answer (at most two minutes): call it from a worker. False when they cancel or
 // fail; an error when the OS could not ask.
-fn (self: OsPresence) presence_confirm(reason: PresenceReason) -> bool! {
+fn (self: OsPresence) presence_confirm(reason: domain.PresenceReason) -> bool! {
     text := presence_text(self.lang.get(), reason)
     if self.presence_method() == PRESENCE_PASSWORD {
         return error(coded(ERR_UNSUPPORTED, "no presence check from the OS here; the master password is used"))

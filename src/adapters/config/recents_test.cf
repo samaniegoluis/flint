@@ -5,7 +5,7 @@ import "core:fs"
 import "core:crypto/sha256"
 import "../../ports"
 
-fn recents_port_check[R: RecentStore](r: R) -> bool {
+fn recents_port_check[R: ports.RecentStore](r: R) -> bool {
     list := r.recents_load() or err { return false }
     return list.len() == 0
 }
@@ -15,7 +15,7 @@ test "recent vaults round-trip through the JSON file" {
     dir := test_tmp() + "/flint-config-" + sha256.random_hex(8)
     store := new_json_recent_store(dir)
     assert(recents_port_check(store))
-    try store.recents_save([RecentVault{ path: "/a/b.flint", name: "Home", id: "0123456789abcdef0123456789abcdef" }, RecentVault{ path: "/c \"q\".flint", name: "Work", id: "" }])
+    try store.recents_save([domain.RecentVault{ path: "/a/b.flint", name: "Home", id: "0123456789abcdef0123456789abcdef" }, domain.RecentVault{ path: "/c \"q\".flint", name: "Work", id: "" }])
     list := try store.recents_load()
     assert_eq(list.len(), 2)
     assert_eq(list[0].name, "Home")

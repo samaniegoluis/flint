@@ -67,7 +67,7 @@ fn (self: TestCrypto) wipe_text(text: str) {
 // Versions in memory, every vault's in one list; `race` makes the next write find
 // another writer first.
 type MemStore struct {
-    versions: []BlobVersion
+    versions: []domain.BlobVersion
     datas:    []str
     labels:   []LabelBody
     label_of: []str
@@ -75,7 +75,7 @@ type MemStore struct {
     fail:     bool
 }
 
-fn (self: MemStore) blob_vaults() -> []ServerVault! {
+fn (self: MemStore) blob_vaults() -> []domain.ServerVault! {
     if self.fail {
         return error(coded(ERR_IO, "disk gone"))
     }
@@ -91,7 +91,7 @@ fn (self: MemStore) blob_vaults() -> []ServerVault! {
             ids.push(v.vault_id)
         }
     }
-    mut found: []ServerVault = []
+    mut found: []domain.ServerVault = []
     for id in ids {
         head := try self.blob_head(id)
         mut label := ""
@@ -100,16 +100,16 @@ fn (self: MemStore) blob_vaults() -> []ServerVault! {
                 label = self.labels[i].label
             }
         }
-        found.push(ServerVault{ id: id, label: label, version: head.version, size: head.size, updated_at: head.stored_at })
+        found.push(domain.ServerVault{ id: id, label: label, version: head.version, size: head.size, updated_at: head.stored_at })
     }
     return found
 }
 
-fn (self: MemStore) blob_head(vault_id: str) -> BlobVersion! {
+fn (self: MemStore) blob_head(vault_id: str) -> domain.BlobVersion! {
     if self.fail {
         return error(coded(ERR_IO, "disk gone"))
     }
-    mut head := BlobVersion{ version: 0, vault_id: vault_id, size: 0, stored_at: 0 }
+    mut head := domain.BlobVersion{ version: 0, vault_id: vault_id, size: 0, stored_at: 0 }
     for v in self.versions {
         if v.vault_id == vault_id {
             head = v
@@ -130,16 +130,16 @@ fn (self: MemStore) blob_read(vault_id: str, version: i64) -> str! {
 fn (mut self: MemStore) blob_write(vault_id: str, version: i64, data: str, now_ms: i64) -> void! {
     if self.race {
         self.race = false
-        self.versions.push(BlobVersion{ version: version, vault_id: vault_id, size: 1, stored_at: now_ms })
+        self.versions.push(domain.BlobVersion{ version: version, vault_id: vault_id, size: 1, stored_at: now_ms })
         self.datas.push("other")
         return error(coded(ERR_CONFLICT, "another writer"))
     }
-    self.versions.push(BlobVersion{ version: version, vault_id: vault_id, size: i64(data.len()), stored_at: now_ms })
+    self.versions.push(domain.BlobVersion{ version: version, vault_id: vault_id, size: i64(data.len()), stored_at: now_ms })
     self.datas.push(data)
 }
 
-fn (self: MemStore) blob_versions(vault_id: str) -> []BlobVersion! {
-    mut newest: []BlobVersion = []
+fn (self: MemStore) blob_versions(vault_id: str) -> []domain.BlobVersion! {
+    mut newest: []domain.BlobVersion = []
     for k in 0..self.versions.len() {
         v := self.versions[self.versions.len() - 1 - k]
         if v.vault_id == vault_id {
@@ -150,7 +150,7 @@ fn (self: MemStore) blob_versions(vault_id: str) -> []BlobVersion! {
 }
 
 fn (mut self: MemStore) blob_delete(vault_id: str) -> void! {
-    mut versions: []BlobVersion = []
+    mut versions: []domain.BlobVersion = []
     mut datas: []str = []
     for i in 0..self.versions.len() {
         if self.versions[i].vault_id != vault_id {

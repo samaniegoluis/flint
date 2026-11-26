@@ -20,13 +20,13 @@ test "LockedVaultStore shares one connection between copies and threads" {
             for i in 0..40 {
                 assert(add_marker_entry(mut w, i64(i)).len() == 0)
                 mut put := ""
-                w.known_host_put(KnownHost{ addr: "w{i}", key_type: "ssh-ed25519", fingerprint: "SHA256:x", host_id: "", added_at: "" }) or err { put = "{err.message()}" }
+                w.known_host_put(domain.KnownHost{ addr: "w{i}", key_type: "ssh-ed25519", fingerprint: "SHA256:x", host_id: "", added_at: "" }) or err { put = "{err.message()}" }
                 assert(put.len() == 0)
             }
         }
         for i in 0..40 {
             try store.vault_begin()
-            try store.group_put(Group{ id: "g{i}", parent_id: "", name: "group{i}" })
+            try store.group_put(domain.Group{ id: "g{i}", parent_id: "", name: "group{i}" })
             try store.vault_commit()
         }
     }
@@ -36,7 +36,7 @@ test "LockedVaultStore shares one connection between copies and threads" {
 
     // A rolled-back transaction leaves nothing and releases the lock.
     try store.vault_begin()
-    try store.group_put(Group{ id: "gx", parent_id: "", name: "gone" })
+    try store.group_put(domain.Group{ id: "gx", parent_id: "", name: "gone" })
     store.vault_rollback()
     assert_eq((try store.groups_all()).len(), usize(40))
 
@@ -52,7 +52,7 @@ test "LockedVaultStore shares one connection between copies and threads" {
 
 // "" when the entry was added, else the error.
 fn add_marker_entry(mut w: LockedVaultStore, n: i64) -> str {
-    _ = w.activity_add(marker_entry(n), ActivityKeep{ since_at: 0, max_bytes: ACTIVITY_MAX_BYTES }) or err {
+    _ = w.activity_add(marker_entry(n), domain.ActivityKeep{ since_at: 0, max_bytes: ACTIVITY_MAX_BYTES }) or err {
         return "{err.message()}"
     }
     return ""

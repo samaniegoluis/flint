@@ -12,7 +12,7 @@ import "core:time"
 import "core:os"
 import "../../adapters/config"
 import "../../adapters/crypto"
-import "../../adapters/ipc"
+import "../../adapters/ipc" as flint_ipc
 import "../../adapters/process"
 import "../../adapters/uievents"
 import "../../adapters/vault"
@@ -70,7 +70,7 @@ fn install_tray(mut app: webui.App, ui_dir: str, lang: str) {
 // both back to diagnose one. Autofill and password autosave are off in every build.
 fn setup_webview(mut app: webui.App) {
     app.set_autofill(false)
-    if devtools_requested(os.getenv("FLINT_DEVTOOLS")) {
+    if devtools_requested((os.getenv("FLINT_DEVTOOLS") or "")) {
         app.set_devtools(true)
         app.set_context_menu(true)
         write_stderr("flint-gui: FLINT_DEVTOOLS is set: the web inspector and the browser menu are on\n")
@@ -95,7 +95,7 @@ fn clear_webview_autofill(config_dir: str) {
 // none with FLINT_E2E_NO_TRAY=1 (milestone 65).
 fn window_has_tray(e2e: bool) -> bool {
     if e2e {
-        return os.getenv("FLINT_E2E_NO_TRAY") != "1"
+        return (os.getenv("FLINT_E2E_NO_TRAY") or "") != "1"
     }
     return has_system_tray()
 }
@@ -113,7 +113,7 @@ type CloseAsk struct {
 // answer yet, the window comes back and the page asks *Keep Flint running in the
 // background?*; its answer is saved and `window_close` comes here again. cfire hid the
 // window already (`set_hide_on_close`), which is what intercepts ✕ at all.
-fn on_window_close(settings_store: JsonSettingsStore, st: GuiState, mut app: webui.App, e2e: bool) {
+fn on_window_close(settings_store: config.JsonSettingsStore, st: GuiState, mut app: webui.App, e2e: bool) {
     tray := window_has_tray(e2e)
     action := window_close_action(settings_store, tray)
     write_stderr("flint-gui: window closed (tray: {tray}): {action}\n")
@@ -182,7 +182,7 @@ fn quit_app(mut app: webui.App) {
     app.quit()
 }
 
-fn window_state(st: GuiState, presence: OsPresence) -> WindowState {
+fn window_state(st: GuiState, presence: uievents.OsPresence) -> WindowState {
     if !st.holder.window_locked() || !st.unlocked() {
         return WindowState{ locked: false, vault: "", presence: "", waiting: 0 }
     }
@@ -191,13 +191,13 @@ fn window_state(st: GuiState, presence: OsPresence) -> WindowState {
     return WindowState{ locked: true, vault: st.vault_session().name, presence: presence.presence_method(), waiting: i64(waiting.len()) }
 }
 
-fn rpc_window_state(st: GuiState, presence: OsPresence) -> str! {
+fn rpc_window_state(st: GuiState, presence: uievents.OsPresence) -> str! {
     return json.stringify(window_state(st, presence))
 }
 
 // Opens the locked window: the master password, or the presence check when the
 // request carries none. Runs on a worker: Touch ID and polkit block until answered.
-fn rpc_window_unlock(req: WindowUnlockReq, c: Sodium, store: LockedVaultStore, presence: OsPresence, st: GuiState, mut app: webui.App) -> WindowState! {
+fn rpc_window_unlock(req: WindowUnlockReq, c: crypto.Sodium, store: vault.LockedVaultStore, presence: uievents.OsPresence, st: GuiState, mut app: webui.App) -> WindowState! {
     if !st.holder.window_locked() {
         return window_state(st, presence)
     }

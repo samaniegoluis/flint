@@ -29,7 +29,7 @@ type PasteResult struct {
 
 // Creates `path` if it is missing (an existing folder is fine) and, when `own`,
 // makes it 0700.
-fn paste_dir[T: SftpTransport](mut sftp: T, path: str, own: bool) -> void! {
+fn paste_dir[T: ports.SftpTransport](mut sftp: T, path: str, own: bool) -> void! {
     // SFTP v3 has no "exists" status: OpenSSH answers a plain failure, so a refused
     // mkdir is fine when a folder is there, and its own error otherwise.
     sftp.sftp_mkdir(path) or err {
@@ -49,7 +49,7 @@ fn paste_dir[T: SftpTransport](mut sftp: T, path: str, own: bool) -> void! {
 // The paste folder: ~/.cache/flint/paste, or /tmp/flint-<uid> when the home folder
 // cannot hold it. A /tmp folder that is there already must be the person's own (not
 // one someone else made, nor a link to one), or the paste is refused.
-fn paste_root[T: SftpTransport](mut sftp: T) -> str! {
+fn paste_root[T: ports.SftpTransport](mut sftp: T) -> str! {
     home := try sftp.sftp_realpath(".")
     mut failed := ""
     for i, rel in PASTE_HOME_DIRS {
@@ -79,7 +79,7 @@ fn paste_root[T: SftpTransport](mut sftp: T) -> str! {
 
 // Removes what earlier pastes left in `root` more than a day before `now` (the host's
 // clock). Best effort: a paste never fails because an old one could not go.
-fn prune_pastes[T: SftpTransport](mut sftp: T, root: str, keep: str, now: i64) {
+fn prune_pastes[T: ports.SftpTransport](mut sftp: T, root: str, keep: str, now: i64) {
     entries := sftp.sftp_list(root) or {
         return
     }
@@ -93,7 +93,7 @@ fn prune_pastes[T: SftpTransport](mut sftp: T, root: str, keep: str, now: i64) {
 
 // Writes `req.local` to <paste folder>/<id>/<clean name> on the host, the folder
 // 0700 and the file 0600, then prunes old pastes. A failure removes what it wrote.
-fn paste_to_remote[T: SftpTransport, L: LocalFiles](mut sftp: T, mut local: L, req: PasteRequest) -> PasteResult! {
+fn paste_to_remote[T: ports.SftpTransport, L: ports.LocalFiles](mut sftp: T, mut local: L, req: PasteRequest) -> PasteResult! {
     if !valid_drop_id(req.id) {
         return error(coded(ERR_INVALID, "a paste needs an id"))
     }
@@ -122,7 +122,7 @@ fn paste_to_remote[T: SftpTransport, L: LocalFiles](mut sftp: T, mut local: L, r
     return PasteResult{ path: target, text: shell_escape_path(target), size: written }
 }
 
-fn paste_write[T: SftpTransport, L: LocalFiles](mut sftp: T, mut local: L, src: str, folder: str, target: str) -> i64! {
+fn paste_write[T: ports.SftpTransport, L: ports.LocalFiles](mut sftp: T, mut local: L, src: str, folder: str, target: str) -> i64! {
     try sftp.sftp_chmod(folder, PASTE_DIR_MODE)
     try sftp.sftp_file_open(target, true, true)
     mut written: i64 = 0
@@ -167,11 +167,11 @@ fn paste_write[T: SftpTransport, L: LocalFiles](mut sftp: T, mut local: L, src: 
 // A paste over a session that is already logged in (the pane's), on an SFTP
 // channel of its own, as the Files view's transfers. The limit is this machine's
 // setting, never the request's.
-fn paste_over_session[T: SftpTransport, L: LocalFiles, S: SettingsStore](mut sftp: T, mut local: L, settings: S, req: PasteRequest) -> PasteResult! {
+fn paste_over_session[T: ports.SftpTransport, L: ports.LocalFiles, S: ports.SettingsStore](mut sftp: T, mut local: L, settings: S, req: PasteRequest) -> PasteResult! {
     mut r := req
     r.limit_mb = (load_settings(settings) or default_settings()).paste_limit_mb
     try open_sftp(mut sftp)
-    return paste_to_remote(mut sftp, mut local, r)
+    return try paste_to_remote(mut sftp, mut local, r)
 }
 
 // What a paste does when the webview's paste event arrived empty (WebKitGTK hands the
@@ -185,7 +185,7 @@ type ClipboardPaste struct {
     size: i64 `json:"size"`
 }
 
-fn stage_clipboard[C: Clipboard, D: DropStage](mut clip: C, mut stage: D, drop_id: str, rel: str) -> ClipboardPaste! {
+fn stage_clipboard[C: ports.Clipboard, D: ports.DropStage](mut clip: C, mut stage: D, drop_id: str, rel: str) -> ClipboardPaste! {
     if !valid_drop_id(drop_id) || !valid_drop_path(rel) {
         return error(coded(ERR_INVALID, "a paste needs a drop to stage it in"))
     }
@@ -211,7 +211,7 @@ type FieldPaste struct {
     secret: bool `json:"secret"`
 }
 
-fn field_paste_text[C: Clipboard](mut clip: C) -> FieldPaste! {
+fn field_paste_text[C: ports.Clipboard](mut clip: C) -> FieldPaste! {
     if clip.clipboard_holds_secret() {
         return FieldPaste{ text: "", secret: true }
     }
@@ -222,7 +222,7 @@ fn field_paste_text[C: Clipboard](mut clip: C) -> FieldPaste! {
 // The field menu's Copy and Cut: the selection, as plain text (not concealed, never
 // cleared), like a copy in any other app. The page never offers them in a password
 // field.
-fn field_copy_text[C: Clipboard](mut clip: C, text: str) -> void! {
+fn field_copy_text[C: ports.Clipboard](mut clip: C, text: str) -> void! {
     if i64(text.len()) > FIELD_COPY_MAX_BYTES {
         return error(coded(ERR_INVALID, "the selection is too long to copy"))
     }

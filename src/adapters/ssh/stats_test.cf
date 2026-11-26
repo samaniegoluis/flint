@@ -11,7 +11,7 @@ import "core:time"
 import "../../domain"
 import "../../ports"
 
-fn accepts_server_stats[C: ServerStats](c: C) -> bool {
+fn accepts_server_stats[C: ports.ServerStats](c: C) -> bool {
     return true
 }
 
@@ -34,7 +34,7 @@ fn stats_read_until(mut s: StatsLink, marker: str, ms: i64) -> str! {
 // counting its own command line).
 fn stats_loops(port: i32, key: str) -> i64! {
     mut probe := new_ssh_link()
-    try probe.link_dial("127.0.0.1", i64(port), os.getenv("USER"), 5, "")
+    try probe.link_dial("127.0.0.1", i64(port), (os.getenv("USER") or ""), 5, "")
     defer probe.link_hangup()
     try probe.link_auth_key(key, "")
     try probe.link_exec_start("grep -las \"[w]hile read -r _\" /proc/[0-9]*/cmdline | wc -l")
@@ -69,7 +69,7 @@ test "the resources loop runs beside the terminal on the tab's session and leave
     key := try fs.read_text(key_path)
     id := "stats-{time.now_ms()}"
     mut link := new_shared_link(id)
-    try link.link_dial("127.0.0.1", i64(port), os.getenv("USER"), 5, "")
+    try link.link_dial("127.0.0.1", i64(port), (os.getenv("USER") or ""), 5, "")
     try link.link_auth_key(key, "")
     try link.link_shell_open("xterm-256color", 80, 24, "/bin/sh")
     defer link.link_hangup()

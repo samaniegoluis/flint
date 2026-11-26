@@ -39,7 +39,7 @@ fn machine_b(crypto: FakeCrypto, remote: FakeRemote, a: Machine) -> Machine! {
 }
 
 fn sync_of(crypto: FakeCrypto, mut m: Machine, remote: FakeRemote, pw: str) -> SyncOutcome! {
-    return sync_vault(crypto, mut m.store, m.links, remote, m.kc, m.kc, mut m.session, pw, 2000)
+    return try sync_vault(crypto, mut m.store, m.links, remote, m.kc, m.kc, mut m.session, pw, 2000)
 }
 
 fn has_alias(store: FakeStore, alias: str) -> bool {
@@ -445,22 +445,23 @@ type DisconnectingRemote struct {
     path: str
 }
 
-fn (self: DisconnectingRemote) remote_get(url: str, token: str, known_version: i64) -> RemoteVault! {
+fn (self: DisconnectingRemote) remote_get(url: str, token: str, known_version: i64) -> domain.RemoteVault! {
     got := try self.inner.remote_get(url, token, known_version)
     _ = try disconnect_remote(self.links, self.kc, self.path)
     return got
 }
 
-fn (self: DisconnectingRemote) remote_put(url: str, token: str, vault_id: str, base_version: i64, data: []byte) -> RemoteStored! {
-    return self.inner.remote_put(url, token, vault_id, base_version, data)
+fn (self: DisconnectingRemote) remote_put(url: str, token: str, vault_id: str, base_version: i64, data: []byte) -> domain.RemoteStored! {
+    return try self.inner.remote_put(url, token, vault_id, base_version, data)
 }
 
-fn (self: DisconnectingRemote) remote_list(url: str, token: str) -> []ServerVault! {
-    return self.inner.remote_list(url, token)
+fn (self: DisconnectingRemote) remote_list(url: str, token: str) -> []domain.ServerVault! {
+    return try self.inner.remote_list(url, token)
 }
 
 fn (self: DisconnectingRemote) remote_set_label(url: str, token: str, label: str) -> void! {
-    return self.inner.remote_set_label(url, token, label)
+    try self.inner.remote_set_label(url, token, label)
+    return
 }
 
 test "a vault disconnected while its sync is on the network stays disconnected" {
@@ -488,16 +489,16 @@ type FailingAfterDisconnect struct {
     path: str
 }
 
-fn (self: FailingAfterDisconnect) remote_get(url: str, token: str, known_version: i64) -> RemoteVault! {
+fn (self: FailingAfterDisconnect) remote_get(url: str, token: str, known_version: i64) -> domain.RemoteVault! {
     _ = try disconnect_remote(self.links, self.kc, self.path)
     return error(coded(ERR_NETWORK, "cannot reach the server"))
 }
 
-fn (self: FailingAfterDisconnect) remote_put(url: str, token: str, vault_id: str, base_version: i64, data: []byte) -> RemoteStored! {
+fn (self: FailingAfterDisconnect) remote_put(url: str, token: str, vault_id: str, base_version: i64, data: []byte) -> domain.RemoteStored! {
     return error(coded(ERR_NETWORK, "cannot reach the server"))
 }
 
-fn (self: FailingAfterDisconnect) remote_list(url: str, token: str) -> []ServerVault! {
+fn (self: FailingAfterDisconnect) remote_list(url: str, token: str) -> []domain.ServerVault! {
     return error(coded(ERR_NETWORK, "cannot reach the server"))
 }
 
@@ -515,23 +516,24 @@ type ReconnectingRemote struct {
     vault_id: str
 }
 
-fn (self: ReconnectingRemote) remote_get(url: str, token: str, known_version: i64) -> RemoteVault! {
+fn (self: ReconnectingRemote) remote_get(url: str, token: str, known_version: i64) -> domain.RemoteVault! {
     got := try self.inner.remote_get(url, token, known_version)
     _ = try disconnect_remote(self.links, self.kc, self.path)
-    try save_link(self.links, RemoteLink{ path: self.path, vault_id: self.vault_id, url: OTHER_SERVER, version: 0, synced_hash: "", last_sync: 0, last_attempt: 0, last_error: "" })
+    try save_link(self.links, domain.RemoteLink{ path: self.path, vault_id: self.vault_id, url: OTHER_SERVER, version: 0, synced_hash: "", last_sync: 0, last_attempt: 0, last_error: "" })
     return got
 }
 
-fn (self: ReconnectingRemote) remote_put(url: str, token: str, vault_id: str, base_version: i64, data: []byte) -> RemoteStored! {
-    return self.inner.remote_put(url, token, vault_id, base_version, data)
+fn (self: ReconnectingRemote) remote_put(url: str, token: str, vault_id: str, base_version: i64, data: []byte) -> domain.RemoteStored! {
+    return try self.inner.remote_put(url, token, vault_id, base_version, data)
 }
 
-fn (self: ReconnectingRemote) remote_list(url: str, token: str) -> []ServerVault! {
-    return self.inner.remote_list(url, token)
+fn (self: ReconnectingRemote) remote_list(url: str, token: str) -> []domain.ServerVault! {
+    return try self.inner.remote_list(url, token)
 }
 
 fn (self: ReconnectingRemote) remote_set_label(url: str, token: str, label: str) -> void! {
-    return self.inner.remote_set_label(url, token, label)
+    try self.inner.remote_set_label(url, token, label)
+    return
 }
 
 OTHER_SERVER: str = "https://other.example.com"

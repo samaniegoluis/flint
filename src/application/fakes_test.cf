@@ -16,7 +16,7 @@ import "../ports"
 // Where the tests write real files: FLINT_TEST_TMP, which scripts/test.sh sets on
 // Windows to the run's temp folder (a fixed /tmp there is C:\tmp, outside it), or /tmp.
 fn test_tmp() -> str {
-    return os.getenv("FLINT_TEST_TMP", "/tmp")
+    return (os.getenv("FLINT_TEST_TMP") or "/tmp")
 }
 
 // ---- Crypto --------------------------------------------------------------------
@@ -140,18 +140,18 @@ type FakeStore struct {
     attached: bool
     meta_keys: []str
     meta_values: []str
-    groups: []Group
-    hosts: []Host
-    keys: []SshKey
-    creds: []Credential
-    known: []KnownHost
-    snap_groups: []Group
-    snap_hosts: []Host
-    snap_keys: []SshKey
-    snap_creds: []Credential
-    snap_known: []KnownHost
-    tunnels: []Tunnel
-    snap_tunnels: []Tunnel
+    groups: []domain.Group
+    hosts: []domain.Host
+    keys: []domain.SshKey
+    creds: []domain.Credential
+    known: []domain.KnownHost
+    snap_groups: []domain.Group
+    snap_hosts: []domain.Host
+    snap_keys: []domain.SshKey
+    snap_creds: []domain.Credential
+    snap_known: []domain.KnownHost
+    tunnels: []domain.Tunnel
+    snap_tunnels: []domain.Tunnel
     // Milestone 39: the vault id and key the last activity_attach was given.
     act_id: str
     act_key: []byte
@@ -159,14 +159,14 @@ type FakeStore struct {
     // ("prepare", "activity", "commit"; "" for none).
     rk_key: []byte
     rk_salt: []byte
-    rk_secrets: VaultSecrets
+    rk_secrets: domain.VaultSecrets
     rk_act: bool
     rk_fail: str
     // Milestone 41: the tokens and tombstones `vault_records` reads (the fake's
     // drops leave none), how many times a merge replaced the records, and whether
     // this store holds a conflict copy (`vault_attach_copy`).
-    rec_tokens: []Token
-    tombs: []Tombstone
+    rec_tokens: []domain.Token
+    tombs: []domain.Tombstone
     replaced: i64
     copy_open: bool
     // Milestone 43: the "files" this store's vault file bytes stand for (cfire's
@@ -175,7 +175,7 @@ type FakeStore struct {
 }
 
 type FakeBank struct {
-    blobs: []VaultRecords
+    blobs: []domain.VaultRecords
     // Reads of the vault file so far, and the read after which another process
     // stands to have written to it (a tombstone it adds); 0 for never.
     reads: i64
@@ -183,7 +183,7 @@ type FakeBank struct {
 }
 
 fn new_fake_store() -> FakeStore {
-    return FakeStore{ file_path: "", file_salt: [], file_key: [], attached: false, meta_keys: [], meta_values: [], groups: [], hosts: [], keys: [], creds: [], known: [], snap_groups: [], snap_hosts: [], snap_keys: [], snap_creds: [], snap_known: [], tunnels: [], snap_tunnels: [], act_id: "", act_key: [], rk_key: [], rk_salt: [], rk_secrets: VaultSecrets{ hosts: [], keys: [], creds: [] }, rk_act: false, rk_fail: "", rec_tokens: [], tombs: [], replaced: 0, copy_open: false, bank: make(shared[FakeBank], FakeBank{ blobs: [], reads: 0, late_after: 0 }) }
+    return FakeStore{ file_path: "", file_salt: [], file_key: [], attached: false, meta_keys: [], meta_values: [], groups: [], hosts: [], keys: [], creds: [], known: [], snap_groups: [], snap_hosts: [], snap_keys: [], snap_creds: [], snap_known: [], tunnels: [], snap_tunnels: [], act_id: "", act_key: [], rk_key: [], rk_salt: [], rk_secrets: domain.VaultSecrets{ hosts: [], keys: [], creds: [] }, rk_act: false, rk_fail: "", rec_tokens: [], tombs: [], replaced: 0, copy_open: false, bank: make(shared[FakeBank], FakeBank{ blobs: [], reads: 0, late_after: 0 }) }
 }
 
 fn (self: FakeStore) vault_file_exists(path: str) -> bool {
@@ -231,12 +231,12 @@ fn (mut self: FakeStore) vault_attach_copy(path: str, page_key: []byte, salt: []
     self.copy_open = true
 }
 
-fn (self: FakeStore) vault_records() -> VaultRecords! {
+fn (self: FakeStore) vault_records() -> domain.VaultRecords! {
     try self.need_attached()
-    return VaultRecords{ groups: self.groups, hosts: self.hosts, keys: self.keys, creds: self.creds, known_hosts: self.known, tunnels: self.tunnels, tokens: self.rec_tokens, tombstones: self.tombs }
+    return domain.VaultRecords{ groups: self.groups, hosts: self.hosts, keys: self.keys, creds: self.creds, known_hosts: self.known, tunnels: self.tunnels, tokens: self.rec_tokens, tombstones: self.tombs }
 }
 
-fn (mut self: FakeStore) vault_replace_records(r: VaultRecords) -> void! {
+fn (mut self: FakeStore) vault_replace_records(r: domain.VaultRecords) -> void! {
     try self.need_attached()
     self.groups = r.groups
     self.hosts = r.hosts
@@ -258,7 +258,7 @@ fn (mut self: FakeStore) activity_attach(vault_id: str, key: []byte, new_salt: [
     self.act_key = key
 }
 
-fn (mut self: FakeStore) vault_rekey_prepare(path: str, page_key: []byte, salt: []byte, secrets: VaultSecrets) -> void! {
+fn (mut self: FakeStore) vault_rekey_prepare(path: str, page_key: []byte, salt: []byte, secrets: domain.VaultSecrets) -> void! {
     try self.need_attached()
     if self.rk_fail == "prepare" {
         return error(coded(ERR_IO, "disk full"))
@@ -352,12 +352,12 @@ fn (mut self: FakeStore) vault_rollback() {
     self.tunnels = self.snap_tunnels
 }
 
-fn (self: FakeStore) groups_all() -> []Group! {
+fn (self: FakeStore) groups_all() -> []domain.Group! {
     try self.need_attached()
     return self.groups
 }
 
-fn (mut self: FakeStore) group_put(g: Group) -> void! {
+fn (mut self: FakeStore) group_put(g: domain.Group) -> void! {
     try self.need_attached()
     for i, o in self.groups {
         if o.id == g.id {
@@ -369,7 +369,7 @@ fn (mut self: FakeStore) group_put(g: Group) -> void! {
 }
 
 fn (mut self: FakeStore) group_drop(id: str) -> void! {
-    mut next: []Group = []
+    mut next: []domain.Group = []
     for g in self.groups {
         if g.id != id {
             next.push(g)
@@ -378,12 +378,12 @@ fn (mut self: FakeStore) group_drop(id: str) -> void! {
     self.groups = next
 }
 
-fn (self: FakeStore) hosts_all() -> []Host! {
+fn (self: FakeStore) hosts_all() -> []domain.Host! {
     try self.need_attached()
     return self.hosts
 }
 
-fn (mut self: FakeStore) host_put(h: Host) -> void! {
+fn (mut self: FakeStore) host_put(h: domain.Host) -> void! {
     try self.need_attached()
     for i, o in self.hosts {
         if o.id == h.id {
@@ -395,7 +395,7 @@ fn (mut self: FakeStore) host_put(h: Host) -> void! {
 }
 
 fn (mut self: FakeStore) host_drop(id: str) -> void! {
-    mut next: []Host = []
+    mut next: []domain.Host = []
     for h in self.hosts {
         if h.id != id {
             next.push(h)
@@ -403,7 +403,7 @@ fn (mut self: FakeStore) host_drop(id: str) -> void! {
     }
     self.hosts = next
     // ON DELETE CASCADE in the SQL store.
-    mut kept: []Tunnel = []
+    mut kept: []domain.Tunnel = []
     for t in self.tunnels {
         if t.host_id != id {
             kept.push(t)
@@ -412,12 +412,12 @@ fn (mut self: FakeStore) host_drop(id: str) -> void! {
     self.tunnels = kept
 }
 
-fn (self: FakeStore) keys_all() -> []SshKey! {
+fn (self: FakeStore) keys_all() -> []domain.SshKey! {
     try self.need_attached()
     return self.keys
 }
 
-fn (mut self: FakeStore) key_put(k: SshKey) -> void! {
+fn (mut self: FakeStore) key_put(k: domain.SshKey) -> void! {
     try self.need_attached()
     for i, o in self.keys {
         if o.id == k.id {
@@ -429,7 +429,7 @@ fn (mut self: FakeStore) key_put(k: SshKey) -> void! {
 }
 
 fn (mut self: FakeStore) key_drop(id: str) -> void! {
-    mut next: []SshKey = []
+    mut next: []domain.SshKey = []
     for k in self.keys {
         if k.id != id {
             next.push(k)
@@ -438,12 +438,12 @@ fn (mut self: FakeStore) key_drop(id: str) -> void! {
     self.keys = next
 }
 
-fn (self: FakeStore) creds_all() -> []Credential! {
+fn (self: FakeStore) creds_all() -> []domain.Credential! {
     try self.need_attached()
     return self.creds
 }
 
-fn (mut self: FakeStore) cred_put(c: Credential) -> void! {
+fn (mut self: FakeStore) cred_put(c: domain.Credential) -> void! {
     try self.need_attached()
     for i, o in self.creds {
         if o.id == c.id {
@@ -455,7 +455,7 @@ fn (mut self: FakeStore) cred_put(c: Credential) -> void! {
 }
 
 fn (mut self: FakeStore) cred_drop(id: str) -> void! {
-    mut next: []Credential = []
+    mut next: []domain.Credential = []
     for c in self.creds {
         if c.id != id {
             next.push(c)
@@ -464,12 +464,12 @@ fn (mut self: FakeStore) cred_drop(id: str) -> void! {
     self.creds = next
 }
 
-fn (self: FakeStore) known_hosts_all() -> []KnownHost! {
+fn (self: FakeStore) known_hosts_all() -> []domain.KnownHost! {
     try self.need_attached()
     return self.known
 }
 
-fn (mut self: FakeStore) known_host_put(k: KnownHost) -> void! {
+fn (mut self: FakeStore) known_host_put(k: domain.KnownHost) -> void! {
     try self.need_attached()
     for i, o in self.known {
         if o.addr == k.addr {
@@ -481,7 +481,7 @@ fn (mut self: FakeStore) known_host_put(k: KnownHost) -> void! {
 }
 
 fn (mut self: FakeStore) known_host_drop(addr: str) -> void! {
-    mut next: []KnownHost = []
+    mut next: []domain.KnownHost = []
     for k in self.known {
         if k.addr != addr {
             next.push(k)
@@ -490,13 +490,13 @@ fn (mut self: FakeStore) known_host_drop(addr: str) -> void! {
     self.known = next
 }
 
-fn (self: FakeStore) tunnels_all() -> []Tunnel! {
+fn (self: FakeStore) tunnels_all() -> []domain.Tunnel! {
     try self.need_attached()
     return self.tunnels
 }
 
 // Like the SQL store: a name is unique in its host, whatever its case.
-fn (mut self: FakeStore) tunnel_put(t: Tunnel) -> void! {
+fn (mut self: FakeStore) tunnel_put(t: domain.Tunnel) -> void! {
     try self.need_attached()
     for o in self.tunnels {
         if o.id != t.id && o.host_id == t.host_id && lower_ascii(o.name) == lower_ascii(t.name) {
@@ -513,7 +513,7 @@ fn (mut self: FakeStore) tunnel_put(t: Tunnel) -> void! {
 }
 
 fn (mut self: FakeStore) tunnel_drop(id: str) -> void! {
-    mut next: []Tunnel = []
+    mut next: []domain.Tunnel = []
     for t in self.tunnels {
         if t.id != id {
             next.push(t)
@@ -548,7 +548,7 @@ fn (self: FakeKeychain) keychain_load(account: str) -> []byte! {
         return []
     }
     text := try fs.read_text(p)
-    return hex.decode(text)
+    return try hex.decode(text)
 }
 
 fn (self: FakeKeychain) keychain_forget(account: str) -> void! {
@@ -568,8 +568,8 @@ fn new_fake_recents() -> FakeRecents {
     return FakeRecents{ path: dir + "/list" }
 }
 
-fn (self: FakeRecents) recents_load() -> []RecentVault! {
-    mut list: []RecentVault = []
+fn (self: FakeRecents) recents_load() -> []domain.RecentVault! {
+    mut list: []domain.RecentVault = []
     if !fs.exists(self.path) {
         return list
     }
@@ -578,16 +578,16 @@ fn (self: FakeRecents) recents_load() -> []RecentVault! {
         if tab := line.index_of("\t") {
             rest := line[tab + 1..]
             if tab2 := rest.index_of("\t") {
-                list.push(RecentVault{ path: line[..tab], name: rest[..tab2], id: rest[tab2 + 1..] })
+                list.push(domain.RecentVault{ path: line[..tab], name: rest[..tab2], id: rest[tab2 + 1..] })
             } else {
-                list.push(RecentVault{ path: line[..tab], name: rest, id: "" })
+                list.push(domain.RecentVault{ path: line[..tab], name: rest, id: "" })
             }
         }
     }
     return list
 }
 
-fn (self: FakeRecents) recents_save(list: []RecentVault) -> void! {
+fn (self: FakeRecents) recents_save(list: []domain.RecentVault) -> void! {
     mut text := ""
     for v in list {
         text = text + v.path + "\t" + v.name + "\t" + v.id + "\n"
@@ -620,14 +620,14 @@ type FakeInspector struct {
     strict: bool
 }
 
-fn (self: FakeInspector) inspect_private_key(private_key: str, passphrase: str) -> KeyInfo! {
+fn (self: FakeInspector) inspect_private_key(private_key: str, passphrase: str) -> domain.KeyInfo! {
     if !private_key.starts_with("PRIVATE ") {
         return error(coded(ERR_INVALID, "the private key could not be read"))
     }
     if private_key.contains("ENCRYPTED") && passphrase != "pp" {
         return error(coded(ERR_INVALID, "wrong passphrase"))
     }
-    return KeyInfo{ key_type: "ssh-ed25519", public_key: "ssh-ed25519 AAAAfake", fingerprint: "SHA256:fake" }
+    return domain.KeyInfo{ key_type: "ssh-ed25519", public_key: "ssh-ed25519 AAAAfake", fingerprint: "SHA256:fake" }
 }
 
 // ---- Fixture -------------------------------------------------------------------
@@ -647,7 +647,7 @@ type FakeLink struct {
     agent_ok: bool
     server_fp: str
     calls: []str
-    chunks: []ExecChunk
+    chunks: []domain.ExecChunk
     read_pos: usize
     written: str
     resized: str
@@ -672,8 +672,8 @@ fn (mut self: FakeLink) link_dial(hostname: str, port: i64, user: str, timeout_s
     }
 }
 
-fn (self: FakeLink) link_server_key() -> ServerKey! {
-    return ServerKey{ key_type: "ssh-ed25519", fingerprint: self.server_fp }
+fn (self: FakeLink) link_server_key() -> domain.ServerKey! {
+    return domain.ServerKey{ key_type: "ssh-ed25519", fingerprint: self.server_fp }
 }
 
 fn (mut self: FakeLink) link_auth_key(private_key: str, passphrase: str) -> void! {
@@ -723,7 +723,7 @@ fn (mut self: FakeLink) link_channel_eof() -> void! {
     self.calls.push("eof")
 }
 
-fn (mut self: FakeLink) link_channel_read(timeout_ms: i32) -> ExecChunk! {
+fn (mut self: FakeLink) link_channel_read(timeout_ms: i32) -> domain.ExecChunk! {
     if self.read_pos < self.chunks.len() {
         mut c := self.chunks[self.read_pos]
         self.read_pos += 1
@@ -733,7 +733,7 @@ fn (mut self: FakeLink) link_channel_read(timeout_ms: i32) -> ExecChunk! {
         }
         return c
     }
-    return ExecChunk{ stdout: "", stderr: "", done: true, exit_code: 0, signal: "" }
+    return domain.ExecChunk{ stdout: "", stderr: "", done: true, exit_code: 0, signal: "" }
 }
 
 fn (mut self: FakeLink) link_channel_write(data: str) -> void! {
@@ -763,16 +763,16 @@ fn (mut self: FakeLink) link_hangup() {
     self.hung_up = true
 }
 
-fn out_chunk(text: str) -> ExecChunk {
-    return ExecChunk{ stdout: text, stderr: "", done: false, exit_code: 0, signal: "" }
+fn out_chunk(text: str) -> domain.ExecChunk {
+    return domain.ExecChunk{ stdout: text, stderr: "", done: false, exit_code: 0, signal: "" }
 }
 
-fn err_chunk(text: str) -> ExecChunk {
-    return ExecChunk{ stdout: "", stderr: text, done: false, exit_code: 0, signal: "" }
+fn err_chunk(text: str) -> domain.ExecChunk {
+    return domain.ExecChunk{ stdout: "", stderr: text, done: false, exit_code: 0, signal: "" }
 }
 
-fn done_chunk(code: i64) -> ExecChunk {
-    return ExecChunk{ stdout: "", stderr: "", done: true, exit_code: code, signal: "" }
+fn done_chunk(code: i64) -> domain.ExecChunk {
+    return domain.ExecChunk{ stdout: "", stderr: "", done: true, exit_code: code, signal: "" }
 }
 
 // Answers prompts from fixed values. `available` false behaves like no terminal.
@@ -786,14 +786,14 @@ fn (self: FakePrompter) prompt_available() -> bool {
     return self.available
 }
 
-fn (self: FakePrompter) prompt_host_key(q: HostKeyQuestion) -> bool! {
+fn (self: FakePrompter) prompt_host_key(q: domain.HostKeyQuestion) -> bool! {
     if !self.available {
         return error(coded(ERR_USAGE, "no terminal"))
     }
     return self.confirm
 }
 
-fn (self: FakePrompter) host_key_changed(q: HostKeyQuestion) {
+fn (self: FakePrompter) host_key_changed(q: domain.HostKeyQuestion) {
 }
 
 fn (self: FakePrompter) prompt_password(user: str, alias: str) -> str! {
@@ -825,8 +825,8 @@ fn new_fake_terminal(inputs: []str) -> FakeTerminal {
     return FakeTerminal{ cols: 120, rows: 40, inputs: inputs, input_pos: 0, resize_at: 999, output: "", raw: false, raw_entered: 0, closed_at_end: false }
 }
 
-fn (self: FakeTerminal) term_size() -> TerminalSize {
-    return TerminalSize{ cols: self.cols, rows: self.rows }
+fn (self: FakeTerminal) term_size() -> domain.TerminalSize {
+    return domain.TerminalSize{ cols: self.cols, rows: self.rows }
 }
 
 fn (mut self: FakeTerminal) term_raw_enter() -> void! {
@@ -900,7 +900,7 @@ type FakeClipboard struct {
     text: str
     clear_after_ms: i64
     copies: i64
-    held: ClipboardContent
+    held: domain.ClipboardContent
 }
 
 fn (mut self: FakeClipboard) clipboard_copy_secret(text: str, clear_after_ms: i64) -> void! {
@@ -926,9 +926,9 @@ fn (self: FakeClipboard) clipboard_holds_secret() -> bool {
 }
 
 // What a paste reads: `text`, else `held` (an image), as the test set them.
-fn (mut self: FakeClipboard) clipboard_read() -> ClipboardContent! {
+fn (mut self: FakeClipboard) clipboard_read() -> domain.ClipboardContent! {
     if self.text.len() > 0 {
-        return ClipboardContent{ text: self.text, mime: "", image: "" }
+        return domain.ClipboardContent{ text: self.text, mime: "", image: "" }
     }
     return self.held
 }
@@ -936,27 +936,27 @@ fn (mut self: FakeClipboard) clipboard_read() -> ClipboardContent! {
 // ---- Settings and fonts -------------------------------------------------------------
 
 type FakeSettingsStore struct {
-    saved: Settings
+    saved: domain.Settings
 }
 
-fn (self: FakeSettingsStore) settings_load() -> Settings! {
+fn (self: FakeSettingsStore) settings_load() -> domain.Settings! {
     return self.saved
 }
 
-fn (mut self: FakeSettingsStore) settings_save(s: Settings) -> void! {
+fn (mut self: FakeSettingsStore) settings_save(s: domain.Settings) -> void! {
     self.saved = s
 }
 
 type FakeUiStateStore struct {
-    saved: UiState
+    saved: domain.UiState
     saves: i64
 }
 
-fn (self: FakeUiStateStore) ui_state_load() -> UiState! {
+fn (self: FakeUiStateStore) ui_state_load() -> domain.UiState! {
     return self.saved
 }
 
-fn (mut self: FakeUiStateStore) ui_state_save(s: UiState) -> void! {
+fn (mut self: FakeUiStateStore) ui_state_save(s: domain.UiState) -> void! {
     self.saved = s
     self.saves += 1
 }
@@ -995,9 +995,9 @@ fn (self: FakeStore) vault_file_bytes(path: str) -> []byte! {
     late := self.bank.late_after
     mut tombs := self.tombs
     if late > 0 && reads > late {
-        tombs.push(Tombstone{ kind: "host", id: "written-by-another-process", deleted_at: 1 })
+        tombs.push(domain.Tombstone{ kind: "host", id: "written-by-another-process", deleted_at: 1 })
     }
-    list.push(VaultRecords{ groups: self.groups, hosts: self.hosts, keys: self.keys, creds: self.creds, known_hosts: self.known, tunnels: self.tunnels, tokens: self.rec_tokens, tombstones: tombs })
+    list.push(domain.VaultRecords{ groups: self.groups, hosts: self.hosts, keys: self.keys, creds: self.creds, known_hosts: self.known, tunnels: self.tunnels, tokens: self.rec_tokens, tombstones: tombs })
     if n >= 0 {
         self.bank.blobs = list
     }
@@ -1027,7 +1027,7 @@ fn (self: FakeStore) vault_file_bytes(path: str) -> []byte! {
 type FakeBlob struct {
     key: str
     id: str
-    records: VaultRecords
+    records: domain.VaultRecords
 }
 
 fn (self: FakeStore) fake_blob_of(data: []byte) -> FakeBlob! {
@@ -1047,7 +1047,7 @@ fn (self: FakeStore) fake_blob_of(data: []byte) -> FakeBlob! {
     return FakeBlob{ key: parts[0], id: parts[1], records: list[usize(n)] }
 }
 
-fn (self: FakeStore) vault_blob_records(data: []byte, page_key: []byte, salt: []byte) -> BlobRecords! {
+fn (self: FakeStore) vault_blob_records(data: []byte, page_key: []byte, salt: []byte) -> domain.BlobRecords! {
     mut key := page_key
     if key.len() == 0 {
         key = self.file_key
@@ -1056,7 +1056,7 @@ fn (self: FakeStore) vault_blob_records(data: []byte, page_key: []byte, salt: []
     if b.key != hex.encode(key) {
         return error(coded(ERR_WRONG_PASSWORD, "file is not a database"))
     }
-    return BlobRecords{ vault_id: b.id, records: b.records }
+    return domain.BlobRecords{ vault_id: b.id, records: b.records }
 }
 
 fn (mut self: FakeStore) vault_write_new(path: str, data: []byte) -> void! {
@@ -1171,26 +1171,26 @@ fn fake_slot(s: FakeRemoteState, id: str) -> i64 {
     return -2
 }
 
-fn (self: FakeRemote) remote_get(url: str, token: str, known_version: i64) -> RemoteVault! {
+fn (self: FakeRemote) remote_get(url: str, token: str, known_version: i64) -> domain.RemoteVault! {
     mut s := try self.reach(token)
     id := try fake_url_id(url, "")
     s.gets += 1
     self.save(s)
     slot := fake_slot(s, id)
     if slot == -2 {
-        return RemoteVault{ found: false, changed: true, version: 0, vault_id: "", data: [] }
+        return domain.RemoteVault{ found: false, changed: true, version: 0, vault_id: "", data: [] }
     }
     mut v := FakeVault{ id: s.id, version: s.version, data: s.data, label: s.label }
     if slot >= 0 {
         v = s.others[usize(slot)]
     }
     if known_version == v.version {
-        return RemoteVault{ found: true, changed: false, version: v.version, vault_id: v.id, data: [] }
+        return domain.RemoteVault{ found: true, changed: false, version: v.version, vault_id: v.id, data: [] }
     }
-    return RemoteVault{ found: true, changed: true, version: v.version, vault_id: v.id, data: try hex.decode(v.data) }
+    return domain.RemoteVault{ found: true, changed: true, version: v.version, vault_id: v.id, data: try hex.decode(v.data) }
 }
 
-fn (self: FakeRemote) remote_put(url: str, token: str, vault_id: str, base_version: i64, data: []byte) -> RemoteStored! {
+fn (self: FakeRemote) remote_put(url: str, token: str, vault_id: str, base_version: i64, data: []byte) -> domain.RemoteStored! {
     mut s := try self.reach(token)
     id := try fake_url_id(url, "")
     if id != vault_id {
@@ -1206,7 +1206,7 @@ fn (self: FakeRemote) remote_put(url: str, token: str, vault_id: str, base_versi
     if slot == -2 {
         if base_version != 0 {
             self.save(s)
-            return RemoteStored{ stored: false, version: 0 }
+            return domain.RemoteStored{ stored: false, version: 0 }
         }
         if s.version == 0 {
             s.version = 1
@@ -1216,7 +1216,7 @@ fn (self: FakeRemote) remote_put(url: str, token: str, vault_id: str, base_versi
             s.others.push(FakeVault{ id: id, version: 1, data: hex.encode(data), label: "" })
         }
         self.save(s)
-        return RemoteStored{ stored: true, version: 1 }
+        return domain.RemoteStored{ stored: true, version: 1 }
     }
     mut current := s.version
     if slot >= 0 {
@@ -1224,7 +1224,7 @@ fn (self: FakeRemote) remote_put(url: str, token: str, vault_id: str, base_versi
     }
     if base_version != current {
         self.save(s)
-        return RemoteStored{ stored: false, version: current }
+        return domain.RemoteStored{ stored: false, version: current }
     }
     if slot == -1 {
         s.version += 1
@@ -1234,20 +1234,20 @@ fn (self: FakeRemote) remote_put(url: str, token: str, vault_id: str, base_versi
         s.others[usize(slot)].data = hex.encode(data)
     }
     self.save(s)
-    return RemoteStored{ stored: true, version: current + 1 }
+    return domain.RemoteStored{ stored: true, version: current + 1 }
 }
 
-fn (self: FakeRemote) remote_list(url: str, token: str) -> []ServerVault! {
+fn (self: FakeRemote) remote_list(url: str, token: str) -> []domain.ServerVault! {
     s := try self.reach(token)
     if url != SERVER + "/v1/vaults" {
         return error(coded(ERR_INVALID, "the fake server has no resource {url}"))
     }
-    mut list: []ServerVault = []
+    mut list: []domain.ServerVault = []
     if s.version > 0 {
-        list.push(ServerVault{ id: s.id, label: s.label, version: s.version, size: i64(s.data.len() / 2), updated_at: 1 })
+        list.push(domain.ServerVault{ id: s.id, label: s.label, version: s.version, size: i64(s.data.len() / 2), updated_at: 1 })
     }
     for o in s.others {
-        list.push(ServerVault{ id: o.id, label: o.label, version: o.version, size: i64(o.data.len() / 2), updated_at: 1 })
+        list.push(domain.ServerVault{ id: o.id, label: o.label, version: o.version, size: i64(o.data.len() / 2), updated_at: 1 })
     }
     return list
 }
@@ -1276,15 +1276,15 @@ fn new_fake_links() -> FakeLinks {
     return FakeLinks{ path: test_tmp() + "/flint-fake-links-" + sha256.random_hex(8) + ".json" }
 }
 
-fn (self: FakeLinks) links_load() -> []RemoteLink! {
+fn (self: FakeLinks) links_load() -> []domain.RemoteLink! {
     if !fs.exists(self.path) {
         return []
     }
     // CFIRE-UPSTREAM: CF-164 (a labeled argument keeps libstdc++'s chrono::parse out)
-    return try json.parse[[]RemoteLink](payload: try fs.read_text(self.path))
+    return try json.parse[[]domain.RemoteLink](payload: try fs.read_text(self.path))
 }
 
-fn (self: FakeLinks) links_save(list: []RemoteLink) -> void! {
+fn (self: FakeLinks) links_save(list: []domain.RemoteLink) -> void! {
     // An owned copy: `json.stringify` of a read-only `[]T` parameter gives "{}" (CF-157).
     // CFIRE-UPSTREAM: CF-157
     mut own := list

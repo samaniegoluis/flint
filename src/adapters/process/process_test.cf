@@ -13,7 +13,7 @@ test "stdin terminal detection does not crash" {
     _ = has_terminal()
 }
 
-fn accepts_session_ports[P: Prompter, M: Terminal, O: ExecSink, K: Clock](p: P, mut m: M, mut o: O, mut k: K) -> bool {
+fn accepts_session_ports[P: ports.Prompter, M: ports.Terminal, O: ports.ExecSink, K: ports.Clock](p: P, mut m: M, mut o: O, mut k: K) -> bool {
     return true
 }
 

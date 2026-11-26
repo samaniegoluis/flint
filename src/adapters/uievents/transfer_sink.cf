@@ -37,7 +37,7 @@ fn new_gui_transfer_sink(app: webui.App, session_id: str, transfer_id: str) -> G
     return GuiTransferSink{ app: app, session: session_id, id: transfer_id, last_ms: 0, last_file: "", last_done: -1 }
 }
 
-fn (mut self: GuiTransferSink) transfer_progress(p: TransferProgress) {
+fn (mut self: GuiTransferSink) transfer_progress(p: domain.TransferProgress) {
     now := time.now_ms()
     boundary := p.file != self.last_file || p.files_done != self.last_done || p.file_bytes == p.file_size
     if !boundary && now - self.last_ms < PROGRESS_EVERY_MS {

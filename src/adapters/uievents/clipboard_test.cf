@@ -4,7 +4,7 @@ import "core:os"
 import "../../ports"
 import "../../domain"
 
-fn accepts_clipboard[B: Clipboard](mut b: B) -> bool {
+fn accepts_clipboard[B: ports.Clipboard](mut b: B) -> bool {
     return true
 }
 

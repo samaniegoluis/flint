@@ -72,7 +72,7 @@ fn (mut self: SshLink) link_dial(hostname: str, port: i64, user: str, timeout_se
     self.hops.push(try ssh_dial_over(hostname, i32(port), user, timeout_secs, fd, host_key_algos))
 }
 
-fn (self: SshLink) link_server_key() -> ServerKey! {
+fn (self: SshLink) link_server_key() -> domain.ServerKey! {
     conn := try self.last_hop()
     mut key_type := ""
     mut rc: i32 = 0
@@ -93,7 +93,7 @@ fn (self: SshLink) link_server_key() -> ServerKey! {
     fp := conn.host_key_sha256() or err {
         return error(core_msg(MSG_SSH_HOST_KEY_UNREADABLE, []))
     }
-    return ServerKey{ key_type: key_type, fingerprint: fp }
+    return domain.ServerKey{ key_type: key_type, fingerprint: fp }
 }
 
 fn auth_result(rc: i32, method: str, conn: SshConn) -> void! {
@@ -207,7 +207,7 @@ fn (mut self: SshLink) link_channel_eof() -> void! {
     }
 }
 
-fn (mut self: SshLink) link_channel_read(timeout_ms: i32) -> ExecChunk! {
+fn (mut self: SshLink) link_channel_read(timeout_ms: i32) -> domain.ExecChunk! {
     conn := try self.last_hop()
     // The C++ block fills locals: cfire renames a `stdout` field in the generated C++,
     // so `chunk.stdout` cannot be named inside `cpp {}` (CF-065).
@@ -229,7 +229,7 @@ fn (mut self: SshLink) link_channel_read(timeout_ms: i32) -> ExecChunk! {
     if !ok {
         return error(core_msg(MSG_SSH_CONNECTION_LOST_REASON, [conn.last_error()]))
     }
-    return ExecChunk{ stdout: out_text, stderr: err_text, done: done, exit_code: exit_code, signal: signal }
+    return domain.ExecChunk{ stdout: out_text, stderr: err_text, done: done, exit_code: exit_code, signal: signal }
 }
 
 fn (mut self: SshLink) link_channel_write(data: str) -> void! {

@@ -15,7 +15,7 @@ import "ext:webui"
 import "core:json"
 import "core:encoding/base64"
 import "../../adapters/process"
-import "../../adapters/ssh"
+import "../../adapters/ssh" as flint_ssh
 import "../../adapters/uievents"
 import "../../application"
 import "../../domain"
@@ -68,12 +68,12 @@ type FilesIdReq struct {
 
 type FilesListReply struct {
     path:    str         `json:"path"`
-    entries: []FileEntry `json:"entries"`
+    entries: []domain.FileEntry `json:"entries"`
 }
 
 // Gives the browse channel back: dropped when the request failed on the network,
 // so the next request opens a fresh one.
-fn finish_browse(session: str, link: SshLink, failed: str) {
+fn finish_browse(session: str, link: flint_ssh.SshLink, failed: str) {
     if failed.len() > 0 && error_code_of(failed) == ERR_NETWORK {
         mut l := link
         drop_browse(session, mut l)
@@ -148,7 +148,7 @@ fn rpc_files_mkdir(req: FilesPathReq, st: GuiState) -> PathReply! {
 // An upload or a download, on its own SFTP channel over the tab's session. It
 // resolves once the copy ends; "exists" means the page should ask, then retry
 // with `force`.
-fn rpc_files_transfer(req: FilesTransferReq, app: webui.App, st: GuiState) -> CopyResult! {
+fn rpc_files_transfer(req: FilesTransferReq, app: webui.App, st: GuiState) -> domain.CopyResult! {
     try st.require_open_window()
     if req.id.len() == 0 {
         return error(coded(ERR_INVALID, "a transfer needs an id"))
@@ -157,7 +157,7 @@ fn rpc_files_transfer(req: FilesTransferReq, app: webui.App, st: GuiState) -> Co
     mut local := new_local_fs()
     mut sink := new_gui_transfer_sink(app, req.session, req.id)
     mut clock := new_system_clock()
-    copy := CopyRequest{ id: req.id, alias: "", direction: req.direction, local: req.local, remote: req.remote, recursive: req.recursive, force: req.force }
+    copy := application.CopyRequest{ id: req.id, alias: "", direction: req.direction, local: req.local, remote: req.remote, recursive: req.recursive, force: req.force }
     defer give_back_transfer(req.session, req.id, mut link)
     return transfer_files(mut link, mut local, mut sink, mut clock, copy)
 }
@@ -165,7 +165,7 @@ fn rpc_files_transfer(req: FilesTransferReq, app: webui.App, st: GuiState) -> Co
 // A copy from one session to another (milestone 19, D-059): each session lends a
 // channel of its own, the bytes go host → Flint → host, and progress is reported
 // under the source session. Closing either session cancels it. Not logged (D-055).
-fn rpc_files_relay(req: FilesRelayReq, app: webui.App, st: GuiState) -> CopyResult! {
+fn rpc_files_relay(req: FilesRelayReq, app: webui.App, st: GuiState) -> domain.CopyResult! {
     try st.require_open_window()
     if req.id.len() == 0 || req.to_session.len() == 0 {
         return error(coded(ERR_INVALID, "a copy between servers needs an id and two sessions"))
@@ -177,7 +177,7 @@ fn rpc_files_relay(req: FilesRelayReq, app: webui.App, st: GuiState) -> CopyResu
     }
     mut sink := new_gui_transfer_sink(app, req.session, req.id)
     mut clock := new_system_clock()
-    copy := CopyRequest{ id: req.id, alias: req.alias, direction: COPY_RELAY, local: req.to_path, remote: req.path, recursive: req.recursive, force: req.force, to_alias: req.to_alias }
+    copy := application.CopyRequest{ id: req.id, alias: req.alias, direction: COPY_RELAY, local: req.to_path, remote: req.path, recursive: req.recursive, force: req.force, to_alias: req.to_alias }
     defer {
         give_back_transfer(req.to_session, req.id, mut to)
         give_back_transfer(req.session, req.id, mut from)
@@ -194,7 +194,7 @@ fn rpc_files_cancel(req: FilesIdReq) -> str! {
 
 // A chunk of a file dropped from the OS, staged on this machine until it is
 // uploaded (CF-004: the webview gives the page bytes, not paths).
-fn rpc_files_stage(req: FilesStageReq, mut stage: FsDropStage, st: GuiState) -> PathReply! {
+fn rpc_files_stage(req: FilesStageReq, mut stage: process.FsDropStage, st: GuiState) -> PathReply! {
     try st.require_open_window()
     data := base64.decode_str(req.data) or err {
         return error(coded(ERR_INVALID, "a dropped file's chunk is not base64"))
@@ -202,7 +202,7 @@ fn rpc_files_stage(req: FilesStageReq, mut stage: FsDropStage, st: GuiState) -> 
     return PathReply{ path: try stage_dropped(mut stage, req.drop, req.rel, data) }
 }
 
-fn rpc_files_stage_discard(req: FilesIdReq, mut stage: FsDropStage) -> str! {
+fn rpc_files_stage_discard(req: FilesIdReq, mut stage: process.FsDropStage) -> str! {
     discard_dropped(mut stage, req.id)
     return ok_json()
 }

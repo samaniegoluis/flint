@@ -11,14 +11,14 @@ import "core:json"
 import "../domain"
 import "../ports"
 
-fn discard_staging[F: UpdateFiles](mut files: F, p: UpdatePaths) {
+fn discard_staging[F: ports.UpdateFiles](mut files: F, p: domain.UpdatePaths) {
     files.upd_remove(p.staging) or {}
 }
 
 // Downloads, checks and unpacks the package `s` offers (a status whose action is
 // Download, from a verified manifest). The staging folder is made anew; on any failure
 // it is removed, so nothing unverified stays on disk.
-fn download_update[D: UpdateDownloader, H: UpdateHasher, F: UpdateFiles](mut dl: D, hasher: H, mut files: F, s: UpdateStatus, installed: str, os: str) -> void! {
+fn download_update[D: ports.UpdateDownloader, H: ports.UpdateHasher, F: ports.UpdateFiles](mut dl: D, hasher: H, mut files: F, s: domain.UpdateStatus, installed: str, os: str) -> void! {
     if s.action != UPDATE_ACTION_DOWNLOAD || s.asset_url.len() == 0 || s.asset_size <= 0 || !is_hex64(s.asset_sha256) {
         return error(coded(ERR_INVALID, "there is no package to download for this copy of Flint"))
     }
@@ -55,13 +55,13 @@ fn download_update[D: UpdateDownloader, H: UpdateHasher, F: UpdateFiles](mut dl:
 // The version downloaded and ready to apply, "" when none. A staged version that is
 // not newer than this one (left by an update that applied, or by an older download)
 // is removed, unless a swap is under way (its old folder still set aside).
-fn staged_update[F: UpdateFiles](mut files: F, installed: str, os: str, current: str) -> str {
+fn staged_update[F: ports.UpdateFiles](mut files: F, installed: str, os: str, current: str) -> str {
     return staged_update_at(mut files, update_paths(installed, os), current)
 }
 
 // The same, for any staging (a Linux package's in the person's cache, milestone 54:
 // the package file itself is what is staged, nothing is unpacked or set aside).
-fn staged_update_at[F: UpdateFiles](mut files: F, p: UpdatePaths, current: str) -> str {
+fn staged_update_at[F: ports.UpdateFiles](mut files: F, p: domain.UpdatePaths, current: str) -> str {
     if !files.upd_exists(p.ready) {
         return ""
     }
@@ -78,11 +78,11 @@ fn staged_update_at[F: UpdateFiles](mut files: F, p: UpdatePaths, current: str) 
 
 // The app says it started (the new app, at launch, once its page is up): update-apply
 // waits for this before it removes the old folder.
-fn mark_update_started[F: UpdateFiles](mut files: F, installed: str, os: str) {
+fn mark_update_started[F: ports.UpdateFiles](mut files: F, installed: str, os: str) {
     mark_update_started_at(mut files, update_paths(installed, os))
 }
 
-fn mark_update_started_at[F: UpdateFiles](mut files: F, p: UpdatePaths) {
+fn mark_update_started_at[F: ports.UpdateFiles](mut files: F, p: domain.UpdatePaths) {
     if files.upd_exists(p.staging) {
         files.upd_write(p.started, "started") or {}
     }
@@ -90,17 +90,17 @@ fn mark_update_started_at[F: UpdateFiles](mut files: F, p: UpdatePaths) {
 
 // What update-apply left when it could not apply, once: read, then cleared (the whole
 // staging folder unless the package was kept for another Relaunch).
-fn take_apply_outcome[F: UpdateFiles](mut files: F, installed: str, os: str) -> ApplyOutcome? {
+fn take_apply_outcome[F: ports.UpdateFiles](mut files: F, installed: str, os: str) -> domain.ApplyOutcome? {
     return take_apply_outcome_at(mut files, update_paths(installed, os))
 }
 
-fn take_apply_outcome_at[F: UpdateFiles](mut files: F, p: UpdatePaths) -> ApplyOutcome? {
+fn take_apply_outcome_at[F: ports.UpdateFiles](mut files: F, p: domain.UpdatePaths) -> domain.ApplyOutcome? {
     if !files.upd_exists(p.outcome) {
         return none
     }
     text := files.upd_read(p.outcome) or ""
     files.upd_remove(p.outcome) or {}
-    o := json.parse[ApplyOutcome](payload: text) or {
+    o := json.parse[domain.ApplyOutcome](payload: text) or {
         return none
     }
     if !o.kept {
@@ -111,7 +111,7 @@ fn take_apply_outcome_at[F: UpdateFiles](mut files: F, p: UpdatePaths) -> ApplyO
 
 // Relaunch: the new CLI copied to `temp_dir` and started as update-apply for this
 // process (`pid`); the caller quits right after. Its log goes to `temp_dir`.
-fn relaunch_update[F: UpdateFiles, P: UpdateProcesses](mut files: F, mut procs: P, installed: str, os: str, current: str, temp_dir: str, pid: i64) -> void! {
+fn relaunch_update[F: ports.UpdateFiles, P: ports.UpdateProcesses](mut files: F, mut procs: P, installed: str, os: str, current: str, temp_dir: str, pid: i64) -> void! {
     p := update_paths(installed, os)
     if staged_update(mut files, installed, os, current).len() == 0 {
         return error(coded(ERR_NOT_FOUND, "no update is ready to apply"))
@@ -135,7 +135,7 @@ fn relaunch_update[F: UpdateFiles, P: UpdateProcesses](mut files: F, mut procs: 
 // When it cannot apply it leaves the outcome for the app it starts again (inline at
 // each step: a generic helper taking `mut files, mut procs, p` lowers its arguments to
 // `str(...)` with the adapters' types, CF-177).
-fn apply_update[F: UpdateFiles, P: UpdateProcesses](mut files: F, mut procs: P, r: ApplyRequest) -> ApplyOutcome {
+fn apply_update[F: ports.UpdateFiles, P: ports.UpdateProcesses](mut files: F, mut procs: P, r: domain.ApplyRequest) -> domain.ApplyOutcome {
     check_apply_request(r) or err {
         msg := "{err.message()}"
         return apply_failed(APPLY_STEP_ARGS, error_code_of(msg), msg, true)

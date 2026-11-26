@@ -19,18 +19,18 @@ fn (self: FakeCliLinks) cli_link_exists(path: str) -> bool {
     return self.files.contains(path)
 }
 
-fn (self: FakeCliLinks) cli_link_probe(path: str) -> LinkProbe {
+fn (self: FakeCliLinks) cli_link_probe(path: str) -> domain.LinkProbe {
     dir := path[0..path.len() - 6]   // without "/flint"
     w := self.writable.contains(dir)
     if self.links.contains(path) {
         t := self.links[path]
         if t.len() == 0 {
-            return LinkProbe{ exists: true, is_link: false, target: "", target_exists: false, dir_writable: w }
+            return domain.LinkProbe{ exists: true, is_link: false, target: "", target_exists: false, dir_writable: w }
         }
         te := self.files.contains(t)
-        return LinkProbe{ exists: te, is_link: true, target: t, target_exists: te, dir_writable: w }
+        return domain.LinkProbe{ exists: te, is_link: true, target: t, target_exists: te, dir_writable: w }
     }
-    return LinkProbe{ exists: false, is_link: false, target: "", target_exists: false, dir_writable: w }
+    return domain.LinkProbe{ exists: false, is_link: false, target: "", target_exists: false, dir_writable: w }
 }
 
 fn (mut self: FakeCliLinks) cli_link_make(target: str, path: str, admin: bool) -> void! {
@@ -131,9 +131,9 @@ fn (self: FakeCliPath) cli_path_file_exists(path: str) -> bool {
     return self.files.contains(path.replace_all("\\", "/").to_lower())
 }
 
-fn (self: FakeCliPath) cli_path_probe(entry: str) -> PathEntryProbe {
+fn (self: FakeCliPath) cli_path_probe(entry: str) -> domain.PathEntryProbe {
     e := entry.replace_all("\\", "/").to_lower()
-    return PathEntryProbe{ entry: entry, has_cli: self.files.contains(e + "/flint.exe"), has_app: self.files.contains(e + "_app") }
+    return domain.PathEntryProbe{ entry: entry, has_cli: self.files.contains(e + "/flint.exe"), has_app: self.files.contains(e + "_app") }
 }
 
 fn fake_path_with(value: str, copies: []str) -> FakeCliPath {

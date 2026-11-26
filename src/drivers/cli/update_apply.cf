@@ -18,9 +18,9 @@ fn update_apply_usage() -> str {
     return coded(ERR_USAGE, "usage: flint update-apply --wait <pid> (--from <folder> | --start --staging <folder>) --to <folder> [--json]")
 }
 
-fn parse_apply_request(args: []str) -> ApplyRequest! {
+fn parse_apply_request(args: []str) -> domain.ApplyRequest! {
     // The end-to-end run keeps the started app's output (scripts/gui-e2e.sh, selfupdate).
-    mut r := ApplyRequest{ wait_pid: 0, from: "", to: "", os: os_name(), app_log: os.getenv("FLINT_UPDATE_APP_LOG"), start_only: false, staging: "" }
+    mut r := domain.ApplyRequest{ wait_pid: 0, from: "", to: "", os: os_name(), app_log: (os.getenv("FLINT_UPDATE_APP_LOG") or ""), start_only: false, staging: "" }
     mut i: usize = 1
     for i < args.len() {
         a := args[i]
@@ -57,7 +57,7 @@ fn parse_apply_request(args: []str) -> ApplyRequest! {
 
 // Whether every folder of the request is an absolute path (`/…`, `C:/…`, `C:\…`,
 // `\\server\…`), so leaving the current directory changes nothing it names.
-fn apply_paths_absolute(r: ApplyRequest) -> bool {
+fn apply_paths_absolute(r: domain.ApplyRequest) -> bool {
     for p in [r.from, r.to, r.staging] {
         if p.len() > 0 && !is_absolute_path(p) {
             return false
@@ -74,12 +74,12 @@ fn is_absolute_path(p: str) -> bool {
 }
 
 test "a request of absolute folders lets update-apply leave its current directory" {
-    r := ApplyRequest{ wait_pid: 1, from: "C:/A/.flint-update/new/Flint", to: "C:/A/Flint", os: "windows", app_log: "", start_only: false, staging: "" }
+    r := domain.ApplyRequest{ wait_pid: 1, from: "C:/A/.flint-update/new/Flint", to: "C:/A/Flint", os: "windows", app_log: "", start_only: false, staging: "" }
     assert(apply_paths_absolute(r))
-    assert(apply_paths_absolute(ApplyRequest{ wait_pid: 1, from: "/a/.flint-update/new/Flint", to: "/a/Flint", os: "linux", app_log: "", start_only: false, staging: "" }))
+    assert(apply_paths_absolute(domain.ApplyRequest{ wait_pid: 1, from: "/a/.flint-update/new/Flint", to: "/a/Flint", os: "linux", app_log: "", start_only: false, staging: "" }))
     assert(is_absolute_path("D:\\Programas\\Flint"))
     assert(is_absolute_path("\\\\server\\share"))
-    assert(!apply_paths_absolute(ApplyRequest{ wait_pid: 1, from: "x/.flint-update/new/Flint", to: "x/Flint", os: "linux", app_log: "", start_only: false, staging: "" }))
+    assert(!apply_paths_absolute(domain.ApplyRequest{ wait_pid: 1, from: "x/.flint-update/new/Flint", to: "x/Flint", os: "linux", app_log: "", start_only: false, staging: "" }))
     assert(!is_absolute_path("Flint"))
     assert(!is_absolute_path("C:Flint"))
 }

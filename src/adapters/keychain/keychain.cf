@@ -15,7 +15,7 @@ import "../../domain"
 // stands for another machine keeps its items under another service. Not documented
 // for people: a vault remembered under it is not found by a Flint without it.
 fn keychain_service() -> str {
-    s := os.getenv("FLINT_KEYCHAIN_SERVICE")
+    s := (os.getenv("FLINT_KEYCHAIN_SERVICE") or "")
     if s.len() > 0 {
         return s
     }

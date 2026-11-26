@@ -8,10 +8,10 @@ import "../../ports"
 // Where the tests write real files: FLINT_TEST_TMP, which scripts/test.sh sets on
 // Windows to the run's temp folder (a fixed /tmp there is C:\tmp, outside it), or /tmp.
 fn test_tmp() -> str {
-    return os.getenv("FLINT_TEST_TMP", "/tmp")
+    return (os.getenv("FLINT_TEST_TMP") or "/tmp")
 }
 
-fn accepts_local_files[L: LocalFiles](l: L) -> bool {
+fn accepts_local_files[L: ports.LocalFiles](l: L) -> bool {
     return true
 }
 
@@ -20,7 +20,7 @@ test "LocalFs satisfies the LocalFiles port" {
 }
 
 test "local files: write, stat, list, read, rename, remove, with stable codes" {
-    mut base := os.getenv("TMPDIR")
+    mut base := (os.getenv("TMPDIR") or "")
     if base.len() == 0 {
         base = "/tmp"
     }

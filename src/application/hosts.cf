@@ -63,11 +63,11 @@ fn empty_host_patch() -> HostPatch {
     return HostPatch{ alias: "", set_alias: false, label: "", set_label: false, hostname: "", set_hostname: false, port: 22, set_port: false, user: "", set_user: false, group: "", set_group: false, tags: [], set_tags: false, color: "", set_color: false, notes: "", set_notes: false, jump: "", set_jump: false, credential: "", set_credential: false, key: "", set_key: false, password: "", set_password: false, command: "", set_command: false, keep_shell: true, set_keep_shell: false, sudo_password: "", set_sudo_password: false, host_type: "", set_host_type: false, domain: "", set_domain: false, audio: "", set_audio: false, microphone: false, set_microphone: false }
 }
 
-fn load_catalog[S: VaultStore](store: S) -> Catalog! {
-    return Catalog{ groups: try store.groups_all(), hosts: try store.hosts_all(), keys: try store.keys_all(), creds: try store.creds_all() }
+fn load_catalog[S: ports.VaultStore](store: S) -> domain.Catalog! {
+    return domain.Catalog{ groups: try store.groups_all(), hosts: try store.hosts_all(), keys: try store.keys_all(), creds: try store.creds_all() }
 }
 
-fn host_index_by_alias(hosts: []Host, alias: str) -> i64 {
+fn host_index_by_alias(hosts: []domain.Host, alias: str) -> i64 {
     for i, h in hosts {
         if lower_ascii(h.alias) == lower_ascii(alias) {
             return i64(i)
@@ -76,7 +76,7 @@ fn host_index_by_alias(hosts: []Host, alias: str) -> i64 {
     return -1
 }
 
-fn host_index_by_id(hosts: []Host, id: str) -> i64 {
+fn host_index_by_id(hosts: []domain.Host, id: str) -> i64 {
     for i, h in hosts {
         if h.id == id {
             return i64(i)
@@ -85,7 +85,7 @@ fn host_index_by_id(hosts: []Host, id: str) -> i64 {
     return -1
 }
 
-fn key_index_by_name(keys: []SshKey, name: str) -> i64 {
+fn key_index_by_name(keys: []domain.SshKey, name: str) -> i64 {
     for i, k in keys {
         if lower_ascii(k.name) == lower_ascii(name) {
             return i64(i)
@@ -94,7 +94,7 @@ fn key_index_by_name(keys: []SshKey, name: str) -> i64 {
     return -1
 }
 
-fn key_name_of(keys: []SshKey, id: str) -> str {
+fn key_name_of(keys: []domain.SshKey, id: str) -> str {
     for k in keys {
         if k.id == id {
             return k.name
@@ -103,7 +103,7 @@ fn key_name_of(keys: []SshKey, id: str) -> str {
     return ""
 }
 
-fn cred_index_by_name(creds: []Credential, name: str) -> i64 {
+fn cred_index_by_name(creds: []domain.Credential, name: str) -> i64 {
     for i, c in creds {
         if lower_ascii(c.name) == lower_ascii(name) {
             return i64(i)
@@ -112,7 +112,7 @@ fn cred_index_by_name(creds: []Credential, name: str) -> i64 {
     return -1
 }
 
-fn cred_name_of(creds: []Credential, id: str) -> str {
+fn cred_name_of(creds: []domain.Credential, id: str) -> str {
     for c in creds {
         if c.id == id {
             return c.name
@@ -121,7 +121,7 @@ fn cred_name_of(creds: []Credential, id: str) -> str {
     return ""
 }
 
-fn host_alias_of(hosts: []Host, id: str) -> str {
+fn host_alias_of(hosts: []domain.Host, id: str) -> str {
     idx := host_index_by_id(hosts, id)
     if idx < 0 {
         return ""
@@ -129,7 +129,7 @@ fn host_alias_of(hosts: []Host, id: str) -> str {
     return hosts[usize(idx)].alias
 }
 
-fn host_view(cat: Catalog, h: Host) -> HostView {
+fn host_view(cat: domain.Catalog, h: domain.Host) -> HostView {
     return HostView{
         alias: h.alias,
         label: h.label,
@@ -155,14 +155,14 @@ fn host_view(cat: Catalog, h: Host) -> HostView {
 }
 
 // An RDP host's audio as shown (`local` when it carries none); "" for an SSH host.
-fn host_audio_view(h: Host) -> str {
+fn host_audio_view(h: domain.Host) -> str {
     if !is_rdp_host(h) {
         return ""
     }
     return rdp_audio_of(h)
 }
 
-fn require_host(hosts: []Host, alias: str) -> Host! {
+fn require_host(hosts: []domain.Host, alias: str) -> domain.Host! {
     idx := host_index_by_alias(hosts, alias)
     if idx < 0 {
         return error(coded(ERR_NOT_FOUND, "no host '{alias}'"))
@@ -171,7 +171,7 @@ fn require_host(hosts: []Host, alias: str) -> Host! {
 }
 
 // True if following jump hosts from `start` reaches `target`.
-fn jump_chain_reaches(hosts: []Host, start: str, target: str) -> bool {
+fn jump_chain_reaches(hosts: []domain.Host, start: str, target: str) -> bool {
     mut cur := start
     mut steps := 0
     for cur.len() > 0 && steps <= hosts.len() {
@@ -190,7 +190,7 @@ fn jump_chain_reaches(hosts: []Host, start: str, target: str) -> bool {
 
 // Applies a patch to `h`, resolving names against the catalog. Group paths that do
 // not exist yet are created (inside the caller's transaction).
-fn apply_host_patch[C: Crypto, S: VaultStore](crypto: C, mut store: S, session: VaultSession, cat: Catalog, base: Host, p: HostPatch) -> Host! {
+fn apply_host_patch[C: ports.Crypto, S: ports.VaultStore](crypto: C, mut store: S, session: VaultSession, cat: domain.Catalog, base: domain.Host, p: HostPatch) -> domain.Host! {
     mut h := base
     if p.set_alias {
         h.alias = p.alias
@@ -310,7 +310,7 @@ fn apply_host_patch[C: Crypto, S: VaultStore](crypto: C, mut store: S, session: 
     return h
 }
 
-fn save_host_patch[C: Crypto, S: VaultStore](crypto: C, mut store: S, session: VaultSession, cat: Catalog, h: Host, p: HostPatch) -> HostView! {
+fn save_host_patch[C: ports.Crypto, S: ports.VaultStore](crypto: C, mut store: S, session: VaultSession, cat: domain.Catalog, h: domain.Host, p: HostPatch) -> HostView! {
     try store.vault_begin()
     patched := apply_host_patch(crypto, mut store, session, cat, h, p) or err {
         store.vault_rollback()
@@ -325,7 +325,7 @@ fn save_host_patch[C: Crypto, S: VaultStore](crypto: C, mut store: S, session: V
     return host_view(after, patched)
 }
 
-fn add_host[C: Crypto, S: VaultStore](crypto: C, mut store: S, session: VaultSession, p: HostPatch) -> HostView! {
+fn add_host[C: ports.Crypto, S: ports.VaultStore](crypto: C, mut store: S, session: VaultSession, p: HostPatch) -> HostView! {
     if !p.set_alias {
         return error(coded(ERR_USAGE, "a host needs an alias"))
     }
@@ -333,7 +333,7 @@ fn add_host[C: Crypto, S: VaultStore](crypto: C, mut store: S, session: VaultSes
         return error(coded(ERR_USAGE, "a host needs a hostname (--hostname)"))
     }
     cat := try load_catalog(store)
-    h := Host{ id: new_row_id(crypto), alias: "", label: "", hostname: "", port: 22, username: "", group_id: "", tags: [], color: "", notes: "", jump_host_id: "", credential_id: "", key_id: "", password: [], initial_command: "", keep_shell: true, sudo_password: [] }
+    h := domain.Host{ id: new_row_id(crypto), alias: "", label: "", hostname: "", port: 22, username: "", group_id: "", tags: [], color: "", notes: "", jump_host_id: "", credential_id: "", key_id: "", password: [], initial_command: "", keep_shell: true, sudo_password: [] }
     view := try save_host_patch(crypto, mut store, session, cat, h, p)
     // A key trusted while testing the unsaved host was recorded with no host
     // (test_host_draft): it belongs to this host now.
@@ -341,36 +341,36 @@ fn add_host[C: Crypto, S: VaultStore](crypto: C, mut store: S, session: VaultSes
     return view
 }
 
-fn adopt_known_host[S: VaultStore](mut store: S, alias: str) -> void! {
+fn adopt_known_host[S: ports.VaultStore](mut store: S, alias: str) -> void! {
     cat := try load_catalog(store)
     h := try require_host(cat.hosts, alias)
     addr := known_host_addr(h.hostname, h.port)
     for k in try store.known_hosts_all() {
         if k.addr == addr && k.host_id.len() == 0 {
-            try store.known_host_put(KnownHost{ addr: k.addr, key_type: k.key_type, fingerprint: k.fingerprint, host_id: h.id, added_at: k.added_at })
+            try store.known_host_put(domain.KnownHost{ addr: k.addr, key_type: k.key_type, fingerprint: k.fingerprint, host_id: h.id, added_at: k.added_at })
         }
     }
 }
 
-fn edit_host[C: Crypto, S: VaultStore](crypto: C, mut store: S, session: VaultSession, alias: str, p: HostPatch) -> HostView! {
+fn edit_host[C: ports.Crypto, S: ports.VaultStore](crypto: C, mut store: S, session: VaultSession, alias: str, p: HostPatch) -> HostView! {
     cat := try load_catalog(store)
     h := try require_host(cat.hosts, alias)
-    return save_host_patch(crypto, mut store, session, cat, h, p)
+    return try save_host_patch(crypto, mut store, session, cat, h, p)
 }
 
 // Refuses `alias` when it is an RDP host, before anything is dialled or approved.
-fn require_ssh_alias[S: VaultStore](store: S, alias: str, what: str) -> void! {
+fn require_ssh_alias[S: ports.VaultStore](store: S, alias: str, what: str) -> void! {
     cat := try load_catalog(store)
     try require_ssh_host(try require_host(cat.hosts, alias), what)
 }
 
-fn show_host[S: VaultStore](store: S, alias: str) -> HostView! {
+fn show_host[S: ports.VaultStore](store: S, alias: str) -> HostView! {
     cat := try load_catalog(store)
     return host_view(cat, try require_host(cat.hosts, alias))
 }
 
 // True if group `id` is `ancestor` or nested under it.
-fn group_within(groups: []Group, id: str, ancestor: str) -> bool {
+fn group_within(groups: []domain.Group, id: str, ancestor: str) -> bool {
     mut cur := id
     mut steps := 0
     for cur.len() > 0 && steps <= groups.len() {
@@ -389,7 +389,7 @@ fn group_within(groups: []Group, id: str, ancestor: str) -> bool {
 
 // Hosts sorted by alias, optionally only those in `group` (and its subgroups) and
 // carrying `tag`.
-fn list_hosts[S: VaultStore](store: S, group: str, tag: str) -> []HostView! {
+fn list_hosts[S: ports.VaultStore](store: S, group: str, tag: str) -> []HostView! {
     cat := try load_catalog(store)
     mut group_id := ""
     if group.len() > 0 {
@@ -420,7 +420,7 @@ fn list_hosts[S: VaultStore](store: S, group: str, tag: str) -> []HostView! {
 }
 
 // Removes a host. A host that another host uses as its jump host is refused.
-fn remove_host[S: VaultStore](mut store: S, alias: str) -> HostView! {
+fn remove_host[S: ports.VaultStore](mut store: S, alias: str) -> HostView! {
     cat := try load_catalog(store)
     h := try require_host(cat.hosts, alias)
     for o in cat.hosts {

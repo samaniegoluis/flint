@@ -36,7 +36,7 @@ test "a presence reason reads in the window's language" {
     assert_eq(presence_text("es", window_open_reason("Work")), "abrir la ventana de Flint de la bóveda Work")
     assert_eq(presence_text("es", rdp_type_password_reason("win1")), "escribir la contraseña de win1 en su escritorio remoto")
     // An id the table lacks, or params it does not expect, read English.
-    assert_eq(presence_text("es", PresenceReason{ id: "x", params: [], text: "do x" }), "do x")
+    assert_eq(presence_text("es", domain.PresenceReason{ id: "x", params: [], text: "do x" }), "do x")
     p := new_os_presence()
     q := p
     p.set_language("es")

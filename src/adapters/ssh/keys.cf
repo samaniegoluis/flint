@@ -13,7 +13,7 @@ fn new_libssh_key_inspector() -> LibsshKeyInspector {
     return LibsshKeyInspector{ ready: true }
 }
 
-fn (self: LibsshKeyInspector) inspect_private_key(private_key: str, passphrase: str) -> KeyInfo! {
+fn (self: LibsshKeyInspector) inspect_private_key(private_key: str, passphrase: str) -> domain.KeyInfo! {
     if private_key.len() == 0 {
         return error(coded(ERR_INVALID, "the private key is empty"))
     }
@@ -68,5 +68,5 @@ fn (self: LibsshKeyInspector) inspect_private_key(private_key: str, passphrase: 
         }
         return error(coded(ERR_INVALID, "the private key could not be read: wrong passphrase or not an SSH private key"))
     }
-    return KeyInfo{ key_type: key_type, public_key: public_key, fingerprint: fingerprint }
+    return domain.KeyInfo{ key_type: key_type, public_key: public_key, fingerprint: fingerprint }
 }

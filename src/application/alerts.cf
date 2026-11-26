@@ -10,14 +10,14 @@ import "../ports"
 
 // Whether a request's alert goes out: alerts on with a topic, the person not at the
 // window (window_attended), and none sent for this request yet.
-fn alert_due(t: AlertTarget, attended: bool, already_sent: bool) -> bool {
+fn alert_due(t: domain.AlertTarget, attended: bool, already_sent: bool) -> bool {
     return t.on && t.topic.len() > 0 && !attended && !already_sent
 }
 
 // Publishes `kind` to the target and says how it went. Nothing but the kind is
 // passed on; a publish that fails is a status, never an error of the caller's.
-fn publish_alert[N: Notifier](n: N, t: AlertTarget, kind: str, now_ms: i64) -> AlertStatus {
-    mut st := AlertStatus{ at_ms: now_ms, kind: kind, ok: false, error: "" }
+fn publish_alert[N: ports.Notifier](n: N, t: domain.AlertTarget, kind: str, now_ms: i64) -> domain.AlertStatus {
+    mut st := domain.AlertStatus{ at_ms: now_ms, kind: kind, ok: false, error: "" }
     if !alert_kind_valid(kind) {
         st.error = "unknown alert"
         return st
@@ -39,7 +39,7 @@ fn publish_alert[N: Notifier](n: N, t: AlertTarget, kind: str, now_ms: i64) -> A
 }
 
 // The topic made on first need: kept when there is one, else a random one saved.
-fn ensure_alert_topic[T: SettingsStore, C: Crypto](mut store: T, c: C) -> Settings! {
+fn ensure_alert_topic[T: ports.SettingsStore, C: ports.Crypto](mut store: T, c: C) -> domain.Settings! {
     mut s := try load_settings(store)
     if ntfy_topic_valid(s.ntfy_topic) {
         return s
@@ -50,7 +50,7 @@ fn ensure_alert_topic[T: SettingsStore, C: Crypto](mut store: T, c: C) -> Settin
 }
 
 // *New topic*: a fresh random topic; the phone must subscribe again.
-fn new_alert_topic[T: SettingsStore, C: Crypto](mut store: T, c: C) -> Settings! {
+fn new_alert_topic[T: ports.SettingsStore, C: ports.Crypto](mut store: T, c: C) -> domain.Settings! {
     mut s := try load_settings(store)
     s.ntfy_topic = ntfy_topic_from(c.random_bytes(NTFY_TOPIC_BYTES))
     try store.settings_save(s)

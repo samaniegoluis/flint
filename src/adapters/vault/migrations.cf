@@ -222,7 +222,8 @@ ALTER TABLE hosts ADD COLUMN rdp_microphone INTEGER NOT NULL DEFAULT 0;
 
 // Brings the open vault up to the latest migration, one transaction per step.
 fn (self: CipherDb) migrate() -> void! {
-    return self.migrate_list(vault_migrations(), "vault")
+    try self.migrate_list(vault_migrations(), "vault")
+    return
 }
 
 // Brings the open database up to the last of `list` (the vault's, or the activity

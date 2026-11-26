@@ -10,7 +10,7 @@ import "../../domain"
 // File shape: a local struct, as in recents.cf.
 type SettingsFile struct {
     version:  i64      `json:"version"`
-    settings: Settings `json:"settings"`
+    settings: domain.Settings `json:"settings"`
 }
 
 type JsonSettingsStore struct {
@@ -21,7 +21,7 @@ fn new_json_settings_store(dir: str) -> JsonSettingsStore {
     return JsonSettingsStore{ path: dir + "/settings.json" }
 }
 
-fn (self: JsonSettingsStore) settings_load() -> Settings! {
+fn (self: JsonSettingsStore) settings_load() -> domain.Settings! {
     if !fs.exists(self.path) {
         return default_settings()
     }
@@ -36,7 +36,7 @@ fn (self: JsonSettingsStore) settings_load() -> Settings! {
     return parsed.settings
 }
 
-fn (self: JsonSettingsStore) settings_save(s: Settings) -> void! {
+fn (self: JsonSettingsStore) settings_save(s: domain.Settings) -> void! {
     dir := fs.dirname(self.path)
     fs.mkdir_all(dir) or err {
         return error(coded(ERR_IO, "cannot create {dir}"))

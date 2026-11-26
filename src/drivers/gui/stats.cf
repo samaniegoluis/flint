@@ -8,7 +8,7 @@ package main
 
 import "ext:webui"
 import "../../adapters/process"
-import "../../adapters/ssh"
+import "../../adapters/ssh" as flint_ssh
 import "../../application"
 import "../../domain"
 
@@ -22,7 +22,7 @@ type GuiStatsSink struct {
     app: webui.App
 }
 
-fn (mut self: GuiStatsSink) stats_emit(sample: ServerSample) {
+fn (mut self: GuiStatsSink) stats_emit(sample: domain.ServerSample) {
     self.app.emit("stats:sample", sample)
 }
 
@@ -40,7 +40,7 @@ fn run_gui_stats(mut app: webui.App, req: StatsWatchReq) {
     mut sink := GuiStatsSink{ app: app }
     mut ch := borrow_stats(req.session, req.watch) or {
         // The tab's shell is not open (or is closing): nothing to show.
-        sink.stats_emit(ServerSample{ session: req.session, os: "", interfaces: [] })
+        sink.stats_emit(domain.ServerSample{ session: req.session, os: "", interfaces: [] })
         return
     }
     mut clock := new_system_clock()

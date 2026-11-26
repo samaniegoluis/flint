@@ -76,24 +76,24 @@ fn (self: FakeTree) has(path: str) -> bool {
     return self.find(path) >= 0
 }
 
-fn (self: FakeTree) t_stat(path: str) -> FileEntry! {
+fn (self: FakeTree) t_stat(path: str) -> domain.FileEntry! {
     i := self.find(path)
     if i < 0 {
         return error(coded(ERR_NOT_FOUND, "{path}: no such file"))
     }
     n := self.nodes[usize(i)]
-    return FileEntry{ name: remote_base(n.path), path: n.path, kind: n.kind, size: i64(n.data.len()), mtime: n.mtime, mode: n.mode, uid: self.uid_of(n.path) }
+    return domain.FileEntry{ name: remote_base(n.path), path: n.path, kind: n.kind, size: i64(n.data.len()), mtime: n.mtime, mode: n.mode, uid: self.uid_of(n.path) }
 }
 
-fn (self: FakeTree) t_list(path: str) -> []FileEntry! {
+fn (self: FakeTree) t_list(path: str) -> []domain.FileEntry! {
     st := try self.t_stat(path)
     if !st.is_dir() {
         return error(coded(ERR_NOT_DIR, "{path}: not a folder"))
     }
-    mut entries: []FileEntry = []
+    mut entries: []domain.FileEntry = []
     for n in self.nodes {
         if n.path != "/" && remote_dir(n.path) == norm(path) {
-            entries.push(FileEntry{ name: remote_base(n.path), path: n.path, kind: n.kind, size: i64(n.data.len()), mtime: n.mtime, mode: n.mode, uid: self.uid_of(n.path) })
+            entries.push(domain.FileEntry{ name: remote_base(n.path), path: n.path, kind: n.kind, size: i64(n.data.len()), mtime: n.mtime, mode: n.mode, uid: self.uid_of(n.path) })
         }
     }
     return entries
@@ -228,17 +228,17 @@ type FakeSftp struct {
 
 fn (mut self: FakeSftp) sftp_open() -> void! {
 }
-fn (self: FakeSftp) sftp_stat(path: str) -> FileEntry! {
-    return self.tree.t_stat(path)
+fn (self: FakeSftp) sftp_stat(path: str) -> domain.FileEntry! {
+    return try self.tree.t_stat(path)
 }
-fn (self: FakeSftp) sftp_list(path: str) -> []FileEntry! {
-    return self.tree.t_list(path)
+fn (self: FakeSftp) sftp_list(path: str) -> []domain.FileEntry! {
+    return try self.tree.t_list(path)
 }
 fn (mut self: FakeSftp) sftp_file_open(path: str, write: bool, exclusive: bool) -> void! {
     try self.tree.t_open(path, write)
 }
 fn (mut self: FakeSftp) sftp_file_read() -> str! {
-    return self.tree.t_read()
+    return try self.tree.t_read()
 }
 fn (mut self: FakeSftp) sftp_file_write(data: str) -> void! {
     try self.tree.t_write(data)
@@ -272,17 +272,17 @@ fn (mut self: FakeSftp) sftp_close() {
 
 // A host that is the far end of a copy between two sessions serves `LocalFiles`
 // over its own channel, as adapters/ssh/sftp_far.cf does for a real link.
-fn (self: FakeSftp) local_stat(path: str) -> FileEntry! {
-    return self.tree.t_stat(path)
+fn (self: FakeSftp) local_stat(path: str) -> domain.FileEntry! {
+    return try self.tree.t_stat(path)
 }
-fn (self: FakeSftp) local_list(path: str) -> []FileEntry! {
-    return self.tree.t_list(path)
+fn (self: FakeSftp) local_list(path: str) -> []domain.FileEntry! {
+    return try self.tree.t_list(path)
 }
 fn (mut self: FakeSftp) local_file_open(path: str, write: bool, exclusive: bool) -> void! {
     try self.tree.t_open(path, write)
 }
 fn (mut self: FakeSftp) local_file_read() -> str! {
-    return self.tree.t_read()
+    return try self.tree.t_read()
 }
 fn (mut self: FakeSftp) local_file_write(data: str) -> void! {
     try self.tree.t_write(data)
@@ -304,17 +304,17 @@ type FakeLocal struct {
     tree: FakeTree
 }
 
-fn (self: FakeLocal) local_stat(path: str) -> FileEntry! {
-    return self.tree.t_stat(path)
+fn (self: FakeLocal) local_stat(path: str) -> domain.FileEntry! {
+    return try self.tree.t_stat(path)
 }
-fn (self: FakeLocal) local_list(path: str) -> []FileEntry! {
-    return self.tree.t_list(path)
+fn (self: FakeLocal) local_list(path: str) -> []domain.FileEntry! {
+    return try self.tree.t_list(path)
 }
 fn (mut self: FakeLocal) local_file_open(path: str, write: bool, exclusive: bool) -> void! {
     try self.tree.t_open(path, write)
 }
 fn (mut self: FakeLocal) local_file_read() -> str! {
-    return self.tree.t_read()
+    return try self.tree.t_read()
 }
 fn (mut self: FakeLocal) local_file_write(data: str) -> void! {
     try self.tree.t_write(data)
@@ -335,11 +335,11 @@ fn (mut self: FakeLocal) local_mkdir(path: str) -> void! {
 // Records progress; cancels once `cancel_after` progress reports were made (0: never).
 type FakeTransferSink struct {
     reports: i64
-    last: TransferProgress
+    last: domain.TransferProgress
     cancel_after: i64
 }
 
-fn (mut self: FakeTransferSink) transfer_progress(p: TransferProgress) {
+fn (mut self: FakeTransferSink) transfer_progress(p: domain.TransferProgress) {
     self.reports += 1
     self.last = p
 }
@@ -349,7 +349,7 @@ fn (self: FakeTransferSink) transfer_cancelled() -> bool {
 }
 
 fn quiet_sink() -> FakeTransferSink {
-    return FakeTransferSink{ reports: 0, last: TransferProgress{ id: "", file: "", file_bytes: 0, file_size: 0, files_done: 0, bytes_done: 0 }, cancel_after: 0 }
+    return FakeTransferSink{ reports: 0, last: domain.TransferProgress{ id: "", file: "", file_bytes: 0, file_size: 0, files_done: 0, bytes_done: 0 }, cancel_after: 0 }
 }
 
 fn copy_req(direction: str, local: str, remote: str, recursive: bool, force: bool) -> CopyRequest {

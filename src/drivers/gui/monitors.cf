@@ -33,7 +33,7 @@ type RdpSpanReq struct {
     picks: []MonitorPickReq `json:"picks"`
 }
 
-fn rpc_monitors_list(ui: JsonUiStateStore) -> str! {
+fn rpc_monitors_list(ui: config.JsonUiStateStore) -> str! {
     return json.stringify(desktop_monitors(new_os_screens(), ui))
 }
 
@@ -67,12 +67,12 @@ fn rpc_monitors_send(params: str) -> str! {
     return ok_json()
 }
 
-fn rpc_rdp_span(params: str, mut ui: JsonUiStateStore, st: GuiState) -> str! {
+fn rpc_rdp_span(params: str, mut ui: config.JsonUiStateStore, st: GuiState) -> str! {
     try st.require_open_window()
     req := try parse_req[RdpSpanReq](params)
-    mut picks: []MonitorPick = []
+    mut picks: []domain.MonitorPick = []
     for p in req.picks {
-        picks.push(MonitorPick{ id: p.id, width: p.width, height: p.height })
+        picks.push(domain.MonitorPick{ id: p.id, width: p.width, height: p.height })
     }
     mut rd := new_freerdp_desktop()
     span := try span_remote_desktop(mut rd, new_os_screens(), mut ui, req.tab, picks)

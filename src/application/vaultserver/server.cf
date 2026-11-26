@@ -93,7 +93,7 @@ fn io_failure(r: ServerReply, cause: str) -> ServerReply {
     return failed
 }
 
-fn server_token_hash[C: Crypto](crypto: C, token: str) -> []byte! {
+fn server_token_hash[C: ports.Crypto](crypto: C, token: str) -> []byte! {
     mut data := []byte(SERVER_TOKEN_CONTEXT)
     for b in token.bytes() {
         data.push(b)
@@ -109,7 +109,7 @@ type NewServerToken struct {
     hash:  str
 }
 
-fn new_server_token[C: Crypto](crypto: C) -> NewServerToken! {
+fn new_server_token[C: ports.Crypto](crypto: C) -> NewServerToken! {
     raw := crypto.random_bytes(SERVER_TOKEN_BYTES)
     token := hex.encode(raw)
     crypto.wipe(raw)
@@ -119,7 +119,7 @@ fn new_server_token[C: Crypto](crypto: C) -> NewServerToken! {
 
 // The server's configuration from its environment: the token (`FLINT_VAULT_TOKEN`) or
 // only its hash (`FLINT_VAULT_TOKEN_HASH`), never both; a short token refused.
-fn server_config_from[C: Crypto](crypto: C, token: str, token_hash_hex: str, max_body: i64) -> ServerConfig! {
+fn server_config_from[C: ports.Crypto](crypto: C, token: str, token_hash_hex: str, max_body: i64) -> ServerConfig! {
     if token.len() > 0 && token_hash_hex.len() > 0 {
         return error(coded(ERR_USAGE, "set FLINT_VAULT_TOKEN or FLINT_VAULT_TOKEN_HASH, not both"))
     }
@@ -155,7 +155,7 @@ fn is_lower_hex(s: str) -> bool {
 }
 
 // Whether `authorization` carries the server's token, compared in constant time.
-fn token_matches[C: Crypto](crypto: C, cfg: ServerConfig, authorization: str) -> bool {
+fn token_matches[C: ports.Crypto](crypto: C, cfg: ServerConfig, authorization: str) -> bool {
     if !authorization.starts_with("Bearer ") {
         return false
     }
@@ -171,7 +171,7 @@ fn token_matches[C: Crypto](crypto: C, cfg: ServerConfig, authorization: str) ->
 
 // One request: the gate, the token, then the route. `now_ms` is the monotonic clock
 // (the gate's windows), `wall_ms` the Unix time a stored version is stamped with.
-fn serve_vault_request[C: Crypto, B: BlobStore](crypto: C, mut store: B, mut gate: ServerGate, cfg: ServerConfig, req: ServerRequest, now_ms: i64, wall_ms: i64) -> ServerReply {
+fn serve_vault_request[C: ports.Crypto, B: ports.BlobStore](crypto: C, mut store: B, mut gate: domain.ServerGate, cfg: ServerConfig, req: ServerRequest, now_ms: i64, wall_ms: i64) -> ServerReply {
     wait_ms := gate.gate_admit(req.client, now_ms)
     if wait_ms > 0 {
         mut r := json_reply(429, "too_many_requests", "wait before trying again")
@@ -228,7 +228,7 @@ fn serve_vault_request[C: Crypto, B: BlobStore](crypto: C, mut store: B, mut gat
 // `/v1/vault`, for the clients of milestones 42-44: the server's one vault while it
 // keeps at most one. A first upload there starts a vault under its id; a server
 // keeping several asks the client to update (410), since it cannot tell which.
-fn serve_single_vault[B: BlobStore](mut store: B, cfg: ServerConfig, req: ServerRequest, wall_ms: i64) -> ServerReply {
+fn serve_single_vault[B: ports.BlobStore](mut store: B, cfg: ServerConfig, req: ServerRequest, wall_ms: i64) -> ServerReply {
     if req.method != "GET" && req.method != "PUT" {
         return json_reply(405, "method_not_allowed", "use GET or PUT")
     }
@@ -257,12 +257,12 @@ fn serve_single_vault[B: BlobStore](mut store: B, cfg: ServerConfig, req: Server
 }
 
 type VaultsBody struct {
-    vaults: []ServerVault `json:"vaults"`
+    vaults: []domain.ServerVault `json:"vaults"`
 }
 
 // `GET /v1/vaults`: what a machine may download, before any master password. Only
 // what the server holds in clear: ids, labels, versions, sizes and times.
-fn list_vaults_reply[B: BlobStore](mut store: B) -> ServerReply {
+fn list_vaults_reply[B: ports.BlobStore](mut store: B) -> ServerReply {
     vaults := store.blob_vaults() or err {
         return io_failure(json_reply(500, "io", "the server could not read its store"), err.message())
     }
@@ -271,7 +271,7 @@ fn list_vaults_reply[B: BlobStore](mut store: B) -> ServerReply {
 
 // `PUT /v1/vaults/<id>/label` with `{"label": "..."}`; "" clears it. The label is
 // never logged.
-fn put_label[B: BlobStore](mut store: B, vault_id: str, body: str) -> ServerReply {
+fn put_label[B: ports.BlobStore](mut store: B, vault_id: str, body: str) -> ServerReply {
     if body.len() > 1024 {
         return json_reply(413, "too_large", "a label is short")
     }
@@ -294,7 +294,7 @@ fn put_label[B: BlobStore](mut store: B, vault_id: str, body: str) -> ServerRepl
 // `If-None-Match: "<n>"` naming the newest version answers `304` with no body
 // (milestone 43): a client checking for changes downloads the file only when there
 // is a new one.
-fn get_vault[B: BlobStore](mut store: B, vault_id: str, if_none_match: str) -> ServerReply {
+fn get_vault[B: ports.BlobStore](mut store: B, vault_id: str, if_none_match: str) -> ServerReply {
     head := store.blob_head(vault_id) or err {
         return io_failure(json_reply(500, "io", "the server could not read its store"), err.message())
     }
@@ -310,7 +310,7 @@ fn get_vault[B: BlobStore](mut store: B, vault_id: str, if_none_match: str) -> S
     return ServerReply{ status: 200, body: data, content_type: "application/octet-stream", version: head.version, vault_id: head.vault_id, retry_after_s: 0, note: "" }
 }
 
-fn put_vault[B: BlobStore](mut store: B, cfg: ServerConfig, req: ServerRequest, wall_ms: i64) -> ServerReply {
+fn put_vault[B: ports.BlobStore](mut store: B, cfg: ServerConfig, req: ServerRequest, wall_ms: i64) -> ServerReply {
     if !valid_vault_id(req.vault_id) {
         return json_reply(400, "bad_vault_id", "X-Flint-Vault-Id must be the vault's 32-character id")
     }
@@ -367,13 +367,13 @@ fn conflict_reply(version: i64) -> ServerReply {
 }
 
 // `flint-vault-server vaults`: every vault the store keeps, by id.
-fn list_server_vaults[B: BlobStore](mut store: B) -> []ServerVault! {
+fn list_server_vaults[B: ports.BlobStore](mut store: B) -> []domain.ServerVault! {
     return try store.blob_vaults()
 }
 
 // The vault a server command names: `wanted` (an id or a unique prefix of one), or
 // the only vault when `wanted` is "" and the store keeps exactly one.
-fn server_vault_named[B: BlobStore](mut store: B, wanted: str) -> ServerVault! {
+fn server_vault_named[B: ports.BlobStore](mut store: B, wanted: str) -> domain.ServerVault! {
     vaults := try store.blob_vaults()
     if vaults.len() == 0 {
         return error(coded(ERR_NOT_FOUND, "the server holds no vault yet"))
@@ -388,12 +388,12 @@ fn server_vault_named[B: BlobStore](mut store: B, wanted: str) -> ServerVault! {
 }
 
 // `flint-vault-server versions [<id>]`: what the store keeps of a vault, newest first.
-fn list_vault_versions[B: BlobStore](mut store: B, vault_id: str) -> []BlobVersion! {
+fn list_vault_versions[B: ports.BlobStore](mut store: B, vault_id: str) -> []domain.BlobVersion! {
     return try store.blob_versions(vault_id)
 }
 
 // `flint-vault-server label <id> [<label>]`: sets or clears a vault's label.
-fn set_server_vault_label[B: BlobStore](mut store: B, vault_id: str, label: str) -> void! {
+fn set_server_vault_label[B: ports.BlobStore](mut store: B, vault_id: str, label: str) -> void! {
     try check_vault_label(label)
     try store.blob_set_label(vault_id, label)
 }
@@ -401,14 +401,14 @@ fn set_server_vault_label[B: BlobStore](mut store: B, vault_id: str, label: str)
 // `flint-vault-server delete [<id>]`: removes a vault and every version kept of it
 // (milestone 71). The command asks first; a machine still connected to the vault
 // uploads its copy again at its next sync.
-fn delete_server_vault[B: BlobStore](mut store: B, vault_id: str) -> void! {
+fn delete_server_vault[B: ports.BlobStore](mut store: B, vault_id: str) -> void! {
     try store.blob_delete(vault_id)
 }
 
 // `flint-vault-server restore [<id>] <n>`: a kept version becomes the newest again, as
 // a new version, so every machine downloads it and merges it into its own copy
 // (D-097).
-fn restore_vault_version[B: BlobStore](mut store: B, vault_id: str, version: i64, now_ms: i64) -> BlobVersion! {
+fn restore_vault_version[B: ports.BlobStore](mut store: B, vault_id: str, version: i64, now_ms: i64) -> domain.BlobVersion! {
     head := try store.blob_head(vault_id)
     if head.version == 0 {
         return error(coded(ERR_NOT_FOUND, "the server holds no vault {vault_id}"))
@@ -429,5 +429,5 @@ fn restore_vault_version[B: BlobStore](mut store: B, vault_id: str, version: i64
     data := try store.blob_read(vault_id, version)
     n := head.version + 1
     try store.blob_write(vault_id, n, data, now_ms)
-    return BlobVersion{ version: n, vault_id: vault_id, size: i64(data.len()), stored_at: now_ms }
+    return domain.BlobVersion{ version: n, vault_id: vault_id, size: i64(data.len()), stored_at: now_ms }
 }

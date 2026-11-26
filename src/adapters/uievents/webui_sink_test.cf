@@ -3,7 +3,7 @@ package uievents
 import "ext:webui"
 import "../../ports"
 
-fn accepts_sink[E: EventSink](mut e: E) -> bool {
+fn accepts_sink[E: ports.EventSink](mut e: E) -> bool {
     e.terminal_output("s1", "hi\u0001")
     return true
 }

@@ -75,7 +75,7 @@ fn rpc_alerts_test(st: GuiState) -> str! {
 }
 
 // *New topic*: the phone must subscribe again.
-fn rpc_alerts_new_topic(c: Sodium, mut store: JsonSettingsStore, st: GuiState) -> str! {
+fn rpc_alerts_new_topic(c: crypto.Sodium, mut store: config.JsonSettingsStore, st: GuiState) -> str! {
     try st.require_open_window()
     saved := try new_alert_topic(mut store, c)
     st.holder.set_alerts(alert_target(saved))

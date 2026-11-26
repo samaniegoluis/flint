@@ -5,7 +5,7 @@ import "../domain"
 // This computer's monitors as a test sets them.
 type FakeScreens struct {
     reason: str
-    list: []LocalMonitor
+    list: []domain.LocalMonitor
     main: str
 }
 
@@ -13,7 +13,7 @@ fn (self: FakeScreens) screens_unsupported() -> str {
     return self.reason
 }
 
-fn (self: FakeScreens) screens_list() -> []LocalMonitor {
+fn (self: FakeScreens) screens_list() -> []domain.LocalMonitor {
     return self.list
 }
 
@@ -23,9 +23,9 @@ fn (self: FakeScreens) screens_main() -> str {
 
 fn desk_pair() -> FakeScreens {
     return FakeScreens{ reason: "", main: "1", list: [
-        LocalMonitor{ id: "1", name: "DELL", x: 0, y: 0, width: 2560, height: 1440, scale: 100, primary: true, physical: false },
-        LocalMonitor{ id: "2", name: "LG", x: -1080, y: -235, width: 1080, height: 1920, scale: 100, primary: false, physical: false },
-        LocalMonitor{ id: "3", name: "Built-in", x: 524, y: 1440, width: 1512, height: 982, scale: 200, primary: false, physical: false },
+        domain.LocalMonitor{ id: "1", name: "DELL", x: 0, y: 0, width: 2560, height: 1440, scale: 100, primary: true, physical: false },
+        domain.LocalMonitor{ id: "2", name: "LG", x: -1080, y: -235, width: 1080, height: 1920, scale: 100, primary: false, physical: false },
+        domain.LocalMonitor{ id: "3", name: "Built-in", x: 524, y: 1440, width: 1512, height: 982, scale: 200, primary: false, physical: false },
     ] }
 }
 
@@ -51,7 +51,7 @@ test "the monitors offered, the default choice and why it may be greyed" {
 test "a desktop spans the chosen monitors, the main one primary, and the choice is remembered" {
     mut rd := new_fake_desktop("ab:cd", "x")
     mut ui := FakeUiStateStore{ saved: default_ui_state(), saves: 0 }
-    picks: []MonitorPick = [MonitorPick{ id: "2", width: 1080, height: 1920 }, MonitorPick{ id: "1", width: 2560, height: 1440 }]
+    picks: []domain.MonitorPick = [domain.MonitorPick{ id: "2", width: 1080, height: 1920 }, domain.MonitorPick{ id: "1", width: 2560, height: 1440 }]
     span := try span_remote_desktop(mut rd, desk_pair(), mut ui, "t1", picks)
     assert_eq(rd.layouts.len(), 1)
     assert_eq(rd.layouts[0], "1,2")
@@ -66,14 +66,14 @@ test "a desktop spans the chosen monitors, the main one primary, and the choice 
 test "spanning is refused where the system cannot, past the cap and without the main monitor" {
     mut rd := new_fake_desktop("ab:cd", "x")
     mut ui := FakeUiStateStore{ saved: default_ui_state(), saves: 0 }
-    pair: []MonitorPick = [MonitorPick{ id: "1", width: 0, height: 0 }, MonitorPick{ id: "2", width: 0, height: 0 }]
+    pair: []domain.MonitorPick = [domain.MonitorPick{ id: "1", width: 0, height: 0 }, domain.MonitorPick{ id: "2", width: 0, height: 0 }]
     mut not_here := desk_pair()
     not_here.reason = "Not supported on this system yet"
     mut msgs: []str = []
     span_remote_desktop(mut rd, not_here, mut ui, "t1", pair) or err { msgs.push("{err.message()}") }
-    three: []MonitorPick = [MonitorPick{ id: "1", width: 0, height: 0 }, MonitorPick{ id: "2", width: 0, height: 0 }, MonitorPick{ id: "3", width: 0, height: 0 }]
+    three: []domain.MonitorPick = [domain.MonitorPick{ id: "1", width: 0, height: 0 }, domain.MonitorPick{ id: "2", width: 0, height: 0 }, domain.MonitorPick{ id: "3", width: 0, height: 0 }]
     span_remote_desktop(mut rd, desk_pair(), mut ui, "t1", three) or err { msgs.push("{err.message()}") }
-    without_main: []MonitorPick = [MonitorPick{ id: "2", width: 0, height: 0 }, MonitorPick{ id: "3", width: 0, height: 0 }]
+    without_main: []domain.MonitorPick = [domain.MonitorPick{ id: "2", width: 0, height: 0 }, domain.MonitorPick{ id: "3", width: 0, height: 0 }]
     span_remote_desktop(mut rd, desk_pair(), mut ui, "t1", without_main) or err { msgs.push("{err.message()}") }
     assert_eq(msgs.len(), 3)
     assert_eq(error_code_of(msgs[0]), ERR_UNSUPPORTED)
@@ -87,17 +87,17 @@ test "a reconnect keeps the monitors the desktop spans" {
     mut store := new_fake_store()
     s := fresh_session(crypto, mut store)
     try rdp_fake(crypto, mut store, s, "s3cret")
-    try store.known_host_put(KnownHost{ addr: "rdp://win11.lan:3389", key_type: "x509", fingerprint: "ab:cd", host_id: "", added_at: "" })
+    try store.known_host_put(domain.KnownHost{ addr: "rdp://win11.lan:3389", key_type: "x509", fingerprint: "ab:cd", host_id: "", added_at: "" })
     mut rd := new_fake_desktop("ab:cd", "s3cret")
-    layout: []RdpMonitor = [
-        RdpMonitor{ local_id: "1", x: 0, y: 0, width: 2560, height: 1440, primary: true },
-        RdpMonitor{ local_id: "2", x: -1080, y: -235, width: 1080, height: 1920, primary: false },
+    layout: []domain.RdpMonitor = [
+        domain.RdpMonitor{ local_id: "1", x: 0, y: 0, width: 2560, height: 1440, primary: true },
+        domain.RdpMonitor{ local_id: "2", x: -1080, y: -235, width: 1080, height: 1920, primary: false },
     ]
-    bad: []RdpMonitor = [RdpMonitor{ local_id: "1", x: 5, y: 0, width: 2560, height: 1440, primary: true }]
+    bad: []domain.RdpMonitor = [domain.RdpMonitor{ local_id: "1", x: 5, y: 0, width: 2560, height: 1440, primary: true }]
     rd.events = [
-        RdpEvent{ kind: RDP_EVENT_RESIZE, message: "", width: 3640, height: 1920, monitors: layout },
-        RdpEvent{ kind: RDP_EVENT_GRAPHICS, message: "compatible", width: 3640, height: 1920, monitors: layout },
-        RdpEvent{ kind: RDP_EVENT_RESIZE, message: "", width: 1280, height: 720, monitors: bad },
+        domain.RdpEvent{ kind: RDP_EVENT_RESIZE, message: "", width: 3640, height: 1920, monitors: layout },
+        domain.RdpEvent{ kind: RDP_EVENT_GRAPHICS, message: "compatible", width: 3640, height: 1920, monitors: layout },
+        domain.RdpEvent{ kind: RDP_EVENT_RESIZE, message: "", width: 1280, height: 720, monitors: bad },
     ]
     mut sink := FakeDesktopSink{ ready: [], locked: false, cursors: [], graphics: [] }
     mut clip0 := no_clipboard()

@@ -301,7 +301,7 @@ fn (self: SessionHolder) access_release() {
 }
 
 // The grants and waiting approvals. Empty before the first write and after a clear.
-fn (self: SessionHolder) access_book() -> AccessBook {
+fn (self: SessionHolder) access_book() -> domain.AccessBook {
     mut text := ""
     // CFIRE-UPSTREAM: CF-026
     cpp {
@@ -312,10 +312,10 @@ fn (self: SessionHolder) access_book() -> AccessBook {
         return empty_access_book()
     }
     // CFIRE-UPSTREAM: CF-164 (a labeled argument keeps libstdc++'s chrono::parse out)
-    return json.parse[AccessBook](payload: text) or empty_access_book()
+    return json.parse[domain.AccessBook](payload: text) or empty_access_book()
 }
 
-fn (self: SessionHolder) put_access_book(book: AccessBook) {
+fn (self: SessionHolder) put_access_book(book: domain.AccessBook) {
     text := json.stringify(book)
     // CFIRE-UPSTREAM: CF-026
     cpp {
@@ -381,7 +381,7 @@ fn (self: SessionHolder) remembered(path: str) -> bool {
 }
 
 // Phone alerts (milestone 63): where they go, from Settings, set at start and on save.
-fn (self: SessionHolder) set_alerts(t: AlertTarget) {
+fn (self: SessionHolder) set_alerts(t: domain.AlertTarget) {
     on := t.on
     server := t.server
     topic := t.topic
@@ -394,7 +394,7 @@ fn (self: SessionHolder) set_alerts(t: AlertTarget) {
     }
 }
 
-fn (self: SessionHolder) alerts() -> AlertTarget {
+fn (self: SessionHolder) alerts() -> domain.AlertTarget {
     mut on := false
     mut server := ""
     mut topic := ""
@@ -405,7 +405,7 @@ fn (self: SessionHolder) alerts() -> AlertTarget {
         server = self.cell->alerts_server;
         topic = self.cell->alerts_topic;
     }
-    return AlertTarget{ on: on, server: server, topic: topic }
+    return domain.AlertTarget{ on: on, server: server, topic: topic }
 }
 
 // What the page tells about the window (D-136): its focus, and a key or the mouse.
@@ -440,7 +440,7 @@ fn (self: SessionHolder) attended(now_ms: i64) -> bool {
     return window_attended(focused, last, now_ms)
 }
 
-fn (self: SessionHolder) set_alert_status(st: AlertStatus) {
+fn (self: SessionHolder) set_alert_status(st: domain.AlertStatus) {
     text := json.stringify(st)
     // CFIRE-UPSTREAM: CF-026
     cpp {
@@ -449,7 +449,7 @@ fn (self: SessionHolder) set_alert_status(st: AlertStatus) {
     }
 }
 
-fn (self: SessionHolder) alert_status() -> AlertStatus {
+fn (self: SessionHolder) alert_status() -> domain.AlertStatus {
     mut text := ""
     // CFIRE-UPSTREAM: CF-026
     cpp {
@@ -460,5 +460,5 @@ fn (self: SessionHolder) alert_status() -> AlertStatus {
         return no_alert_status()
     }
     // CFIRE-UPSTREAM: CF-164 (a labeled argument keeps libstdc++'s chrono::parse out)
-    return json.parse[AlertStatus](payload: text) or no_alert_status()
+    return json.parse[domain.AlertStatus](payload: text) or no_alert_status()
 }

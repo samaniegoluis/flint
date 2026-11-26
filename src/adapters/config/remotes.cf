@@ -12,7 +12,7 @@ import "../../domain"
 
 type RemotesFile struct {
     version: i64          `json:"version"`
-    vaults:  []RemoteLink `json:"vaults"`
+    vaults:  []domain.RemoteLink `json:"vaults"`
 }
 
 type JsonRemoteLinkStore struct {
@@ -23,7 +23,7 @@ fn new_json_remote_link_store(dir: str) -> JsonRemoteLinkStore {
     return JsonRemoteLinkStore{ path: dir + "/remotes.json" }
 }
 
-fn (self: JsonRemoteLinkStore) links_load() -> []RemoteLink! {
+fn (self: JsonRemoteLinkStore) links_load() -> []domain.RemoteLink! {
     if !fs.exists(self.path) {
         return []
     }
@@ -37,6 +37,6 @@ fn (self: JsonRemoteLinkStore) links_load() -> []RemoteLink! {
     return f.vaults
 }
 
-fn (self: JsonRemoteLinkStore) links_save(list: []RemoteLink) -> void! {
+fn (self: JsonRemoteLinkStore) links_save(list: []domain.RemoteLink) -> void! {
     try write_file_atomic(self.path, json.stringify(RemotesFile{ version: 1, vaults: list }))
 }

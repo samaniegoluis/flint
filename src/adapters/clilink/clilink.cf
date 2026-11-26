@@ -13,7 +13,7 @@ fn new_os_cli_links() -> OsCliLinks {
     return OsCliLinks{ enabled: true }
 }
 
-fn (self: OsCliLinks) cli_link_probe(path: str) -> LinkProbe {
+fn (self: OsCliLinks) cli_link_probe(path: str) -> domain.LinkProbe {
     mut exists := false
     mut is_link := false
     mut target := ""
@@ -28,7 +28,7 @@ fn (self: OsCliLinks) cli_link_probe(path: str) -> LinkProbe {
         target_exists = p.target_exists;
         writable = p.dir_writable;
     }
-    return LinkProbe{ exists: exists, is_link: is_link, target: target, target_exists: target_exists, dir_writable: writable }
+    return domain.LinkProbe{ exists: exists, is_link: is_link, target: target, target_exists: target_exists, dir_writable: writable }
 }
 
 fn (self: OsCliLinks) cli_link_exists(path: str) -> bool {
@@ -46,7 +46,8 @@ fn (mut self: OsCliLinks) cli_link_make(target: str, path: str, admin: bool) -> 
     cpp {
         why = flint_clilink::make(std::string(target), std::string(path), admin);
     }
-    return link_result(why, path)
+    try link_result(why, path)
+    return
 }
 
 fn (mut self: OsCliLinks) cli_link_remove(path: str, admin: bool) -> void! {
@@ -55,7 +56,8 @@ fn (mut self: OsCliLinks) cli_link_remove(path: str, admin: bool) -> void! {
     cpp {
         why = flint_clilink::remove(std::string(path), admin);
     }
-    return link_result(why, path)
+    try link_result(why, path)
+    return
 }
 
 fn link_result(why: str, path: str) -> void! {
@@ -115,14 +117,14 @@ fn (mut self: OsCliPath) cli_path_write(value: str) -> void! {
     }
 }
 
-fn (self: OsCliPath) cli_path_probe(entry: str) -> PathEntryProbe {
+fn (self: OsCliPath) cli_path_probe(entry: str) -> domain.PathEntryProbe {
     mut has_cli := false
     mut has_app := false
     // CFIRE-UPSTREAM: CF-178
     cpp {
         flint_clilink::entry_probe(std::string(entry), has_cli, has_app);
     }
-    return PathEntryProbe{ entry: entry, has_cli: has_cli, has_app: has_app }
+    return domain.PathEntryProbe{ entry: entry, has_cli: has_cli, has_app: has_app }
 }
 
 fn (self: OsCliPath) cli_path_file_exists(path: str) -> bool {

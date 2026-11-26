@@ -70,13 +70,15 @@ fn (self: LockedVaultStore) leave_with(inner: SqlVaultStore) {
 fn (mut self: LockedVaultStore) vault_create(path: str, page_key: []byte, salt: []byte) -> void! {
     mut inner := self.enter()
     defer self.leave_with(inner)
-    return inner.vault_create(path, page_key, salt)
+    try inner.vault_create(path, page_key, salt)
+    return
 }
 
 fn (mut self: LockedVaultStore) vault_attach(path: str, page_key: []byte, salt: []byte) -> void! {
     mut inner := self.enter()
     defer self.leave_with(inner)
-    return inner.vault_attach(path, page_key, salt)
+    try inner.vault_attach(path, page_key, salt)
+    return
 }
 
 fn (mut self: LockedVaultStore) vault_detach() {
@@ -123,232 +125,253 @@ fn (self: LockedVaultStore) vault_file_exists(path: str) -> bool {
 fn (self: LockedVaultStore) vault_read_salt(path: str) -> []byte! {
     inner := self.enter()
     defer self.leave()
-    return inner.vault_read_salt(path)
+    return try inner.vault_read_salt(path)
 }
 
 fn (self: LockedVaultStore) vault_format() -> i64! {
     inner := self.enter()
     defer self.leave()
-    return inner.vault_format()
+    return try inner.vault_format()
 }
 
 fn (self: LockedVaultStore) vault_get_meta(key: str) -> str! {
     inner := self.enter()
     defer self.leave()
-    return inner.vault_get_meta(key)
+    return try inner.vault_get_meta(key)
 }
 
 fn (self: LockedVaultStore) vault_set_meta(key: str, value: str) -> void! {
     inner := self.enter()
     defer self.leave()
-    return inner.vault_set_meta(key, value)
+    try inner.vault_set_meta(key, value)
+    return
 }
 
-fn (self: LockedVaultStore) groups_all() -> []Group! {
+fn (self: LockedVaultStore) groups_all() -> []domain.Group! {
     inner := self.enter()
     defer self.leave()
-    return inner.groups_all()
+    return try inner.groups_all()
 }
 
-fn (self: LockedVaultStore) group_put(g: Group) -> void! {
+fn (self: LockedVaultStore) group_put(g: domain.Group) -> void! {
     inner := self.enter()
     defer self.leave()
-    return inner.group_put(g)
+    try inner.group_put(g)
+    return
 }
 
 fn (self: LockedVaultStore) group_drop(id: str) -> void! {
     inner := self.enter()
     defer self.leave()
-    return inner.group_drop(id)
+    try inner.group_drop(id)
+    return
 }
 
-fn (self: LockedVaultStore) hosts_all() -> []Host! {
+fn (self: LockedVaultStore) hosts_all() -> []domain.Host! {
     inner := self.enter()
     defer self.leave()
-    return inner.hosts_all()
+    return try inner.hosts_all()
 }
 
-fn (self: LockedVaultStore) host_put(h: Host) -> void! {
+fn (self: LockedVaultStore) host_put(h: domain.Host) -> void! {
     inner := self.enter()
     defer self.leave()
-    return inner.host_put(h)
+    try inner.host_put(h)
+    return
 }
 
 fn (self: LockedVaultStore) host_drop(id: str) -> void! {
     inner := self.enter()
     defer self.leave()
-    return inner.host_drop(id)
+    try inner.host_drop(id)
+    return
 }
 
-fn (self: LockedVaultStore) keys_all() -> []SshKey! {
+fn (self: LockedVaultStore) keys_all() -> []domain.SshKey! {
     inner := self.enter()
     defer self.leave()
-    return inner.keys_all()
+    return try inner.keys_all()
 }
 
-fn (self: LockedVaultStore) key_put(k: SshKey) -> void! {
+fn (self: LockedVaultStore) key_put(k: domain.SshKey) -> void! {
     inner := self.enter()
     defer self.leave()
-    return inner.key_put(k)
+    try inner.key_put(k)
+    return
 }
 
 fn (self: LockedVaultStore) key_drop(id: str) -> void! {
     inner := self.enter()
     defer self.leave()
-    return inner.key_drop(id)
+    try inner.key_drop(id)
+    return
 }
 
-fn (self: LockedVaultStore) creds_all() -> []Credential! {
+fn (self: LockedVaultStore) creds_all() -> []domain.Credential! {
     inner := self.enter()
     defer self.leave()
-    return inner.creds_all()
+    return try inner.creds_all()
 }
 
-fn (self: LockedVaultStore) cred_put(c: Credential) -> void! {
+fn (self: LockedVaultStore) cred_put(c: domain.Credential) -> void! {
     inner := self.enter()
     defer self.leave()
-    return inner.cred_put(c)
+    try inner.cred_put(c)
+    return
 }
 
 fn (self: LockedVaultStore) cred_drop(id: str) -> void! {
     inner := self.enter()
     defer self.leave()
-    return inner.cred_drop(id)
+    try inner.cred_drop(id)
+    return
 }
 
-fn (self: LockedVaultStore) known_hosts_all() -> []KnownHost! {
+fn (self: LockedVaultStore) known_hosts_all() -> []domain.KnownHost! {
     inner := self.enter()
     defer self.leave()
-    return inner.known_hosts_all()
+    return try inner.known_hosts_all()
 }
 
-fn (self: LockedVaultStore) known_host_put(k: KnownHost) -> void! {
+fn (self: LockedVaultStore) known_host_put(k: domain.KnownHost) -> void! {
     inner := self.enter()
     defer self.leave()
-    return inner.known_host_put(k)
+    try inner.known_host_put(k)
+    return
 }
 
 fn (self: LockedVaultStore) known_host_drop(addr: str) -> void! {
     inner := self.enter()
     defer self.leave()
-    return inner.known_host_drop(addr)
+    try inner.known_host_drop(addr)
+    return
 }
 
-fn (self: LockedVaultStore) tunnels_all() -> []Tunnel! {
+fn (self: LockedVaultStore) tunnels_all() -> []domain.Tunnel! {
     inner := self.enter()
     defer self.leave()
-    return inner.tunnels_all()
+    return try inner.tunnels_all()
 }
 
-fn (self: LockedVaultStore) tunnel_put(t: Tunnel) -> void! {
+fn (self: LockedVaultStore) tunnel_put(t: domain.Tunnel) -> void! {
     inner := self.enter()
     defer self.leave()
-    return inner.tunnel_put(t)
+    try inner.tunnel_put(t)
+    return
 }
 
 fn (self: LockedVaultStore) tunnel_drop(id: str) -> void! {
     inner := self.enter()
     defer self.leave()
-    return inner.tunnel_drop(id)
+    try inner.tunnel_drop(id)
+    return
 }
 
-fn (self: LockedVaultStore) tokens_all() -> []Token! {
+fn (self: LockedVaultStore) tokens_all() -> []domain.Token! {
     inner := self.enter()
     defer self.leave()
-    return inner.tokens_all()
+    return try inner.tokens_all()
 }
 
-fn (self: LockedVaultStore) token_put(t: Token) -> void! {
+fn (self: LockedVaultStore) token_put(t: domain.Token) -> void! {
     inner := self.enter()
     defer self.leave()
-    return inner.token_put(t)
+    try inner.token_put(t)
+    return
 }
 
-fn (self: LockedVaultStore) activity_add(e: ActivityEntry, keep: ActivityKeep) -> i64! {
+fn (self: LockedVaultStore) activity_add(e: domain.ActivityEntry, keep: domain.ActivityKeep) -> i64! {
     inner := self.enter()
     defer self.leave()
-    return inner.activity_add(e, keep)
+    return try inner.activity_add(e, keep)
 }
 
-fn (self: LockedVaultStore) activity_finish(id: i64, end: ActivityEnd) -> bool! {
+fn (self: LockedVaultStore) activity_finish(id: i64, end: domain.ActivityEnd) -> bool! {
     inner := self.enter()
     defer self.leave()
-    return inner.activity_finish(id, end)
+    return try inner.activity_finish(id, end)
 }
 
-fn (self: LockedVaultStore) activity_of_grant(grant_id: str, limit: i64) -> []ActivityEntry! {
+fn (self: LockedVaultStore) activity_of_grant(grant_id: str, limit: i64) -> []domain.ActivityEntry! {
     inner := self.enter()
     defer self.leave()
-    return inner.activity_of_grant(grant_id, limit)
+    return try inner.activity_of_grant(grant_id, limit)
 }
 
-fn (self: LockedVaultStore) activity_page(before_id: i64, limit: i64) -> []ActivityEntry! {
+fn (self: LockedVaultStore) activity_page(before_id: i64, limit: i64) -> []domain.ActivityEntry! {
     inner := self.enter()
     defer self.leave()
-    return inner.activity_page(before_id, limit)
+    return try inner.activity_page(before_id, limit)
 }
 
-fn (self: LockedVaultStore) activity_prune(keep: ActivityKeep) -> i64! {
+fn (self: LockedVaultStore) activity_prune(keep: domain.ActivityKeep) -> i64! {
     inner := self.enter()
     defer self.leave()
-    return inner.activity_prune(keep)
+    return try inner.activity_prune(keep)
 }
 
 fn (self: LockedVaultStore) activity_count_before(since_at: i64) -> i64! {
     inner := self.enter()
     defer self.leave()
-    return inner.activity_count_before(since_at)
+    return try inner.activity_count_before(since_at)
 }
 
 fn (self: LockedVaultStore) activity_retention() -> i64! {
     inner := self.enter()
     defer self.leave()
-    return inner.activity_retention()
+    return try inner.activity_retention()
 }
 
 fn (self: LockedVaultStore) set_activity_retention(days: i64) -> void! {
     inner := self.enter()
     defer self.leave()
-    return inner.set_activity_retention(days)
+    try inner.set_activity_retention(days)
+    return
 }
 
 fn (mut self: LockedVaultStore) activity_attach(vault_id: str, key: []byte, new_salt: []byte) -> void! {
     mut inner := self.enter()
     defer self.leave_with(inner)
-    return inner.activity_attach(vault_id, key, new_salt)
+    try inner.activity_attach(vault_id, key, new_salt)
+    return
 }
 
 // Holds the mutex for the copy, so no write lands in the middle of it.
 fn (self: LockedVaultStore) activity_backup(dest: str) -> void! {
     inner := self.enter()
     defer self.leave()
-    return inner.activity_backup(dest)
+    try inner.activity_backup(dest)
+    return
 }
 
 // Milestone 40: a new master password (rekey.cf). Each step holds the mutex; a write
 // between prepare and commit makes the commit fail `conflict`.
-fn (mut self: LockedVaultStore) vault_rekey_prepare(path: str, page_key: []byte, salt: []byte, secrets: VaultSecrets) -> void! {
+fn (mut self: LockedVaultStore) vault_rekey_prepare(path: str, page_key: []byte, salt: []byte, secrets: domain.VaultSecrets) -> void! {
     mut inner := self.enter()
     defer self.leave_with(inner)
-    return inner.vault_rekey_prepare(path, page_key, salt, secrets)
+    try inner.vault_rekey_prepare(path, page_key, salt, secrets)
+    return
 }
 
 fn (mut self: LockedVaultStore) activity_rekey_prepare(key: []byte, new_salt: []byte) -> void! {
     mut inner := self.enter()
     defer self.leave_with(inner)
-    return inner.activity_rekey_prepare(key, new_salt)
+    try inner.activity_rekey_prepare(key, new_salt)
+    return
 }
 
 fn (mut self: LockedVaultStore) vault_rekey_commit(path: str, page_key: []byte, salt: []byte) -> void! {
     mut inner := self.enter()
     defer self.leave_with(inner)
-    return inner.vault_rekey_commit(path, page_key, salt)
+    try inner.vault_rekey_commit(path, page_key, salt)
+    return
 }
 
 fn (mut self: LockedVaultStore) activity_rekey_commit(key: []byte) -> void! {
     mut inner := self.enter()
     defer self.leave_with(inner)
-    return inner.activity_rekey_commit(key)
+    try inner.activity_rekey_commit(key)
+    return
 }
 
 fn (mut self: LockedVaultStore) vault_rekey_abort(path: str) {
@@ -357,16 +380,17 @@ fn (mut self: LockedVaultStore) vault_rekey_abort(path: str) {
     self.leave_with(inner)
 }
 
-fn (self: LockedVaultStore) vault_records() -> VaultRecords! {
+fn (self: LockedVaultStore) vault_records() -> domain.VaultRecords! {
     inner := self.enter()
     defer self.leave()
-    return inner.vault_records()
+    return try inner.vault_records()
 }
 
-fn (self: LockedVaultStore) vault_replace_records(r: VaultRecords) -> void! {
+fn (self: LockedVaultStore) vault_replace_records(r: domain.VaultRecords) -> void! {
     inner := self.enter()
     defer self.leave()
-    return inner.vault_replace_records(r)
+    try inner.vault_replace_records(r)
+    return
 }
 
 // The app and the CLI merge a copy through a `new_copy_vault_store`, never through
@@ -379,18 +403,19 @@ fn (mut self: LockedVaultStore) vault_attach_copy(path: str, page_key: []byte, s
 fn (self: LockedVaultStore) vault_file_bytes(path: str) -> []byte! {
     inner := self.enter()
     defer self.leave()
-    return inner.vault_file_bytes(path)
+    return try inner.vault_file_bytes(path)
 }
 
 // Opens its own connection to a private file; holds the mutex only to read the key.
-fn (self: LockedVaultStore) vault_blob_records(data: []byte, page_key: []byte, salt: []byte) -> BlobRecords! {
+fn (self: LockedVaultStore) vault_blob_records(data: []byte, page_key: []byte, salt: []byte) -> domain.BlobRecords! {
     inner := self.enter()
     self.leave()
-    return inner.vault_blob_records(data, page_key, salt)
+    return try inner.vault_blob_records(data, page_key, salt)
 }
 
 fn (self: LockedVaultStore) vault_write_new(path: str, data: []byte) -> void! {
     inner := self.enter()
     defer self.leave()
-    return inner.vault_write_new(path, data)
+    try inner.vault_write_new(path, data)
+    return
 }

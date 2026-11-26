@@ -566,7 +566,7 @@ fn proposed_grant(ap: Approval, cat: Catalog, id: str, now_ms: i64) -> Grant! {
             scope = AccessScope{ all: false, groups: [], hosts: ids }
         }
     }
-    return grant_from_approval(ap, id, scope, true, ap.need.action == ACCESS_EXEC, ap.need.action == ACCESS_WRITE, "1h", now_ms)
+    return try grant_from_approval(ap, id, scope, true, ap.need.action == ACCESS_EXEC, ap.need.action == ACCESS_WRITE, "1h", now_ms)
 }
 
 // Whether the unlock screen a CLI raised may allow its caller in the same step: never

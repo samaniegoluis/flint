@@ -15,14 +15,14 @@ import "core:time"
 import "core:json"
 import "../../adapters/config"
 import "../../adapters/crypto"
-import "../../adapters/keychain"
+import "../../adapters/keychain" as flint_keychain
 import "../../adapters/vault"
 import "../../application"
 import "../../domain"
 
 // "--hosts codebox,@homelab": aliases, and group paths after '@'.
-fn token_scope_from_flags(p: ParsedArgs) -> ScopeByName {
-    mut s := ScopeByName{ all: p.has_flag("--all"), groups: [], hosts: [] }
+fn token_scope_from_flags(p: ParsedArgs) -> application.ScopeByName {
+    mut s := application.ScopeByName{ all: p.has_flag("--all"), groups: [], hosts: [] }
     for v in p.flag_values_of("--hosts") {
         for part in v.split(",") {
             item := part.trim()
@@ -38,8 +38,8 @@ fn token_scope_from_flags(p: ParsedArgs) -> ScopeByName {
     return s
 }
 
-fn token_request_from_flags(p: ParsedArgs) -> TokenRequest! {
-    mut req := TokenRequest{ name: p.flag_value("--name"), scope: token_scope_from_flags(p), read: false, exec: false, write: false, ttl: TOKEN_DEFAULT_TTL }
+fn token_request_from_flags(p: ParsedArgs) -> application.TokenRequest! {
+    mut req := application.TokenRequest{ name: p.flag_value("--name"), scope: token_scope_from_flags(p), read: false, exec: false, write: false, ttl: TOKEN_DEFAULT_TTL }
     if p.has_flag("--ttl") {
         req.ttl = p.flag_value("--ttl")
     }
@@ -126,7 +126,7 @@ fn utc_text(secs: i64) -> str {
     return "{y}-{two_digits(m)}-{two_digits(d)} {two_digits(rem / 3600)}:{two_digits((rem % 3600) / 60)} UTC"
 }
 
-fn print_token_list(list: []TokenView) {
+fn print_token_list(list: []application.TokenView) {
     if list.len() == 0 {
         say("No tokens. Create one with `flint token create`.")
         return
@@ -142,7 +142,7 @@ fn print_token_list(list: []TokenView) {
     print_table(["ID", "NAME", "ALLOWS", "REACHES", "STATUS", "UNTIL"], rows)
 }
 
-fn cmd_token(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store: LockedVaultStore, src: VaultSource, recents: JsonRecentStore) -> void! {
+fn cmd_token(p: ParsedArgs, sec: SecretInput, as_json: bool, c: crypto.Sodium, mut store: vault.LockedVaultStore, src: VaultSource, recents: config.JsonRecentStore) -> void! {
     verb := p.positional(1)
     tokens := store
     if verb == "create" {

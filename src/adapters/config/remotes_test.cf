@@ -10,7 +10,7 @@ test "remotes.json keeps each connected vault's link, and nothing else" {
     defer { _ = fs.remove(dir) }
     s := new_json_remote_link_store(dir)
     assert_eq((try s.links_load()).len(), usize(0))
-    l := RemoteLink{ path: "/v/Lab.flint", vault_id: "00112233445566778899aabbccddeeff", url: "https://vault.example.com", version: 7, synced_hash: "ab", last_sync: 5, last_attempt: 6, last_error: "" }
+    l := domain.RemoteLink{ path: "/v/Lab.flint", vault_id: "00112233445566778899aabbccddeeff", url: "https://vault.example.com", version: 7, synced_hash: "ab", last_sync: 5, last_attempt: 6, last_error: "" }
     try s.links_save([l])
     got := try s.links_load()
     assert_eq(got.len(), usize(1))

@@ -11,7 +11,7 @@ package clicmd
 import "core:json"
 import "../../adapters/config"
 import "../../adapters/crypto"
-import "../../adapters/ssh"
+import "../../adapters/ssh" as flint_ssh
 import "../../adapters/vault"
 import "../../application"
 import "../../domain"
@@ -30,7 +30,7 @@ fn is_tunnel_session(p: ParsedArgs) -> bool {
     return p.positional(0) == "tunnel" && (verb == "up" || verb == "down" || verb == "status")
 }
 
-fn tunnel_patch_from_flags(p: ParsedArgs) -> TunnelPatch! {
+fn tunnel_patch_from_flags(p: ParsedArgs) -> application.TunnelPatch! {
     mut patch := empty_tunnel_patch()
     if p.has_flag("--name") {
         patch.set_name = true
@@ -60,11 +60,11 @@ fn tunnel_patch_from_flags(p: ParsedArgs) -> TunnelPatch! {
     return patch
 }
 
-fn tunnel_ref_text(v: TunnelView) -> str {
+fn tunnel_ref_text(v: application.TunnelView) -> str {
     return "{v.host}:{v.name}"
 }
 
-fn tunnel_state_text(v: TunnelView) -> str {
+fn tunnel_state_text(v: application.TunnelView) -> str {
     if v.state.len() == 0 {
         return "-"
     }
@@ -74,7 +74,7 @@ fn tunnel_state_text(v: TunnelView) -> str {
     return v.state
 }
 
-fn print_tunnel_list(list: []TunnelView) {
+fn print_tunnel_list(list: []application.TunnelView) {
     if list.len() == 0 {
         say("No tunnels.")
         return
@@ -90,13 +90,13 @@ fn print_tunnel_list(list: []TunnelView) {
     print_table(["TUNNEL", "LOCAL", "DESTINATION", "ON CONNECT", "STATE"], rows)
 }
 
-fn print_tunnel(v: TunnelView) {
+fn print_tunnel(v: application.TunnelView) {
     print_fields(["tunnel", "local", "destination", "on connect", "state", "error"],
         [tunnel_ref_text(v), "127.0.0.1:{v.local_port}", v.destination, yes_no(v.open_on_connect), tunnel_state_text(v), dash_if_empty(v.error)])
 }
 
 // The saved tunnels: run by the app or in this process.
-fn cmd_tunnel(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store: LockedVaultStore, src: VaultSource, recents: JsonRecentStore) -> void! {
+fn cmd_tunnel(p: ParsedArgs, sec: SecretInput, as_json: bool, c: crypto.Sodium, mut store: vault.LockedVaultStore, src: VaultSource, recents: config.JsonRecentStore) -> void! {
     verb := p.positional(1)
     mut tun := store
     mut runner := new_native_tunnels()
@@ -175,7 +175,7 @@ fn tunnels_need_flint(verb: str) -> str {
 }
 
 // `up`, `down` and `status`, run by the app for the CLI.
-fn cmd_tunnel_session[P: Prompter](p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store: LockedVaultStore, src: VaultSource, recents: JsonRecentStore, prompter: P) -> void! {
+fn cmd_tunnel_session[P: ports.Prompter](p: ParsedArgs, sec: SecretInput, as_json: bool, c: crypto.Sodium, mut store: vault.LockedVaultStore, src: VaultSource, recents: config.JsonRecentStore, prompter: P) -> void! {
     verb := p.positional(1)
     if verb == "up" {
         try p.allow_flags("tunnel up", ["--timeout", "--accept-new-host-key"])
@@ -215,7 +215,7 @@ fn cmd_tunnel_session[P: Prompter](p: ParsedArgs, sec: SecretInput, as_json: boo
         }
         return
     }
-    mut v := TunnelView{ host: "", name: "", local_port: 0, destination: "", open_on_connect: false, state: "", listen: "", connections: 0, error: "" }
+    mut v := application.TunnelView{ host: "", name: "", local_port: 0, destination: "", open_on_connect: false, state: "", listen: "", connections: 0, error: "" }
     if verb == "up" {
         mut link := new_ssh_link()
         v = try start_tunnel(c, mut store, tun, s, mut link, prompter, mut runner, alias, name, opts)

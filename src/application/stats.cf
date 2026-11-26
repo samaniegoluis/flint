@@ -16,15 +16,15 @@ import "../ports"
 // How long one read waits; short, so a stop is seen quickly.
 STATS_READ_SLICE_MS: i64 = 200
 
-fn empty_sample(session: str) -> ServerSample {
-    return ServerSample{ session: session, os: "", interfaces: [] }
+fn empty_sample(session: str) -> domain.ServerSample {
+    return domain.ServerSample{ session: session, os: "", interfaces: [] }
 }
 
 // Reads from the channel into `buf` until it holds a whole block (up to its
 // "@@end" line, or the unsupported marker) and returns the block, leaving the rest
 // in `buf`. Fails when the watch stops ("stopped"), the channel ends, the block is
 // too large or it takes longer than STATS_SAMPLE_TIMEOUT_MS.
-fn read_stats_block[C: ServerStats, K: Clock](mut ch: C, mut clock: K, mut buf: str) -> str! {
+fn read_stats_block[C: ports.ServerStats, K: ports.Clock](mut ch: C, mut clock: K, mut buf: str) -> str! {
     start := clock.clock_now_ms()
     end_line := STATS_END + "\n"
     for true {
@@ -60,7 +60,7 @@ fn read_stats_block[C: ServerStats, K: Clock](mut ch: C, mut clock: K, mut buf: 
 
 // Waits until `until_ms` on the clock, or until the watch stops. Output in the
 // meantime is kept in `buf`. False once stopped or the channel ended.
-fn stats_pause[C: ServerStats, K: Clock](mut ch: C, mut clock: K, mut buf: str, until_ms: i64) -> bool {
+fn stats_pause[C: ports.ServerStats, K: ports.Clock](mut ch: C, mut clock: K, mut buf: str, until_ms: i64) -> bool {
     for true {
         if ch.stats_stopped() {
             return false
@@ -83,7 +83,7 @@ fn stats_pause[C: ServerStats, K: Clock](mut ch: C, mut clock: K, mut buf: str, 
 }
 
 // The whole watch of one tab. Returns when it ends; see the file comment for why.
-fn watch_server_stats[C: ServerStats, S: StatsSink, K: Clock](mut ch: C, mut sink: S, mut clock: K, session: str) {
+fn watch_server_stats[C: ports.ServerStats, S: ports.StatsSink, K: ports.Clock](mut ch: C, mut sink: S, mut clock: K, session: str) {
     ch.stats_open(stats_command()) or {
         // The host refused a second channel (MaxSessions) or exec: nothing to show.
         sink.stats_emit(empty_sample(session))
@@ -97,13 +97,13 @@ fn watch_server_stats[C: ServerStats, S: StatsSink, K: Clock](mut ch: C, mut sin
 }
 
 // True when the watch was stopped; false when the host ended it.
-fn run_stats_loop[C: ServerStats, S: StatsSink, K: Clock](mut ch: C, mut sink: S, mut clock: K, session: str) -> bool {
+fn run_stats_loop[C: ports.ServerStats, S: ports.StatsSink, K: ports.Clock](mut ch: C, mut sink: S, mut clock: K, session: str) -> bool {
     mut buf := ""
     os_block := read_stats_block(mut ch, mut clock, mut buf) or err {
         return "{err.message()}" == "stopped"
     }
     os := parse_os_name(os_block)
-    mut prev := StatsReading{ net: [] }
+    mut prev := domain.StatsReading{ net: [] }
     mut have_prev := false
     for true {
         asked := clock.clock_now_ms()

@@ -14,7 +14,7 @@ type PumpResult struct {
 // polls (each up to `poll_ms`) are spent. Streaming is out-of-band: bytes go through
 // the sink, never as a return value. The result says how many bytes were forwarded
 // and whether the channel closed.
-fn pump_shell_output[S: ShellSession, E: EventSink](mut shell: S, mut sink: E, session_id: str, poll_ms: i32, max_reads: i64) -> PumpResult {
+fn pump_shell_output[S: ports.ShellSession, E: ports.EventSink](mut shell: S, mut sink: E, session_id: str, poll_ms: i32, max_reads: i64) -> PumpResult {
     mut total: i64 = 0
     for _ in 0..max_reads {
         chunk := shell.read(poll_ms) or err {
@@ -47,7 +47,7 @@ type Osc52Result struct {
 // would hand the clipboard to whoever controls the remote output, so it is ignored.
 // An empty `Pc` means the clipboard; a list without `c` (only primary, `p`, or `s`)
 // is ignored, since a desktop app has one clipboard.
-fn osc52_copy[B: Clipboard](mut clip: B, payload: str) -> Osc52Result! {
+fn osc52_copy[B: ports.Clipboard](mut clip: B, payload: str) -> Osc52Result! {
     semi := payload.index_of(";") or {
         return error(coded(ERR_INVALID, "an OSC 52 request is 'selection;base64'"))
     }

@@ -21,7 +21,7 @@ import "../version"
 // The package's folder: fixed, never taken from the caller or from argv[0].
 PACKAGE_LIB: str = "/usr/lib/flint"
 
-fn finish(o: RootOutcome) {
+fn finish(o: domain.RootOutcome) {
     if o.installed {
         eprintln("flint-update-root: Flint {o.version} installed")
     } else {
@@ -31,8 +31,8 @@ fn finish(o: RootOutcome) {
     os.exit(root_exit_code(o))
 }
 
-fn usage(message: str) -> RootOutcome {
-    return RootOutcome{ installed: false, version: "", code: ERR_USAGE, message: message, discard: false }
+fn usage(message: str) -> domain.RootOutcome {
+    return domain.RootOutcome{ installed: false, version: "", code: ERR_USAGE, message: message, discard: false }
 }
 
 fn main() {
@@ -60,11 +60,11 @@ fn main() {
         eprintln("flint-update-root: a test package: the test feed's key")
     }
     sodium := new_sodium() or {
-        finish(RootOutcome{ installed: false, version: "", code: ERR_INTERNAL, message: "libsodium failed to initialise", discard: false })
+        finish(domain.RootOutcome{ installed: false, version: "", code: ERR_INTERNAL, message: "libsodium failed to initialise", discard: false })
         return
     }
     mut stage := new_os_root_stage()
     mut installer := new_os_package_installer()
-    req := RootUpdateRequest{ uid: uid, format: package_format(kind), installed: version.FLINT_VERSION, public_key: key, download_prefix: prefix }
+    req := application.RootUpdateRequest{ uid: uid, format: package_format(kind), installed: version.FLINT_VERSION, public_key: key, download_prefix: prefix }
     finish(root_install_update(mut stage, sodium, sodium, mut installer, req))
 }

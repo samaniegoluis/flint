@@ -288,7 +288,8 @@ fn plain_url(url: str, prefix: str) -> bool {
 // (never a pre-release), its page and every asset point into this repository's
 // releases, each asset has a known key, a size and a SHA-256.
 fn check_update_manifest(m: UpdateManifest) -> void! {
-    return check_update_manifest_from(m, UPDATE_DOWNLOAD_PREFIX)
+    try check_update_manifest_from(m, UPDATE_DOWNLOAD_PREFIX)
+    return
 }
 
 // Where a manifest's packages may be: Flint's releases, or, for the local feed only a

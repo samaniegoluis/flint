@@ -79,9 +79,9 @@ test "a stale cached key is dropped and reported as locked" {
 
 test "recent vaults resolve by name, path or recency, and can be forgotten" {
     recents := new_fake_recents()
-    try touch_recent(recents, RecentVault{ path: "/a/one.flint", name: "One", id: "" })
-    try touch_recent(recents, RecentVault{ path: "/a/two.flint", name: "Two", id: "" })
-    try touch_recent(recents, RecentVault{ path: "/a/one.flint", name: "One", id: "" })
+    try touch_recent(recents, domain.RecentVault{ path: "/a/one.flint", name: "One", id: "" })
+    try touch_recent(recents, domain.RecentVault{ path: "/a/two.flint", name: "Two", id: "" })
+    try touch_recent(recents, domain.RecentVault{ path: "/a/one.flint", name: "One", id: "" })
     list := try list_recents(recents)
     assert_eq(list.len(), 2)
     assert_eq(list[0].name, "One")
@@ -147,15 +147,15 @@ test "a vault has a stable id and a moved vault replaces its recent entry" {
     assert_eq(again.id, s.id)
 
     // Another vault, then the first one opened from its new place.
-    try touch_recent(recents, RecentVault{ path: "/v/Other.flint", name: "Other", id: "" })
-    try touch_recent(recents, RecentVault{ path: "/moved/Lab.flint", name: "Lab", id: s.id })
+    try touch_recent(recents, domain.RecentVault{ path: "/v/Other.flint", name: "Other", id: "" })
+    try touch_recent(recents, domain.RecentVault{ path: "/moved/Lab.flint", name: "Lab", id: s.id })
     list := try list_recents(recents)
     assert_eq(list.len(), usize(2))
     assert_eq(list[0].path, "/moved/Lab.flint")
     assert_eq(list[1].path, "/v/Other.flint")
 
     // `vault use` by path carries no id: the recorded one is kept.
-    try touch_recent(recents, RecentVault{ path: "/moved/Lab.flint", name: "Lab", id: "" })
+    try touch_recent(recents, domain.RecentVault{ path: "/moved/Lab.flint", name: "Lab", id: "" })
     assert_eq((try list_recents(recents))[0].id, s.id)
 }
 
@@ -165,7 +165,7 @@ test "renaming a vault updates its meta and its recent entry in place" {
     kc := new_fake_keychain()
     recents := new_fake_recents()
     s := try create_vault(crypto, mut store, kc, recents, "/v/Test.flint", "", "correct horse", true)
-    try touch_recent(recents, RecentVault{ path: "/v/Work.flint", name: "Work", id: "" })
+    try touch_recent(recents, domain.RecentVault{ path: "/v/Work.flint", name: "Work", id: "" })
 
     renamed := try rename_vault(mut store, recents, s, "Home Lab")
     assert_eq(renamed.name, "Home Lab")
@@ -240,7 +240,7 @@ test "the keys earlier Flints cached are removed once per machine" {
     _ = try create_vault(crypto, mut store, kc, recents, "/v/a.flint", "", "correct horse", true)
     store.vault_detach()
     // A recent vault whose file is gone is skipped.
-    try touch_recent(recents, RecentVault{ path: "/v/gone.flint", name: "gone", id: "" })
+    try touch_recent(recents, domain.RecentVault{ path: "/v/gone.flint", name: "gone", id: "" })
     mut settings := FakeSettingsStore{ saved: default_settings() }
     assert_eq(try forget_cached_keys_once(mut settings, store, kc, recents), i64(1))
     assert(settings.saved.keys_cleared)

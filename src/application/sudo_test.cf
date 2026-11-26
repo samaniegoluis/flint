@@ -2,7 +2,7 @@ package application
 
 import "../domain"
 
-fn sudo_link(chunks: []ExecChunk) -> FakeLink {
+fn sudo_link(chunks: []domain.ExecChunk) -> FakeLink {
     mut link := new_fake_link()
     link.chunks = chunks
     return link

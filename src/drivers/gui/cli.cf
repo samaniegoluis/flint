@@ -19,8 +19,8 @@ type CliFirstReq struct {
 // This copy's CLI: inside its own bundle. FLINT_CLI and FLINT_CLI_HOME stand in for the
 // bundle and the home folder in gui-e2e, which runs a build with no CLI inside.
 fn self_cli() -> str {
-    o := os.getenv("FLINT_CLI")
-    if o.len() > 0 && os.getenv("FLINT_GUI_E2E").len() > 0 {
+    o := (os.getenv("FLINT_CLI") or "")
+    if o.len() > 0 && (os.getenv("FLINT_GUI_E2E") or "").len() > 0 {
         return o
     }
     if os_name() == "windows" {
@@ -35,9 +35,9 @@ fn cli_bin_dir() -> str {
     return fs.dirname(self_cli())
 }
 
-fn cli_path_env() -> OsCliPath {
-    o := os.getenv("FLINT_CLI_PATH_KEY")
-    if o.len() > 0 && os.getenv("FLINT_GUI_E2E").len() > 0 {
+fn cli_path_env() -> clilink.OsCliPath {
+    o := (os.getenv("FLINT_CLI_PATH_KEY") or "")
+    if o.len() > 0 && (os.getenv("FLINT_GUI_E2E") or "").len() > 0 {
         return new_os_cli_path(o)
     }
     return new_os_cli_path(CLI_PATH_KEY)
@@ -47,22 +47,22 @@ fn cli_path_env() -> OsCliPath {
 // machine's own link there (milestone 52: the clilink run failed on a Mac whose
 // /usr/local/bin/flint pointed at an installed Flint.app).
 fn cli_system_dir() -> str {
-    o := os.getenv("FLINT_CLI_SYSTEM_DIR")
-    if o.len() > 0 && os.getenv("FLINT_GUI_E2E").len() > 0 {
+    o := (os.getenv("FLINT_CLI_SYSTEM_DIR") or "")
+    if o.len() > 0 && (os.getenv("FLINT_GUI_E2E") or "").len() > 0 {
         return o
     }
     return CLI_SYSTEM_DIR
 }
 
 fn cli_home() -> str {
-    o := os.getenv("FLINT_CLI_HOME")
-    if o.len() > 0 && os.getenv("FLINT_GUI_E2E").len() > 0 {
+    o := (os.getenv("FLINT_CLI_HOME") or "")
+    if o.len() > 0 && (os.getenv("FLINT_GUI_E2E") or "").len() > 0 {
         return o
     }
-    return os.getenv("HOME")
+    return (os.getenv("HOME") or "")
 }
 
-fn rpc_cli_status(params: str, mut store: JsonSettingsStore) -> str! {
+fn rpc_cli_status(params: str, mut store: config.JsonSettingsStore) -> str! {
     req := try parse_req[CliFirstReq](params)
     if os_name() == "windows" {
         env := cli_path_env()

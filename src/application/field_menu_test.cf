@@ -3,7 +3,7 @@ package application
 import "../domain"
 
 fn field_clip() -> FakeClipboard {
-    return FakeClipboard{ text: "", clear_after_ms: 0, copies: 0, held: ClipboardContent{ text: "", mime: "", image: "" } }
+    return FakeClipboard{ text: "", clear_after_ms: 0, copies: 0, held: domain.ClipboardContent{ text: "", mime: "", image: "" } }
 }
 
 test "the field menu pastes the clipboard's text" {

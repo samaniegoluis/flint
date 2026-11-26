@@ -118,19 +118,19 @@ fn (mut self: NativeTunnels) tunnel_release(host_id: str) {
     }
 }
 
-fn (self: NativeTunnels) tunnel_live() -> []TunnelLive {
+fn (self: NativeTunnels) tunnel_live() -> []domain.TunnelLive {
     mut text := ""
     // CFIRE-UPSTREAM: CF-026
     cpp {
         text = flint_tunnel::states();
     }
-    mut list: []TunnelLive = []
+    mut list: []domain.TunnelLive = []
     for line in text.split("\n") {
         f := line.split("\t")
         if f.len() < 8 {
             continue
         }
-        list.push(TunnelLive{
+        list.push(domain.TunnelLive{
             host_id: f[0], tunnel_id: f[1], up: f[2] == "1", down: f[2] == "2",
             port: i64.parse(f[3]) or 0, connections: i64.parse(f[4]) or 0,
             opened: i64.parse(f[5]) or 0, failed: i64.parse(f[6]) or 0, error: f[7],
@@ -162,7 +162,7 @@ fn (self: NativeTunnels) tunnel_port_taken(port: i64) -> bool {
     return taken
 }
 
-fn (self: NativeTunnels) tunnel_port_owner(port: i64) -> PortOwner {
+fn (self: NativeTunnels) tunnel_port_owner(port: i64) -> domain.PortOwner {
     mut name := ""
     mut pid: i64 = 0
     // CFIRE-UPSTREAM: CF-114
@@ -173,7 +173,7 @@ fn (self: NativeTunnels) tunnel_port_owner(port: i64) -> PortOwner {
         name = n;
         pid = p;
     }
-    return PortOwner{ name: name, pid: pid }
+    return domain.PortOwner{ name: name, pid: pid }
 }
 
 // Closes every tunnel and hangs up every tunnel session (the app quitting).

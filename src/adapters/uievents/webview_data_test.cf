@@ -5,9 +5,9 @@ import "core:os"
 import "core:time"
 
 fn webview_test_dir() -> str {
-    mut base := os.getenv("TMPDIR")
+    mut base := (os.getenv("TMPDIR") or "")
     if base.len() == 0 {
-        base = os.getenv("TEMP")
+        base = (os.getenv("TEMP") or "")
     }
     if base.len() == 0 {
         base = "/tmp"

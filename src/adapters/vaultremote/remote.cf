@@ -42,7 +42,7 @@ type RemoteErrorBody struct {
 }
 
 type RemoteVaultsBody struct {
-    vaults: []ServerVault `json:"vaults"`
+    vaults: []domain.ServerVault `json:"vaults"`
 }
 
 type RemoteLabelBody struct {
@@ -141,7 +141,7 @@ fn refusal(r: RemoteReply, host: str) -> str {
     return coded(ERR_REFUSED, "the vault's server at {host} answered {r.status}{why}")
 }
 
-fn (self: HttpVaultRemote) remote_get(url: str, token: str, known_version: i64) -> RemoteVault! {
+fn (self: HttpVaultRemote) remote_get(url: str, token: str, known_version: i64) -> domain.RemoteVault! {
     mut headers := auth_header(token)
     if known_version > 0 {
         headers = headers + "If-None-Match: " + version_tag(known_version) + "\n"
@@ -149,13 +149,13 @@ fn (self: HttpVaultRemote) remote_get(url: str, token: str, known_version: i64) 
     r := try self.send("GET", url, headers, [])
     host := url_host(url)
     if r.status == 304 {
-        return RemoteVault{ found: true, changed: false, version: known_version, vault_id: r.vault_id, data: [] }
+        return domain.RemoteVault{ found: true, changed: false, version: known_version, vault_id: r.vault_id, data: [] }
     }
     if r.status == 404 {
         // CFIRE-UPSTREAM: CF-164 (a labeled argument keeps libstdc++'s chrono::parse out)
         parsed := json.parse[RemoteErrorBody](payload: str(r.body)) or RemoteErrorBody{ error: "", message: "" }
         if parsed.error == "empty" {
-            return RemoteVault{ found: false, changed: true, version: 0, vault_id: "", data: [] }
+            return domain.RemoteVault{ found: false, changed: true, version: 0, vault_id: "", data: [] }
         }
         return error(no_server(url))
     }
@@ -166,10 +166,10 @@ fn (self: HttpVaultRemote) remote_get(url: str, token: str, known_version: i64) 
     if version < 1 || !valid_vault_id(r.vault_id) || r.body.len() == 0 {
         return error(coded(ERR_INVALID, "{host} did not answer as a Flint vault server"))
     }
-    return RemoteVault{ found: true, changed: true, version: version, vault_id: r.vault_id, data: r.body }
+    return domain.RemoteVault{ found: true, changed: true, version: version, vault_id: r.vault_id, data: r.body }
 }
 
-fn (self: HttpVaultRemote) remote_put(url: str, token: str, vault_id: str, base_version: i64, data: []byte) -> RemoteStored! {
+fn (self: HttpVaultRemote) remote_put(url: str, token: str, vault_id: str, base_version: i64, data: []byte) -> domain.RemoteStored! {
     mut headers := auth_header(token) + "Content-Type: application/octet-stream\nX-Flint-Vault-Id: " + vault_id + "\n"
     if base_version == 0 {
         headers = headers + "If-None-Match: *\n"
@@ -179,7 +179,7 @@ fn (self: HttpVaultRemote) remote_put(url: str, token: str, vault_id: str, base_
     r := try self.send("PUT", url, headers, data)
     host := url_host(url)
     if r.status == 409 {
-        return RemoteStored{ stored: false, version: parse_version_tag(r.etag) }
+        return domain.RemoteStored{ stored: false, version: parse_version_tag(r.etag) }
     }
     if r.status != 200 {
         return error(refusal(r, host))
@@ -188,10 +188,10 @@ fn (self: HttpVaultRemote) remote_put(url: str, token: str, vault_id: str, base_
     if version < 1 {
         return error(coded(ERR_INVALID, "{host} did not answer as a Flint vault server"))
     }
-    return RemoteStored{ stored: true, version: version }
+    return domain.RemoteStored{ stored: true, version: version }
 }
 
-fn (self: HttpVaultRemote) remote_list(url: str, token: str) -> []ServerVault! {
+fn (self: HttpVaultRemote) remote_list(url: str, token: str) -> []domain.ServerVault! {
     r := try self.send("GET", url, auth_header(token), [])
     if r.status == 404 {
         return error(no_server(url))

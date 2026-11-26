@@ -146,7 +146,7 @@ fn join_tags(tags: []str) -> str {
 }
 
 // "host:port", or the user@host:port target M03 will connect to.
-fn host_target(h: HostView) -> str {
+fn host_target(h: application.HostView) -> str {
     mut t := h.hostname
     mut user := h.user
     if h.domain.len() > 0 && user.len() > 0 {
@@ -162,7 +162,7 @@ fn host_target(h: HostView) -> str {
 }
 
 // "herdr (then a login shell)", "herdr (ends the session)" or "-".
-fn command_text(h: HostView) -> str {
+fn command_text(h: application.HostView) -> str {
     if h.command.len() == 0 {
         return "-"
     }
@@ -183,7 +183,7 @@ fn audio_text(audio: str) -> str {
     return "on this computer"
 }
 
-fn print_host(h: HostView) {
+fn print_host(h: application.HostView) {
     mut pw := "not set"
     if h.has_password {
         pw = "set"
@@ -205,7 +205,7 @@ fn print_host(h: HostView) {
         [h.alias, h.host_type, dash_if_empty(h.label), h.hostname, "{h.port}", dash_if_empty(h.user), dash_if_empty(h.group), dash_if_empty(join_tags(h.tags)), dash_if_empty(h.color), dash_if_empty(h.jump), dash_if_empty(h.credential), dash_if_empty(h.key), pw, sudo_pw, command_text(h), dash_if_empty(h.notes)])
 }
 
-fn print_host_list(hosts: []HostView) {
+fn print_host_list(hosts: []application.HostView) {
     if hosts.len() == 0 {
         say("No hosts.")
         return
@@ -217,11 +217,11 @@ fn print_host_list(hosts: []HostView) {
     print_table(["ALIAS", "TYPE", "TARGET", "GROUP", "TAGS"], rows)
 }
 
-fn print_key(k: KeyView) {
+fn print_key(k: application.KeyView) {
     print_fields(["name", "type", "fingerprint", "passphrase", "public key"], [k.name, k.key_type, k.fingerprint, yes_no(k.has_passphrase), k.public_key])
 }
 
-fn print_key_list(keys: []KeyView) {
+fn print_key_list(keys: []application.KeyView) {
     if keys.len() == 0 {
         say("No keys.")
         return
@@ -233,7 +233,7 @@ fn print_key_list(keys: []KeyView) {
     print_table(["NAME", "TYPE", "FINGERPRINT", "PASSPHRASE"], rows)
 }
 
-fn print_cred(c: CredView) {
+fn print_cred(c: application.CredView) {
     mut pw := "not set"
     if c.has_password {
         pw = "set"
@@ -241,7 +241,7 @@ fn print_cred(c: CredView) {
     print_fields(["name", "user", "key", "password"], [c.name, c.user, dash_if_empty(c.key), pw])
 }
 
-fn print_cred_list(creds: []CredView) {
+fn print_cred_list(creds: []application.CredView) {
     if creds.len() == 0 {
         say("No credentials.")
         return
@@ -253,7 +253,7 @@ fn print_cred_list(creds: []CredView) {
     print_table(["NAME", "USER", "KEY", "PASSWORD"], rows)
 }
 
-fn print_group_list(groups: []GroupView) {
+fn print_group_list(groups: []application.GroupView) {
     if groups.len() == 0 {
         say("No groups.")
         return
@@ -265,12 +265,12 @@ fn print_group_list(groups: []GroupView) {
     print_table(["GROUP", "HOSTS", "SUBGROUPS"], rows)
 }
 
-fn print_vault_info(verb: str, v: VaultInfo) {
+fn print_vault_info(verb: str, v: application.VaultInfo) {
     say("{verb} vault '{v.name}' at {v.path}")
     say("Commands use it through Flint once it is unlocked there, or with --master-stdin.")
 }
 
-fn print_status(st: VaultStatus) {
+fn print_status(st: application.VaultStatus) {
     if !st.exists {
         print_fields(["vault", "path", "state"], [st.name, st.path, "missing (no file at this path)"])
         return
@@ -308,7 +308,7 @@ fn print_status(st: VaultStatus) {
     print_fields(fields, values)
 }
 
-fn print_recents(list: []RecentView) {
+fn print_recents(list: []application.RecentView) {
     if list.len() == 0 {
         say("No vaults yet. Create one with `flint vault create <path>`.")
         return
@@ -328,7 +328,7 @@ fn print_recents(list: []RecentView) {
     print_table(["", "NAME", "PATH"], rows)
 }
 
-fn print_known_hosts(list: []KnownHostView) {
+fn print_known_hosts(list: []application.KnownHostView) {
     if list.len() == 0 {
         say("No known hosts yet. A host's key is recorded the first time you connect.")
         return
@@ -356,7 +356,7 @@ fn merge_kind_label(kind: str) -> str {
 }
 
 // What `vault merge` did, one line per record, the vault's rules last.
-fn print_merge(got: MergeOutcome) {
+fn print_merge(got: application.MergeOutcome) {
     r := got.report
     if r.added + r.updated + r.removed == 0 && r.notes.len() == 0 {
         say("Nothing to merge: vault '{got.name}' already has every change in {got.copy}.")

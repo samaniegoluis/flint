@@ -59,7 +59,7 @@ fn local_failure(rc: i32, path: str, reason: str) -> str {
     return coded(ERR_IO, "{path}: {reason}")
 }
 
-fn (self: LocalFs) local_stat(path: str) -> FileEntry! {
+fn (self: LocalFs) local_stat(path: str) -> domain.FileEntry! {
     mut kind := ""
     mut size: i64 = 0
     mut mtime: i64 = 0
@@ -75,11 +75,11 @@ fn (self: LocalFs) local_stat(path: str) -> FileEntry! {
     if rc != 0 {
         return error(local_failure(rc, path, reason))
     }
-    return FileEntry{ name: remote_base(path), path: path, kind: kind, size: size, mtime: mtime, mode: mode, uid: 0 }
+    return domain.FileEntry{ name: remote_base(path), path: path, kind: kind, size: size, mtime: mtime, mode: mode, uid: 0 }
 }
 
 // A folder's entries, links not followed, in no particular order.
-fn (self: LocalFs) local_list(path: str) -> []FileEntry! {
+fn (self: LocalFs) local_list(path: str) -> []domain.FileEntry! {
     mut names: []str = []
     mut kinds: []str = []
     mut sizes: []i64 = []
@@ -99,9 +99,9 @@ fn (self: LocalFs) local_list(path: str) -> []FileEntry! {
     if rc != 0 {
         return error(local_failure(rc, path, reason))
     }
-    mut entries: []FileEntry = []
+    mut entries: []domain.FileEntry = []
     for i, n in names {
-        entries.push(FileEntry{ name: n, path: remote_join(path, n), kind: kinds[i], size: sizes[i], mtime: mtimes[i], mode: modes[i], uid: 0 })
+        entries.push(domain.FileEntry{ name: n, path: remote_join(path, n), kind: kinds[i], size: sizes[i], mtime: mtimes[i], mode: modes[i], uid: 0 })
     }
     return entries
 }

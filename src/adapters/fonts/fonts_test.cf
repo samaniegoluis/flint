@@ -2,7 +2,7 @@ package fonts
 
 import "../../ports"
 
-fn fonts_port_check[F: FontCatalog](f: F) -> []str {
+fn fonts_port_check[F: ports.FontCatalog](f: F) -> []str {
     return f.mono_font_families() or []
 }
 

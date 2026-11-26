@@ -13,22 +13,22 @@ import "core:time"
 //   /ai-agents). Input sent there stays harmless: the person's own session may be on
 //   the other side (ROADMAP).
 
-fn sample_target(trusted: str) -> RdpTarget {
-    port := os.getenv("FLINT_RDP_SAMPLE_PORT")
+fn sample_target(trusted: str) -> domain.RdpTarget {
+    port := (os.getenv("FLINT_RDP_SAMPLE_PORT") or "")
     mut p: i64 = 0
     if port.len() > 0 {
         p = i64.parse(port) or 0
     }
-    return RdpTarget{ hostname: "127.0.0.1", port: p, user: "flint", domain: "", password: "sample", width: 1024, height: 768, trusted_fingerprint: trusted, graphics: "auto", rtt_ms: -1 }
+    return domain.RdpTarget{ hostname: "127.0.0.1", port: p, user: "flint", domain: "", password: "sample", width: 1024, height: 768, trusted_fingerprint: trusted, graphics: "auto", rtt_ms: -1 }
 }
 
-fn live_target(trusted: str) -> RdpTarget {
-    return RdpTarget{ hostname: os.getenv("FLINT_RDP_TEST_HOST"), port: 3389, user: os.getenv("FLINT_RDP_TEST_USER"), domain: "", password: os.getenv("FLINT_RDP_TEST_PASSWORD"), width: 1024, height: 768, trusted_fingerprint: trusted, graphics: "auto", rtt_ms: -1 }
+fn live_target(trusted: str) -> domain.RdpTarget {
+    return domain.RdpTarget{ hostname: (os.getenv("FLINT_RDP_TEST_HOST") or ""), port: 3389, user: (os.getenv("FLINT_RDP_TEST_USER") or ""), domain: "", password: (os.getenv("FLINT_RDP_TEST_PASSWORD") or ""), width: 1024, height: 768, trusted_fingerprint: trusted, graphics: "auto", rtt_ms: -1 }
 }
 
 // Connects once with nothing trusted, which stops at the certificate, and returns
 // the certificate's fingerprint.
-fn first_fingerprint(rd: FreeRdpDesktop, tab: str, t: RdpTarget) -> str {
+fn first_fingerprint(rd: FreeRdpDesktop, tab: str, t: domain.RdpTarget) -> str {
     mut msg := ""
     rd.rd_open(tab, t, 15000) or err { msg = "{err.message()}" }
     assert(msg.starts_with("host_key:"), msg)
@@ -46,14 +46,14 @@ fn wait_frame(tab: str) -> str {
 }
 
 // rd_wait, past the pointer changes a server sends on its own (milestone 58).
-fn wait_past_pointers(rd: FreeRdpDesktop, tab: str, wait_ms: i64) -> RdpEvent {
+fn wait_past_pointers(rd: FreeRdpDesktop, tab: str, wait_ms: i64) -> domain.RdpEvent {
     for i in 0..50 {
         ev := rd.rd_wait(tab, wait_ms)
         if ev.kind != RDP_EVENT_POINTER {
             return ev
         }
     }
-    return RdpEvent{ kind: "pointers", message: "", width: 0, height: 0 }
+    return domain.RdpEvent{ kind: "pointers", message: "", width: 0, height: 0 }
 }
 
 fn upper_hex(s: str) -> str {
@@ -77,7 +77,7 @@ fn le16(s: str, at: usize) -> i64 {
 test "an address that never answers fails within the timeout" {
     rd := new_freerdp_desktop()
     // TEST-NET-1 (RFC 5737): routed nowhere, so the dial hangs until the timeout.
-    t := RdpTarget{ hostname: "192.0.2.1", port: 3389, user: "nobody", domain: "", password: "never-sent", width: 800, height: 600, trusted_fingerprint: "", graphics: "auto", rtt_ms: -1 }
+    t := domain.RdpTarget{ hostname: "192.0.2.1", port: 3389, user: "nobody", domain: "", password: "never-sent", width: 800, height: 600, trusted_fingerprint: "", graphics: "auto", rtt_ms: -1 }
     started := time.now_ms()
     mut msg := ""
     rd.rd_open("t-dial", t, 1500) or err { msg = "{err.message()}" }
@@ -92,7 +92,7 @@ test "an address that never answers fails within the timeout" {
 test "a closed port is told apart from an unreachable host" {
     rd := new_freerdp_desktop()
     // Port 9 (discard) is closed on loopback, so the dial is refused at once.
-    t := RdpTarget{ hostname: "127.0.0.1", port: 9, user: "nobody", domain: "", password: "x", width: 800, height: 600, trusted_fingerprint: "", graphics: "auto", rtt_ms: -1 }
+    t := domain.RdpTarget{ hostname: "127.0.0.1", port: 9, user: "nobody", domain: "", password: "x", width: 800, height: 600, trusted_fingerprint: "", graphics: "auto", rtt_ms: -1 }
     mut msg := ""
     rd.rd_open("t-closed", t, 5000) or err { msg = "{err.message()}" }
     rd.rd_close("t-closed")
@@ -102,7 +102,7 @@ test "a closed port is told apart from an unreachable host" {
 test "an RDP target needs an address and a user" {
     rd := new_freerdp_desktop()
     mut msg := ""
-    rd.rd_open("t-bad", RdpTarget{ hostname: "", port: 3389, user: "x", domain: "", password: "", width: 800, height: 600, trusted_fingerprint: "", graphics: "auto", rtt_ms: -1 }, 1000) or err { msg = "{err.message()}" }
+    rd.rd_open("t-bad", domain.RdpTarget{ hostname: "", port: 3389, user: "x", domain: "", password: "", width: 800, height: 600, trusted_fingerprint: "", graphics: "auto", rtt_ms: -1 }, 1000) or err { msg = "{err.message()}" }
     assert(msg.starts_with("invalid:"), msg)
 }
 
@@ -152,7 +152,7 @@ test "the sample server's certificate is refused until trusted, then frames and 
     // FreeRDP's backup of the settings lost the password too (milestone 36).
     assert(creds_wiped("t-sample"))
     assert_eq(wait_past_pointers(rd, "t-sample", 200).kind, "running")
-    try rd.rd_pointer("t-sample", RdpPointer{ kind: "move", button: 0, x: 10, y: 10, delta: 0 })
+    try rd.rd_pointer("t-sample", domain.RdpPointer{ kind: "move", button: 0, x: 10, y: 10, delta: 0 })
     try rd.rd_key("t-sample", "ShiftLeft", true)
     try rd.rd_key("t-sample", "ShiftLeft", false)
     mut msg := ""
@@ -164,7 +164,7 @@ test "a server that answers with standard RDP security is refused before any cre
     port := downgrade_server_start()
     assert(port > 0)
     rd := new_freerdp_desktop()
-    t := RdpTarget{ hostname: "127.0.0.1", port: port, user: "nobody", domain: "", password: "downgrade-secret-4711", width: 800, height: 600, trusted_fingerprint: "", graphics: "auto", rtt_ms: -1 }
+    t := domain.RdpTarget{ hostname: "127.0.0.1", port: port, user: "nobody", domain: "", password: "downgrade-secret-4711", width: 800, height: 600, trusted_fingerprint: "", graphics: "auto", rtt_ms: -1 }
     mut msg := ""
     rd.rd_open("t-downgrade", t, 10000) or err { msg = "{err.message()}" }
     rd.rd_close("t-downgrade")
@@ -366,18 +366,18 @@ test "a real Windows host draws through the graphics pipeline, or bitmaps when a
 // ---- Flint's own test server (milestone 31): FLINT_RDP_CLIP_PORT, its control port
 // FLINT_RDP_CLIP_CONTROL (scripts/test.sh starts it; native/testserver).
 
-fn clip_target(trusted: str) -> RdpTarget {
-    port := os.getenv("FLINT_RDP_CLIP_PORT")
+fn clip_target(trusted: str) -> domain.RdpTarget {
+    port := (os.getenv("FLINT_RDP_CLIP_PORT") or "")
     mut p: i64 = 0
     if port.len() > 0 {
         p = i64.parse(port) or 0
     }
-    return RdpTarget{ hostname: "127.0.0.1", port: p, user: "flint", domain: "", password: "x", width: 640, height: 480, trusted_fingerprint: trusted, graphics: "auto", rtt_ms: -1 }
+    return domain.RdpTarget{ hostname: "127.0.0.1", port: p, user: "flint", domain: "", password: "x", width: 640, height: 480, trusted_fingerprint: trusted, graphics: "auto", rtt_ms: -1 }
 }
 
 // One command to the test server's control port, its one-line answer.
 fn ctl(cmd: str) -> str {
-    port := os.getenv("FLINT_RDP_CLIP_CONTROL")
+    port := (os.getenv("FLINT_RDP_CLIP_CONTROL") or "")
     // Windows (windows-port): `bash` there is WSL's, which cannot reach Windows'
     // 127.0.0.1; the same command goes over the control port's HTTP form with the
     // curl.exe Windows ships: GET /<cmd>[/<arg>].
@@ -420,14 +420,14 @@ fn to_hex(s: str) -> str {
 }
 
 // Waits for an event of `kind` on the tab, skipping `running`.
-fn wait_kind(rd: FreeRdpDesktop, tab: str, kind: str) -> RdpEvent {
+fn wait_kind(rd: FreeRdpDesktop, tab: str, kind: str) -> domain.RdpEvent {
     for i in 0..50 {
         ev := rd.rd_wait(tab, 200)
         if ev.kind == kind || ev.kind == "ended" {
             return ev
         }
     }
-    return RdpEvent{ kind: "none", message: "", width: 0, height: 0 }
+    return domain.RdpEvent{ kind: "none", message: "", width: 0, height: 0 }
 }
 
 // Polls the control port until `cmd` answers `want` (the clipboard channel is a few
@@ -444,7 +444,7 @@ fn ctl_until(cmd: str, want: str) -> str {
     return got
 }
 
-fn open_clip(rd: FreeRdpDesktop, tab: str) -> RdpDesktop! {
+fn open_clip(rd: FreeRdpDesktop, tab: str) -> domain.RdpDesktop! {
     fp := first_fingerprint(rd, tab, clip_target(""))
     d := try rd.rd_open(tab, clip_target(fp), 15000)
     // The clipboard channel announces itself once the desktop is up.
@@ -564,14 +564,14 @@ test "the lock keys reach the server as a synchronize event, and Type's keys and
     assert(rd.rd_keyboard_layout("t-clip-type") != 0)
     assert_eq(rd.rd_address("t-clip-type"), rdp_cert_addr("127.0.0.1", clip_target("").port))
     assert_eq(ctl("clear"), "ok")
-    for e in [RdpKeyEvent{ kind: RDP_KEY_EVENT_SYNC, code: 2, down: false }, RdpKeyEvent{ kind: RDP_KEY_EVENT_KEY, code: 0x1E, down: true }, RdpKeyEvent{ kind: RDP_KEY_EVENT_KEY, code: 0x1E, down: false }, RdpKeyEvent{ kind: RDP_KEY_EVENT_UNICODE, code: 0xE9, down: true }, RdpKeyEvent{ kind: RDP_KEY_EVENT_UNICODE, code: 0xE9, down: false }] {
+    for e in [domain.RdpKeyEvent{ kind: RDP_KEY_EVENT_SYNC, code: 2, down: false }, domain.RdpKeyEvent{ kind: RDP_KEY_EVENT_KEY, code: 0x1E, down: true }, domain.RdpKeyEvent{ kind: RDP_KEY_EVENT_KEY, code: 0x1E, down: false }, domain.RdpKeyEvent{ kind: RDP_KEY_EVENT_UNICODE, code: 0xE9, down: true }, domain.RdpKeyEvent{ kind: RDP_KEY_EVENT_UNICODE, code: 0xE9, down: false }] {
         try rd.rd_type_event("t-clip-type", e)
     }
     assert_eq(ctl_until("keys", "d:0x1e u:0x1e d:U+e9 u:U+e9"), "d:0x1e u:0x1e d:U+e9 u:U+e9")
     assert_eq(ctl("sync"), "2")
     rd.rd_close("t-clip-type")
     mut msg := ""
-    rd.rd_type_event("t-clip-type", RdpKeyEvent{ kind: RDP_KEY_EVENT_KEY, code: 0x1E, down: true }) or err { msg = "{err.message()}" }
+    rd.rd_type_event("t-clip-type", domain.RdpKeyEvent{ kind: RDP_KEY_EVENT_KEY, code: 0x1E, down: true }) or err { msg = "{err.message()}" }
     assert(msg.len() > 0)
     assert_eq(rd.rd_address("t-clip-type"), "")
 }
@@ -584,9 +584,9 @@ test "a click is a move to its point, the press and the release" {
     _ = try open_clip(rd, "t-clip-click")
     defer rd.rd_close("t-clip-click")
     assert_eq(ctl("clear"), "ok")
-    try rd.rd_pointer("t-clip-click", RdpPointer{ kind: "move", button: 0, x: 40, y: 50, delta: 0 })
-    try rd.rd_pointer("t-clip-click", RdpPointer{ kind: "down", button: 0, x: 40, y: 50, delta: 0 })
-    try rd.rd_pointer("t-clip-click", RdpPointer{ kind: "up", button: 0, x: 40, y: 50, delta: 0 })
+    try rd.rd_pointer("t-clip-click", domain.RdpPointer{ kind: "move", button: 0, x: 40, y: 50, delta: 0 })
+    try rd.rd_pointer("t-clip-click", domain.RdpPointer{ kind: "down", button: 0, x: 40, y: 50, delta: 0 })
+    try rd.rd_pointer("t-clip-click", domain.RdpPointer{ kind: "up", button: 0, x: 40, y: 50, delta: 0 })
     assert_eq(ctl_until("mice", "m:40,50 d1:40,50 u1:40,50"), "m:40,50 d1:40,50 u1:40,50")
 }
 
@@ -610,7 +610,7 @@ test "a connection the server drops ends as lost, at once" {
 // network that goes away without a word. Only where FLINT_RDP_BLACKHOLE=1: the Linux
 // image run with NET_ADMIN (scripts/linux-check.sh), iptables through sudo.
 fn blackhole(on: bool) -> str {
-    port := os.getenv("FLINT_RDP_CLIP_PORT")
+    port := (os.getenv("FLINT_RDP_CLIP_PORT") or "")
     mut op := "-D"
     if on {
         op = "-I"
@@ -623,7 +623,7 @@ fn blackhole(on: bool) -> str {
 }
 
 test "a network that goes quiet ends the session within 20 s, idle or sending" {
-    if clip_target("").port == 0 || os.getenv("FLINT_RDP_BLACKHOLE") != "1" {
+    if clip_target("").port == 0 || (os.getenv("FLINT_RDP_BLACKHOLE") or "") != "1" {
         return
     }
     rd := new_freerdp_desktop()
@@ -632,7 +632,7 @@ test "a network that goes quiet ends the session within 20 s, idle or sending" {
         _ = try open_clip(rd, tab)
         assert_eq(blackhole(true), "0:")
         started := time.now_ms()
-        mut ev := RdpEvent{ kind: "none", message: "", width: 0, height: 0 }
+        mut ev := domain.RdpEvent{ kind: "none", message: "", width: 0, height: 0 }
         for i in 0..300 {
             if round == 1 {
                 // Data in flight: a key every 100 ms that nothing acknowledges.
@@ -658,10 +658,10 @@ test "a network that goes quiet ends the session within 20 s, idle or sending" {
 
 // ---- Monitors (milestone 38) ----------------------------------------------------------
 
-fn pair_layout(w1: i64, h1: i64, x2: i64, y2: i64, w2: i64, h2: i64) -> []RdpMonitor {
+fn pair_layout(w1: i64, h1: i64, x2: i64, y2: i64, w2: i64, h2: i64) -> []domain.RdpMonitor {
     return [
-        RdpMonitor{ local_id: "a", x: 0, y: 0, width: w1, height: h1, primary: true },
-        RdpMonitor{ local_id: "b", x: x2, y: y2, width: w2, height: h2, primary: false },
+        domain.RdpMonitor{ local_id: "a", x: 0, y: 0, width: w1, height: h1, primary: true },
+        domain.RdpMonitor{ local_id: "b", x: x2, y: y2, width: w2, height: h2, primary: false },
     ]
 }
 
@@ -776,7 +776,7 @@ test "a real Windows host spans two monitors at connect and rearranges in place"
     // The channel opens a moment after the desktop; meanwhile Windows draws, and after a
     // quiet second each view is read whole again (milestone 35's re-read).
     time.sleep_ms(4000)
-    dir := os.getenv("FLINT_RDP_DUMP_DIR")
+    dir := (os.getenv("FLINT_RDP_DUMP_DIR") or "")
     if dir.len() > 0 {
         main2 := wait_view("t-live-mon", 0, 2560, 1440)
         side2 := wait_view("t-live-mon", 1, 1080, 1920)
@@ -922,12 +922,12 @@ test "a server that closes in the capability exchange is told from no route, and
 // credential, then a Server Redirection to the GDM greeter. FLINT_RDP_ZORIN_HOST, _USER
 // and _PASSWORD (Infisical, /ai-agents); skipped without them. Input there is free (a
 // test user), but this test sends none.
-fn zorin_target(trusted: str, graphics: str) -> RdpTarget {
-    return RdpTarget{ hostname: os.getenv("FLINT_RDP_ZORIN_HOST"), port: 3389, user: os.getenv("FLINT_RDP_ZORIN_USER"), domain: "", password: os.getenv("FLINT_RDP_ZORIN_PASSWORD"), width: 1024, height: 768, trusted_fingerprint: trusted, graphics: graphics, rtt_ms: -1 }
+fn zorin_target(trusted: str, graphics: str) -> domain.RdpTarget {
+    return domain.RdpTarget{ hostname: (os.getenv("FLINT_RDP_ZORIN_HOST") or ""), port: 3389, user: (os.getenv("FLINT_RDP_ZORIN_USER") or ""), domain: "", password: (os.getenv("FLINT_RDP_ZORIN_PASSWORD") or ""), width: 1024, height: 768, trusted_fingerprint: trusted, graphics: graphics, rtt_ms: -1 }
 }
 
 test "zorinos-rdp closes Compatible during setup and opens the greeter with the pipeline" {
-    if os.getenv("FLINT_RDP_ZORIN_HOST").len() == 0 {
+    if (os.getenv("FLINT_RDP_ZORIN_HOST") or "").len() == 0 {
         return
     }
     rd := new_freerdp_desktop()

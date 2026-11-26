@@ -8,9 +8,9 @@ package clicmd
 import "core:os"
 import "../../adapters/config"
 import "../../adapters/crypto"
-import "../../adapters/keychain"
+import "../../adapters/keychain" as flint_keychain
 import "../../adapters/process"
-import "../../adapters/ssh"
+import "../../adapters/ssh" as flint_ssh
 import "../../adapters/vault"
 import "../../domain"
 import "../../ports"
@@ -171,20 +171,20 @@ fn is_session_command(p: ParsedArgs) -> bool {
 // Runs one checked session command against `src`'s vault, on the given terminal,
 // prompter and output. Returns the process exit status: 0, or the remote status of
 // `connect` and `exec`.
-fn run_session_command[M: Terminal, P: Prompter, O: ExecSink, L: LocalFiles, K: TransferSink](p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store: LockedVaultStore, src: VaultSource, recents: JsonRecentStore, mut term: M, prompter: P, mut sink: O, mut local: L, mut progress: K, term_name: str) -> i32! {
+fn run_session_command[M: ports.Terminal, P: ports.Prompter, O: ports.ExecSink, L: ports.LocalFiles, K: ports.TransferSink](p: ParsedArgs, sec: SecretInput, as_json: bool, c: crypto.Sodium, mut store: vault.LockedVaultStore, src: VaultSource, recents: config.JsonRecentStore, mut term: M, prompter: P, mut sink: O, mut local: L, mut progress: K, term_name: str) -> i32! {
     noun := p.positional(0)
     if noun == "cp" {
-        return cmd_cp(p, sec, as_json, c, mut store, src, recents, prompter, mut local, mut progress)
+        return try cmd_cp(p, sec, as_json, c, mut store, src, recents, prompter, mut local, mut progress)
     }
     if noun == "tunnel" {
         try cmd_tunnel_session(p, sec, as_json, c, mut store, src, recents, prompter)
         return 0
     }
     if noun == "connect" {
-        return cmd_connect(p, sec, as_json, c, mut store, src, recents, mut term, prompter, term_name)
+        return try cmd_connect(p, sec, as_json, c, mut store, src, recents, mut term, prompter, term_name)
     }
     if noun == "exec" {
-        return cmd_exec(p, sec, as_json, c, mut store, src, recents, prompter, mut sink)
+        return try cmd_exec(p, sec, as_json, c, mut store, src, recents, prompter, mut sink)
     }
     try cmd_host_test(p, sec, as_json, c, mut store, src, recents, prompter)
     return 0
@@ -192,7 +192,7 @@ fn run_session_command[M: Terminal, P: Prompter, O: ExecSink, L: LocalFiles, K: 
 
 // Runs one checked command that opens no SSH session against `src`'s vault.
 // Returns the process exit status, 0.
-fn run_command(p: ParsedArgs, sec: SecretInput, as_json: bool, c: Sodium, mut store: LockedVaultStore, src: VaultSource, recents: JsonRecentStore) -> i32! {
+fn run_command(p: ParsedArgs, sec: SecretInput, as_json: bool, c: crypto.Sodium, mut store: vault.LockedVaultStore, src: VaultSource, recents: config.JsonRecentStore) -> i32! {
     noun := p.positional(0)
     if noun == "vault" {
         try cmd_vault(p, sec, as_json, c, mut store, src, recents)
@@ -223,11 +223,11 @@ fn run_local(p: ParsedArgs, sec: SecretInput, as_json: bool) -> i32! {
     mut store := new_locked_vault_store(flint_config_dir() + "/activity")
     verb := p.positional(1)
     removes_key := p.positional(0) == "vault" && (verb == "lock" || verb == "forget")
-    kc := new_os_keychain(removes_key && os.getenv("FLINT_KEYCHAIN") != "off")
+    kc := new_os_keychain(removes_key && (os.getenv("FLINT_KEYCHAIN") or "") != "off")
     recents := new_json_recent_store(flint_config_dir())
     mut status: i32! = 0
     if is_session_command(p) {
-        mut term_name := os.getenv("TERM")
+        mut term_name := (os.getenv("TERM") or "")
         if term_name.len() == 0 {
             term_name = "xterm-256color"
         }
@@ -244,7 +244,7 @@ fn run_local(p: ParsedArgs, sec: SecretInput, as_json: bool) -> i32! {
         sync_after_command(p, c, mut store, kc, recents)
     }
     store.vault_detach()
-    return status
+    return try status
 }
 
 // The whole CLI: help, then the running app if it holds this command's vault
@@ -316,5 +316,5 @@ fn run_cli(p: ParsedArgs, args: []str, as_json: bool) -> i32! {
         }
         return code
     }
-    return run_local(p, sec, as_json)
+    return try run_local(p, sec, as_json)
 }

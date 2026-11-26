@@ -74,7 +74,7 @@ fn (self: FileBlobStore) move_single_vault() -> str! {
         return error(coded(ERR_IO, "cannot read {top_head}"))
     }
     // CFIRE-UPSTREAM: CF-164 (a labeled argument keeps libstdc++'s chrono::parse out)
-    head := json.parse[BlobVersion](payload: text) or err {
+    head := json.parse[domain.BlobVersion](payload: text) or err {
         return error(coded(ERR_IO, "{top_head} is not a version record"))
     }
     if !valid_vault_id(head.vault_id) {
@@ -172,11 +172,11 @@ fn replace_synced(path: str, data: str) -> void! {
     }
 }
 
-fn (self: FileBlobStore) blob_vaults() -> []ServerVault! {
+fn (self: FileBlobStore) blob_vaults() -> []domain.ServerVault! {
     names := fs.list_dir(self.dir + "/vaults") or err {
         return error(coded(ERR_IO, "cannot list {self.dir}/vaults"))
     }
-    mut found: []ServerVault = []
+    mut found: []domain.ServerVault = []
     for name in names {
         if !valid_vault_id(name) {
             continue
@@ -190,7 +190,7 @@ fn (self: FileBlobStore) blob_vaults() -> []ServerVault! {
         if head.version == 0 {
             continue
         }
-        found.push(ServerVault{ id: name, label: self.label_of(name), version: head.version, size: head.size, updated_at: head.stored_at })
+        found.push(domain.ServerVault{ id: name, label: self.label_of(name), version: head.version, size: head.size, updated_at: head.stored_at })
     }
     return found
 }
@@ -210,17 +210,17 @@ fn (self: FileBlobStore) label_of(vault_id: str) -> str {
     return f.label
 }
 
-fn (self: FileBlobStore) blob_head(vault_id: str) -> BlobVersion! {
+fn (self: FileBlobStore) blob_head(vault_id: str) -> domain.BlobVersion! {
     try check_id(vault_id)
     path := self.vault_dir(vault_id) + "/head.json"
     if !fs.exists(path) {
-        return BlobVersion{ version: 0, vault_id: vault_id, size: 0, stored_at: 0 }
+        return domain.BlobVersion{ version: 0, vault_id: vault_id, size: 0, stored_at: 0 }
     }
     text := fs.read_text(path) or err {
         return error(coded(ERR_IO, "cannot read {path}"))
     }
     // CFIRE-UPSTREAM: CF-164 (a labeled argument keeps libstdc++'s chrono::parse out)
-    return json.parse[BlobVersion](payload: text) or err {
+    return json.parse[domain.BlobVersion](payload: text) or err {
         return error(coded(ERR_IO, "{path} is not a version record"))
     }
 }
@@ -283,7 +283,7 @@ fn (mut self: FileBlobStore) blob_write(vault_id: str, version: i64, data: str, 
     if head.version != version - 1 {
         return error(coded(ERR_CONFLICT, "version {head.version} was stored meanwhile"))
     }
-    rec := BlobVersion{ version: version, vault_id: vault_id, size: i64(data.len()), stored_at: now_ms }
+    rec := domain.BlobVersion{ version: version, vault_id: vault_id, size: i64(data.len()), stored_at: now_ms }
     meta := json.stringify(rec)
     try replace_synced(self.version_path(vault_id, version, "blob"), data)
     try replace_synced(self.version_path(vault_id, version, "json"), meta)
@@ -366,7 +366,7 @@ fn version_of_name(name: str) -> i64 {
     return parse_version_tag(stem)
 }
 
-fn (self: FileBlobStore) blob_versions(vault_id: str) -> []BlobVersion! {
+fn (self: FileBlobStore) blob_versions(vault_id: str) -> []domain.BlobVersion! {
     head := try self.blob_head(vault_id)
     if head.version == 0 {
         return []
@@ -375,7 +375,7 @@ fn (self: FileBlobStore) blob_versions(vault_id: str) -> []BlobVersion! {
     names := fs.list_dir(vdir) or err {
         return error(coded(ERR_IO, "cannot list {vdir}"))
     }
-    mut found: []BlobVersion = []
+    mut found: []domain.BlobVersion = []
     for name in names {
         if !name.ends_with(".json") {
             continue
@@ -389,13 +389,13 @@ fn (self: FileBlobStore) blob_versions(vault_id: str) -> []BlobVersion! {
             continue
         }
         // CFIRE-UPSTREAM: CF-164 (a labeled argument keeps libstdc++'s chrono::parse out)
-        v := json.parse[BlobVersion](payload: text) or err {
+        v := json.parse[domain.BlobVersion](payload: text) or err {
             continue
         }
         found.push(v)
     }
     // Newest first (list_dir sorts by name, so "10" comes before "9").
-    mut newest: []BlobVersion = []
+    mut newest: []domain.BlobVersion = []
     for k in 0..found.len() {
         mut best: usize = 0
         for i in 0..found.len() {

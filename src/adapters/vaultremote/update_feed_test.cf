@@ -56,7 +56,7 @@ test "the package download streams to a file, counts its bytes and caps it" {
     router.get("/Flint.zip") |req| { return http.Response.text(200, "z".repeat(200000)) }
     server.serve_in_background(router)
     base := "http://127.0.0.1:{server.port()}"
-    path := "{os.getenv("TMPDIR", "/tmp")}/flint-dl-{time.now_ms()}.zip"
+    path := "{(os.getenv("TMPDIR") or "/tmp")}/flint-dl-{time.now_ms()}.zip"
     defer {
         // CFIRE-UPSTREAM: CF-158 (fs.remove beside curl's <stdio.h>)
         cpp {

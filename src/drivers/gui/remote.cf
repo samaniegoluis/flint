@@ -12,7 +12,7 @@ import "core:json"
 import "core:time"
 import "../../adapters/config"
 import "../../adapters/crypto"
-import "../../adapters/keychain"
+import "../../adapters/keychain" as flint_keychain
 import "../../adapters/vault"
 import "../../adapters/vaultremote"
 import "../../application"
@@ -56,10 +56,10 @@ type RemoteGone struct {
 }
 
 type RemoteLinkList struct {
-    links: []RemoteLinkView `json:"links"`
+    links: []application.RemoteLinkView `json:"links"`
 }
 
-fn gui_remote_links() -> JsonRemoteLinkStore {
+fn gui_remote_links() -> config.JsonRemoteLinkStore {
     return new_json_remote_link_store(flint_config_dir())
 }
 
@@ -69,7 +69,7 @@ fn sync_wall_ms() -> i64 {
 
 // Where the vault at `path` stands with its server: no key and no network, so it
 // answers for a locked vault too (the unlock screen's line, design 23g).
-fn rpc_vault_remote_status(params: str, c: Sodium, store: LockedVaultStore) -> str! {
+fn rpc_vault_remote_status(params: str, c: crypto.Sodium, store: vault.LockedVaultStore) -> str! {
     req := try parse_req[PathReq](params)
     return json.stringify(try remote_status(c, store, gui_remote_links(), req.path))
 }
@@ -80,14 +80,14 @@ fn rpc_vault_remotes() -> str! {
 }
 
 // Connect remote vault, step 1 (design 23a1-23a3): the vaults the server keeps.
-fn rpc_vault_remote_probe(req: RemoteServerReq, c: Sodium) -> RemoteProbe! {
+fn rpc_vault_remote_probe(req: RemoteServerReq, c: crypto.Sodium) -> application.RemoteProbe! {
     defer c.wipe_text(req.token)
     return try probe_remote(new_http_vault_remote(), req.url, req.token)
 }
 
 // Connect remote vault, step 2 (design 23a3-23a4): the server's vault downloaded to a
 // new file, opened and made the vault in this window, as Create vault does.
-fn rpc_vault_remote_download(req: RemoteDownloadReq, c: Sodium, mut store: LockedVaultStore, kc: OsKeychain, recents: JsonRecentStore, mut st: GuiState) -> VaultInfo! {
+fn rpc_vault_remote_download(req: RemoteDownloadReq, c: crypto.Sodium, mut store: vault.LockedVaultStore, kc: flint_keychain.OsKeychain, recents: config.JsonRecentStore, mut st: GuiState) -> application.VaultInfo! {
     defer c.wipe_text(req.token)
     defer c.wipe_text(req.password)
     try st.require_open_window()
@@ -102,7 +102,7 @@ fn rpc_vault_remote_download(req: RemoteDownloadReq, c: Sodium, mut store: Locke
 
 // Settings → Vault → Connect to a server (design 23b2): the open vault goes to the
 // server, or is merged with the copy it already holds.
-fn rpc_vault_remote_connect(req: RemoteConnectReq, c: Sodium, mut store: LockedVaultStore, kc: OsKeychain, st: GuiState, mut app: webui.App) -> SyncOutcome! {
+fn rpc_vault_remote_connect(req: RemoteConnectReq, c: crypto.Sodium, mut store: vault.LockedVaultStore, kc: flint_keychain.OsKeychain, st: GuiState, mut app: webui.App) -> application.SyncOutcome! {
     defer c.wipe_text(req.token)
     defer c.wipe_text(req.password)
     try st.require_unlocked()
@@ -116,7 +116,7 @@ fn rpc_vault_remote_connect(req: RemoteConnectReq, c: Sodium, mut store: LockedV
 
 // Sync now, from the status bar, Settings or the palette; with the master password
 // set on another machine when the page asked for it (design 23f).
-fn rpc_vault_sync_now(req: SyncNowReq, c: Sodium, mut store: LockedVaultStore, kc: OsKeychain, mut st: GuiState, mut app: webui.App) -> SyncOutcome! {
+fn rpc_vault_sync_now(req: SyncNowReq, c: crypto.Sodium, mut store: vault.LockedVaultStore, kc: flint_keychain.OsKeychain, mut st: GuiState, mut app: webui.App) -> application.SyncOutcome! {
     defer c.wipe_text(req.new_password)
     try st.require_unlocked()
     st.hold()
@@ -141,7 +141,7 @@ fn rpc_vault_sync_now(req: SyncNowReq, c: Sodium, mut store: LockedVaultStore, k
 }
 
 // Settings → Vault → Replace token (design 23b4).
-fn rpc_vault_remote_token(req: RemoteTokenReq, c: Sodium, st: GuiState, kc: OsKeychain) -> RemoteGone! {
+fn rpc_vault_remote_token(req: RemoteTokenReq, c: crypto.Sodium, st: GuiState, kc: flint_keychain.OsKeychain) -> RemoteGone! {
     defer c.wipe_text(req.token)
     try st.require_unlocked()
     path := st.vault_session().path
@@ -152,7 +152,7 @@ fn rpc_vault_remote_token(req: RemoteTokenReq, c: Sodium, st: GuiState, kc: OsKe
 }
 
 // Settings → Vault → Disconnect (design 23b3): the vault file and the server's copy stay.
-fn rpc_vault_remote_disconnect(c: Sodium, st: GuiState, kc: OsKeychain) -> str! {
+fn rpc_vault_remote_disconnect(c: crypto.Sodium, st: GuiState, kc: flint_keychain.OsKeychain) -> str! {
     try st.require_unlocked()
     path := st.vault_session().path
     gone := try disconnect_remote(gui_remote_links(), kc, path)
@@ -160,7 +160,7 @@ fn rpc_vault_remote_disconnect(c: Sodium, st: GuiState, kc: OsKeychain) -> str! 
 }
 
 // What the page hears after a sync it asked for, as after the loop's own.
-fn emit_sync_outcome(mut app: webui.App, path: str, name: str, got: SyncOutcome) {
+fn emit_sync_outcome(mut app: webui.App, path: str, name: str, got: application.SyncOutcome) {
     app.emit("vault:sync", SyncEvent{ path: path, state: got.result, version: got.version, report: got.report, code: "", message: "" })
     r := got.report
     if r.added + r.updated + r.removed > 0 || r.notes.len() > 0 {
