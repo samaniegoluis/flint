@@ -39,7 +39,7 @@ SignPath's approval), so they move to v20 and this version goes first (owner, 20
 
 ## Scope
 
-**In scope (v19), four milestones sized for one session each:**
+**In scope (v19), six milestones sized for one session each** (76 and 77 added on 2026-11-26, D-153):
 - **Split with another host** (72): a split or a layout opens empty panes, each with a host
   picker in its middle, the focused pane's host first, so ⌘D then ↵ still repeats today's
   split. Duplicate (⌥⌘D) is unchanged. What does not take the keys is dimmed: the panes
@@ -52,11 +52,17 @@ SignPath's approval), so they move to v20 and this version goes first (owner, 20
   click from the side rail.
 - **Restore open sessions** (75): at start, after the vault is unlocked, the tabs open at
   the last quit come back in their layouts and connect, with a setting to turn it off.
+- **The window's size from the screen, and remembered** (76): the first launch opens at 85 %
+  of the screen's height, 16:10, centred; the window then reopens filling the screen if it
+  filled it when closed, or at its last size and place when they fit the screen it lands on.
+- **`flint agent-guide`** (77): the CLI's long-form guide for the person's agents, named by
+  `--help`, generated from the CLI's own command table; an agent may offer to turn it into
+  a skill. Flint installs nothing in other apps' folders.
 - Docs site, the landing and the CLI demo follow every user-visible change (CLAUDE.md rules
   5 and 6), and a release closes each milestone with a `feat` or `fix` (rule 10).
 
 **Every system:** each milestone is verified on macOS and the Docker Linux check, and on the
-Windows VM where it touches keys (73) or the vault's format (74).
+Windows VM where it touches keys (73), the vault's format (74) or the window (76).
 
 **Out of scope (v19), tracked in the roadmap:** workspaces in the CLI (`flint workspace`);
 broadcast across tabs, or saved in a workspace; snippets; the last command's duration per
@@ -255,6 +261,8 @@ Claude Design run (designs 28) before 72's plan.
 | 73 | **Broadcast input** | The per-tab broadcast set and its toggle (per pane, all panes, stop), with a shortcut chosen at plan; keys handed to each receiving terminal to encode; text paste through each pane's own paste path, image and file paste to the focused pane only; lost, reconnecting, empty and RDP panes excluded; the border on each receiving pane, receiving panes at full contrast, and the *Typing into N panes* bar; nothing of it saved. Verified: vitest of the broadcast set (off on a new tab, a pane that drops leaves it, never in a saved shape); gui-e2e on macOS, Linux and the Windows VM: one pane in Kitty mode and one plain shell, Shift+Enter and a Ctrl chord typed once reach each as its own encoding (checked on the remote side), a pasted line arrives once in each, an image paste reaches the focused pane only; docs (the desktop app guide: broadcast, its warning; keyboard shortcuts); the landing if the owner wants it there |
 | 74 | **Workspaces** | The `workspaces` table by an appended migration and its record merge; save, rename, delete and list use cases and their RPC; *Save as workspace* and *Update workspace* on a tab (only these write the vault, never a drag or a split), a workspace made from scratch (a name, a layout and a host per place), opening one (switch to its tab or open it, a deleted host's place empty), the workspaces in the side rail. Verified: `cfire test` of the migration, the use cases and the merge (a workspace added on two machines merges; a deleted host leaves an empty place); vitest of the tab shape; sync-e2e: a workspace saved on one client opens on the other; gui-e2e: save a 2 × 2 of hosts, quit, open it, every pane connects; a second open switches to its tab; docs (a Workspaces guide; the vault format reference: the new table); the landing (workspaces as a headline feature, in the split section or its own) |
 | 75 | **Restore open sessions** | The tabs of each vault in `ui-state.json` (ids and layout only), written debounced; restore after the vault's unlock at start, panes connecting, a deleted host's place empty, RDP tabs coming back as tabs; *Reopen tabs at start* in Settings, on by default. Verified: vitest of the restore state (written on a split, a close, a layout change; ids only; a damaged file falls back to no tabs); gui-e2e: open two tabs (one split in a grid), quit, start, unlock, the same tabs and layout come back connected; with the setting off nothing comes back; `ui-state.json` read back holding no host name; docs (the desktop app guide: restore and its setting) |
+| 76 | **The window's size from the screen, and remembered** | Native code beside `flint_window.hpp` and `flint_monitors.hpp` (a CF entry for what `ext:webui` lacks): the screen's work area, the window's frame, moving and sizing it. First launch, and the fallback: 85 % of the work area's height, 16:10 wide but never over 85 % of its width, centred on the screen it opens on. On close, per machine in `ui-state.json` (D-030): whether the window filled its screen's work area (a flag with a few pixels' tolerance, so Windows' and Linux's maximize, the Mac's zoom and tiling tools count alike), else its size and place. On open: filling the screen it lands on with the flag; else the saved size and place when they fit a connected screen, else the first-launch size, centred. System full screen reopens filling the screen, not in its own Space. Verified: `cfire test` of the size rules (first launch on a MacBook, 2K and ultrawide work area; a saved size larger than the screen; a place on a screen no longer connected; the flag on a smaller screen); gui-e2e on macOS, Linux and the Windows VM: fill the screen, quit, start: it fills again; a manual size comes back; a damaged `ui-state.json` falls back to the first-launch size; docs (the desktop app guide: the window) |
+| 77 | **`flint agent-guide`** | A CLI command printing Markdown for the person's agents: the reference generated from the CLI's own command table (commands and flags, `--json`, exit codes, grants and approval, `exec --sudo`, `cp`, root periods) and the rhythm of use `--help` cannot give (status first, wait on approval and never retry in a loop, never ask for a password in the chat), ending with a note to offer the person a skill made from it that keeps a summary and points back to `flint agent-guide`. `--help` names it. Verified: `cfire test` that every command of the table appears in the guide and the guide's exit codes match the CLI's; cli-e2e: `flint agent-guide` prints it, `flint --help` names it; docs (the AI agents page gains the guide, generated from the same text); the landing's CLI demo and the agents section (rules 5 and 6) |
 
 ## Open questions
 
