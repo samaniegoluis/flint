@@ -1,6 +1,6 @@
-# Flint — v18 Technical Specification: Tunnels and the remote vault, in daily use
+# Flint — v19 Technical Specification: Many hosts in one tab
 
-**Scope of this document:** version 18 only. The versions it builds on are archived in
+**Scope of this document:** version 19 only. The versions it builds on are archived in
 [`spec-v1.md`](./spec-v1.md) (MVP), [`spec-v2.md`](./spec-v2.md) (daily driver),
 [`spec-v3.md`](./spec-v3.md) (Flint holds the vault), [`spec-v4.md`](./spec-v4.md) (Files),
 [`spec-v5.md`](./spec-v5.md) (Between servers), [`spec-v6.md`](./spec-v6.md) (Tunnels),
@@ -10,63 +10,61 @@
 (Your vault on every machine), [`spec-v12.md`](./spec-v12.md) (Toasts),
 [`spec-v13.md`](./spec-v13.md) (Releases), [`spec-v14.md`](./spec-v14.md) (RDP for daily
 work, root for a while, server resources), [`spec-v15.md`](./spec-v15.md) (Flint waits
-for you), [`spec-v16.md`](./spec-v16.md) (Hardening and polish) and
-[`spec-v17.md`](./spec-v17.md) (The app in English and Spanish); everything beyond v18
-lives in [`ROADMAP.md`](../ROADMAP.md). This file is static: a decision that changes goes
-into [`decisions.md`](./decisions.md), which supersedes the line here.
+for you), [`spec-v16.md`](./spec-v16.md) (Hardening and polish),
+[`spec-v17.md`](./spec-v17.md) (The app in English and Spanish) and
+[`spec-v18.md`](./spec-v18.md) (Tunnels and the remote vault, in daily use); everything
+beyond v19 lives in [`ROADMAP.md`](../ROADMAP.md). This file is static: a decision that
+changes goes into [`decisions.md`](./decisions.md), which supersedes the line here.
 
 ## Problem
 
-v17 shipped (milestones 66-69, `v0.33.0`). The owner's daily use on 2026-11-24, a tunnel
-to a database at work and the remote vault behind his homelab's proxy, found two places
-where Flint says something that is not true and leaves the person guessing (D-146):
+v18 shipped (milestones 70-71, `v0.34.0`). Split panes (milestone 20, D-061) give a tab up
+to four panes, but they serve one server better than several, and the owner's daily work is
+several (D-149):
 
-- **A tunnel read `listening · no connections` with nothing on its port.** On the office
-  Windows, after a first connect that timed out and a Retry, `netstat` showed no listener on
-  `127.0.0.1:5433` and DataGrip was refused; switching the tunnel off and on opened it.
-  `states()` (`src/adapters/ssh/native/flint_tunnel.hpp`) reports every listener in a host's
-  list as up, and nothing checks that the port answers. The tunnel's error, when there is
-  one, is cut to one line with an ellipsis and cannot be read whole.
-- **A refused server token reads as a 15-minute lockout, and keeps being sent.** Every 401
-  says "a wrong token, or too many wrong ones from here: wait 15 minutes"; a real lockout
-  answers 429, which says "try again in a minute". After a 401 the app's sync loop retries
-  with a back-off (30 s doubling to 15 min): about five attempts in the first ten minutes
-  per machine. Behind NAT
-  every machine of a home or an office reaches the server as one public address (the
-  owner's server logs `187.145.116.27` for all of his), so a few machines holding an old
-  token lock every one of them out (10 wrong tokens in 10 minutes). The self-host guide
-  does not explain this, nor Docker Swarm's ingress mesh (Dokploy), which makes every
-  client `10.0.0.2` unless `FLINT_VAULT_TRUST_PROXY=1`.
+- **A split repeats the host it came from.** ⌘D and ⇧⌘D connect the focused pane's host
+  again, so four splits are four sessions to one server; another host needs the palette's
+  ⇧⌘↵, which is hard to find. The owner asked on 2026-11-09 and 2026-11-12 for splits and
+  layouts that leave the new panes empty, each connected to the host he picks.
+- **Nothing typed reaches more than one pane.** Running the same command on four servers
+  (`sudo apt update`) means typing it four times.
+- **A layout of hosts is built again every time.** "My four production servers" is four
+  splits and four picks after every start, and there is no way to keep it or have it on
+  another machine.
+- **A restart loses every tab.** Quitting Flint (an update's Relaunch included) closes every
+  session, and its tabs, layouts and hosts come back only by hand.
 
-Signing and installers wait for outside steps (the Apple Developer membership, SignPath's
-approval), so they move to v19 and this version goes first.
+Signing and installers still wait for outside steps (the Apple Developer membership,
+SignPath's approval), so they move to v20 and this version goes first (owner, 2026-11-26).
 
 ## Scope
 
-**In scope (v18), two milestones sized for one session each:**
-- **A tunnel that says what it is** (70): a tunnel reads *listening* only while its port
-  answers, a listener that did not open or was lost shows its error, and a tunnel's error
-  or warning wraps to as many lines as it needs, with the whole text on hover.
-- **A remote vault that stops on a refused token** (71): a 401 pauses automatic sync for
-  that vault, with honest 401 and 429 messages; the self-host guide on how clients are
-  counted; and the server's small debts: the cause of a `500` in its log, one damaged
-  `head.json` no longer failing the listing, `flint-vault-server delete <id>`, and the hint
-  of *Connect to a remote vault* on one line.
+**In scope (v19), four milestones sized for one session each:**
+- **Split with another host** (72): a split or a layout opens empty panes, each with a host
+  picker in its middle, the focused pane's host first, so ⌘D then ↵ still repeats today's
+  split. Duplicate (⌥⌘D) is unchanged.
+- **Broadcast input** (73): a per-pane toggle picks which panes of a tab receive what is
+  typed or pasted, shown on every receiving pane and in a bar over the tab; it never turns
+  on by itself.
+- **Workspaces** (74): a tab saved as a workspace (its layout, divider positions and each
+  pane's host), or one made from scratch, kept in the vault so it syncs; opened in one
+  click from the side rail.
+- **Restore open sessions** (75): at start, after the vault is unlocked, the tabs open at
+  the last quit come back in their layouts and connect, with a setting to turn it off.
 - Docs site, the landing and the CLI demo follow every user-visible change (CLAUDE.md rules
   5 and 6), and a release closes each milestone with a `feat` or `fix` (rule 10).
 
-**Every system:** each milestone is verified on macOS and the Docker Linux check; 70's
-tunnel on the Windows VM too, where it was seen.
+**Every system:** each milestone is verified on macOS and the Docker Linux check, and on the
+Windows VM where it touches keys (73) or the vault's format (74).
 
-**Out of scope (v18), tracked in the roadmap:** a trusted-proxy count for chained proxies
-(`FLINT_VAULT_TRUST_PROXY=2`, until someone needs it); retrying a refused token on its own
-(owner, 2026-11-24: a paused vault resumes by hand); tunnels that listen on `::1` (`localhost`
-reaches `127.0.0.1` from the clients tried); remote and dynamic forwards; signing and
-installers (**v19**).
+**Out of scope (v19), tracked in the roadmap:** workspaces in the CLI (`flint workspace`);
+broadcast across tabs, or saved in a workspace; snippets; the last command's duration per
+pane (OSC 133); RDP tabs in splits, broadcast or workspaces (an RDP tab stays alone in its
+tab, spec v8; restore does bring it back); signing and installers (**v20**).
 
 ## Stack
 
-v17's. No new dependency.
+v18's. No new dependency.
 
 | Layer | Choice | Why | Rejected |
 |---|---|---|---|
@@ -93,45 +91,62 @@ v17's. No new dependency.
 
 ## Architecture
 
-Hexagonal, as in v17. v18 changes what two existing parts report; no new port, no vault,
-socket or server API format change.
+Hexagonal, as in v18. v19 is mostly the page's: the core gains one vault table and its use
+cases (74) and one more key in the per-machine UI state (75); no socket, CLI or server API
+change.
 
-- **A tunnel's state** (`adapters/ssh`, 70). A listener is *up* only while it is open: not
-  `closed`, holding a socket, and its host session not lost. `listen()` checks once it is
-  bound that `127.0.0.1:<port>` answers (`port_answers`, already in the adapter) and returns
-  a failure with its reason otherwise, so the use case reports *not started · <why>* instead
-  of *listening*. Whether a check while the tunnel is on is needed is decided at 70's plan,
-  from what the Windows reproduction shows. The page's row (`TunnelsView.tsx`,
-  `TunnelsMenu.tsx`) wraps a `danger` or `warn` state and carries the whole text as `title`.
-- **A paused vault** (71). The sync clock (`domain/sync.cf`) learns one more state beside
-  its failures: *refused*, set when a sync ends in `ERR_AUTH` from the server. While a vault
-  is refused, `sync_due` returns false for every automatic reason (unlock of the same vault
-  included, the interval, focus, a pending change, the back-off); it syncs only on the
-  person's *Sync now*, a new token saved for that vault (*Replace token*), or a new start of
-  the app. The CLI keeps no state between commands and is paced by a person: a command
-  that changes a vault still tries once after it and warns, and `flint vault sync` tries
-  and says the token was refused. The page shows the vault as refused with *Sync now* and
-  *Replace token* at hand. Nothing about the refusal is kept on disk: a restart tries once.
-- **The refusal's message** (`adapters/vaultremote`). 401: the server refused the token.
-  429: the server asks to wait, with the wait from its `Retry-After` (a lockout says up to
-  15 minutes, a rate limit about a minute). Both through the core's message ids (D-145),
-  with entries in `en.json` and `es.json`.
-- **The server** (`flint-vault-server`). A `500`'s cause (an I/O error naming paths under
-  the data folder, never a token or a byte of a vault) goes into the reply's `note`, which
-  reaches the log only. `blob_vaults` skips a vault whose `head.json` cannot be read and
-  logs its id. `delete <id>` removes one vault's folder after asking, taking the id or a
-  unique prefix as `versions`, `restore` and `label` do.
+- **An empty pane** (72, refines D-061 (1)). A pane is a session **or a place waiting for
+  one**: the session store (`ui/src/sessions/store.ts`) gets a pane kind with no session
+  worker and no terminal. `split()` opens one and focuses it; choosing a layout on a tab
+  with fewer panes fills the new places with empty ones. The empty pane shows a host picker
+  in its middle: the focused pane's host first and preselected, then recent hosts, then a
+  search with the palette's matching (`ui/src/lib/fuzzy.ts`). Choosing a host turns the
+  place into that host's session (`sessions.connect`), with the same prompts as any connect;
+  Esc or ⌘W closes the empty pane. The core is unchanged: an empty pane makes no
+  `session_open`.
+- **Broadcast input** (73, page only). A tab holds the set of its panes that receive input,
+  off on every tab and never saved. A key typed into the focused pane is handed to each
+  receiving pane's own terminal to encode, so a pane in Kitty keyboard mode (herdr, Neovim)
+  and a plain shell each get the bytes their program asked for, as does application cursor
+  mode; how the key is handed over (the keydown re-dispatched to each terminal, or an
+  xterm.js API) is settled at 73's plan with a test. A text paste goes to each receiving
+  pane through its own paste path (bracketed paste per terminal, the paste limit per pane);
+  an image or a file goes to the focused pane only. A pane that is lost, reconnecting or
+  empty receives nothing. Every receiving pane draws a border in the broadcast colour and the
+  tab shows a bar *Typing into N panes* with a way to stop.
+- **A workspace** (74). One appended migration adds a `workspaces` table to the vault: an id
+  (128 bits), a name, the layout, the track sizes and the ordered places, each a host id or
+  empty. It syncs like every other table, record by record (D-093). A workspace changes only on an explicit action (save, *Update workspace*, rename, delete): a divider drag or a split in a tab opened from one never rewrites the vault, which is why UI state stays out of it (D-030). An older Flint refuses a vault with the new table ("written by a newer Flint", as after every migration), so every machine on that vault updates; the self-update carries it. Application use cases
+  save, rename, delete and list workspaces; the GUI's RPC calls them. Opening a workspace
+  switches to the tab already opened from it, or opens a new tab in its layout with every
+  place connecting; a place whose host was deleted opens as an empty pane. *Save as
+  workspace* reads the tab's layout, tracks and hosts. No CLI command in v19; vault export
+  and import carry the table.
+- **Restore** (75, per machine, D-030). `ui-state.json` keeps, per vault (keyed by the hash
+  of its salt, as the collapsed groups are), the open tabs in order: each tab's kind, layout,
+  tracks and places (host ids, or empty), and the active tab. Only opaque ids, never a name
+  (Principle 5). It is written, debounced, when a tab opens, closes, splits or changes
+  layout. At start, once that vault is unlocked, the tabs come back and their panes connect
+  as a workspace's do; a deleted host's place is an empty pane. Locking keeps sessions
+  running (D-042), so restore runs only at a start. A setting (*Reopen tabs at start*, on by
+  default) turns it off. The shape of a tab (layout, tracks, places) is one type shared by
+  74 and 75.
 
-Contracts (v17's, plus):
-- **A tunnel never reads *listening* while its port refuses a connection.**
-- **One refused token makes one attempt per machine until the person acts** in the app (a
-  restart, a *Sync now*, a new token); the CLI tries once per command that changes it.
-- **The server's API does not change:** same routes, same codes; only its log says more.
+Contracts (v18's, plus):
+- **A split never connects a host the person did not choose**: an empty pane holds no
+  session until a host is picked.
+- **Broadcast never starts by itself**: off on every new, opened or restored tab; nothing
+  stores it.
+- **A broadcast key reaches each pane encoded for that pane's own terminal.**
+- **What restore keeps on disk is ids and layout only**; a workspace's name lives inside the
+  vault.
+- **The vault's format changes by one appended migration** (74); the socket, the CLI and
+  the server's API do not change.
 
 ## Principles
 
 Checkable rules. Every milestone is checked against them before it is closed. Rules marked
-**(owner review)** stop `lean-build` for the owner whenever a diff touches them. v17's, unchanged.
+**(owner review)** stop `lean-build` for the owner whenever a diff touches them. v18's, plus 22 (broadcast).
 
 1. The domain and application layers import no adapter and no I/O module (`ext:webui`,
    `ext:db/sqlite`, sockets, HTTP, keychain, files).
@@ -213,26 +228,38 @@ Checkable rules. Every milestone is checked against them before it is closed. Ru
     no entry for its id; a core message's `params` carry only what its English `message`
     already shows (Principle 6 unchanged).
 
+22. **(owner review)** Input reaches a pane other than the focused one only while broadcast
+    is on for that tab, shown on every receiving pane and in the tab's bar. No workspace,
+    restore, start or setting turns broadcast on, and it is never saved.
+
 ## Milestones
 
 Each milestone is built **whole** with `lean-build` and verified by the agent, sized to fit
 one session; each commits per area so a cut session resumes from `git log`. Owner checks
 happen only where a human is required (see `CLAUDE.md`). Progress is recorded in
-`docs/build-log.md`, not here. Numbering continues from v17.
+`docs/build-log.md`, not here. Numbering continues from v18. The new screens come from a
+Claude Design run (designs 28) before 72's plan.
 
 | # | Milestone | Delivers |
 |---|---|---|
-| 70 | **A tunnel that says what it is** | First the reproduction on `Windows11-Flint-SSH` (a host whose first connect times out, then Retry, then `netstat`), with `diag:` lines if it does not show at once (CLAUDE.md rule 9); `states()` reports a listener that is closed, has no socket or whose session is lost as down; `listen()` checks that its port answers once bound and fails with the reason otherwise; the cause found by the reproduction fixed; `danger` and `warn` states wrap (`white-space: normal`, `overflow-wrap: anywhere`, the icon at the first line) and carry `title` in the Tunnels view and the toolbar's menu. Verified: `cfire test` of the adapter (a listener closed under it reads down; a bind that does not answer fails); the reproduction on the Windows VM passes after the fix, `netstat` showing the port whenever the row says *listening*; gui-e2e of a long tunnel error read whole in a narrow pane; docs (Tunnels: what *listening* means, a tunnel that did not start) |
-| 71 | **A remote vault that stops on a refused token** | The sync clock's *refused* state and `sync_due` honouring it; the app not syncing a refused vault on its own, *Sync now*, *Replace token* and a restart trying again (the CLI unchanged: one attempt per command that changes the vault); the vault's status in the page saying it is refused, with its two actions; the 401 and 429 messages through core ids in both catalogs; the self-host guide: how the server counts a client (a public address: a home, an office or a VPN with masquerade is one client), Docker Swarm's ingress mesh and `FLINT_VAULT_TRUST_PROXY=1` behind a proxy, the path through a proxy to a published port (Nginx Proxy Manager → Dokploy), reading the client in the server's log, a published port open on the LAN (the token in plain HTTP, a forgeable `X-Forwarded-For`: publish it to the proxy alone where the host allows it), and a local DNS name so machines on the LAN count apart; a `500`'s cause in the server's log; a damaged `head.json` skipped and logged; `flint-vault-server delete <id>` asking first; the *Connect to a remote vault* hint in one span. Verified: `cfire test` of `sync_due` (refused: no automatic reason syncs, *now* does) and of the server (a 500's note, a damaged head skipped, delete); sync-e2e: a wrong token makes one request and then none for several intervals, *Sync now* makes one more, a new token resumes; server-e2e of `delete`; cli-e2e of the messages; docs (Self-host a remote vault; the CLI reference of `delete`; the remote vault page: a refused vault; the CLI demo if it shows a refusal) |
+| 72 | **Split with another host** | The store's empty pane; `split()` and the layouts opening empty panes; the empty pane's picker (the focused pane's host first and preselected, recent hosts, search), ↵ or a click connecting it, Esc and ⌘W closing it; the Split menu, the toolbar's Split button and the palette's actions saying what they open; ⇧⌘↵ in the palette unchanged; an RDP host in the picker as the open question below settles. Verified: vitest of the store (a split adds an empty pane, a layout on one pane adds empty ones, connecting one turns it into a session, closing one leaves the others); gui-e2e: ⌘D then ↵ connects the same host as before, ⌘D then a typed host connects another, a 2 × 2 from one pane connected place by place, Esc closes an empty pane, an empty pane makes no `session_open`; gui-e2e's existing split steps updated; docs (the desktop app guide's split panes; keyboard shortcuts); the landing's split section if its wording changes |
+| 73 | **Broadcast input** | The per-tab broadcast set and its toggle (per pane, all panes, stop), with a shortcut chosen at plan; keys handed to each receiving terminal to encode; text paste through each pane's own paste path, image and file paste to the focused pane only; lost, reconnecting, empty and RDP panes excluded; the border on each receiving pane and the *Typing into N panes* bar; nothing of it saved. Verified: vitest of the broadcast set (off on a new tab, a pane that drops leaves it, never in a saved shape); gui-e2e on macOS, Linux and the Windows VM: one pane in Kitty mode and one plain shell, Shift+Enter and a Ctrl chord typed once reach each as its own encoding (checked on the remote side), a pasted line arrives once in each, an image paste reaches the focused pane only; docs (the desktop app guide: broadcast, its warning; keyboard shortcuts); the landing if the owner wants it there |
+| 74 | **Workspaces** | The `workspaces` table by an appended migration and its record merge; save, rename, delete and list use cases and their RPC; *Save as workspace* and *Update workspace* on a tab (only these write the vault, never a drag or a split), a workspace made from scratch (a name, a layout and a host per place), opening one (switch to its tab or open it, a deleted host's place empty), the workspaces in the side rail. Verified: `cfire test` of the migration, the use cases and the merge (a workspace added on two machines merges; a deleted host leaves an empty place); vitest of the tab shape; sync-e2e: a workspace saved on one client opens on the other; gui-e2e: save a 2 × 2 of hosts, quit, open it, every pane connects; a second open switches to its tab; docs (a Workspaces guide; the vault format reference: the new table); the landing (workspaces as a headline feature, in the split section or its own) |
+| 75 | **Restore open sessions** | The tabs of each vault in `ui-state.json` (ids and layout only), written debounced; restore after the vault's unlock at start, panes connecting, a deleted host's place empty, RDP tabs coming back as tabs; *Reopen tabs at start* in Settings, on by default. Verified: vitest of the restore state (written on a split, a close, a layout change; ids only; a damaged file falls back to no tabs); gui-e2e: open two tabs (one split in a grid), quit, start, unlock, the same tabs and layout come back connected; with the setting off nothing comes back; `ui-state.json` read back holding no host name; docs (the desktop app guide: restore and its setting) |
 
 ## Open questions
 
-Settled with the owner on 2026-11-24 (D-146): two milestones of one session each, before
-signing; a refused vault resumes by hand or at a restart, never on a timer. Open, to settle
-at each milestone's plan:
+Settled with the owner on 2026-11-26 (D-149): ⌘D and ⇧⌘D open an empty pane with the
+current host preselected; workspaces live in the vault; broadcast stays inside one tab and
+never turns on by itself; restored tabs connect on their own, with a setting to turn it off.
+Open, to settle at each milestone's plan:
 
-- **What left the tunnel without its port** (70): a stale listener after the Retry, a bind
-  that failed silently, or something else; the reproduction decides whether a periodic
-  check while it is on earns its place.
-- **What counts as "refused"** (71): only a 401 from the server, or also a 429 during a
-  lockout (likely not: a 429 says to wait, and the back-off already does).
+- **An RDP host chosen in an empty pane** (72): left out of the picker, or listed as opening
+  in a tab of its own (the empty pane then stays).
+- **How a key is handed to another terminal** (73): the keydown re-dispatched to each
+  terminal, or an xterm.js API; a test with Kitty mode on one pane decides.
+- **Where workspaces sit in the side rail** (74): the design brief left room above Keys; the
+  design run decides how many show and how the rest are reached.
+- **A restored tab whose vault is not the one unlocked** (75): restore runs per vault, at
+  that vault's first unlock after a start; whether opening a second vault later also
+  restores its tabs.
