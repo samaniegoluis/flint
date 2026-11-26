@@ -372,7 +372,8 @@
         const wn = await waitFor(() => q('[data-whats-new]'), "What's new at the first unlock after an update", 30000);
         await check(wn.dataset.whatsNew.split(',').includes('0.16.0') && !wn.dataset.whatsNew.split(',').includes('0.15.0'), `What's new shows the versions since the last one run (${wn.dataset.whatsNew})`);
         await check(hasText('since your 0.15.0'), "What's new names the version the person had");
-        await check((await window.backend.settings_get({})).last_seen_version === VERSION, 'this version is recorded as seen');
+        const seen = (await window.backend.settings_get({})).last_seen_version;
+        await check(seen === VERSION, `this version is recorded as seen (${seen} vs ${VERSION})`);
         await click('.modal.wn .btn-primary', 'Close');
         await waitFor(() => !q('[data-whats-new]'), "What's new closed");
       }
