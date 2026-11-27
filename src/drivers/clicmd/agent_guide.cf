@@ -1,0 +1,179 @@
+package clicmd
+
+// `flint agent-guide` (milestone 77, D-153): the CLI's long-form guide for the person's
+// AI agents, in Markdown. Two parts: how to work with Flint, written by hand, and the
+// reference, generated from the command table (commands_table.cf). The docs site
+// publishes the same text (`scripts/agent-guide-docs.sh`).
+//
+// The hand-written lines are kept as arrays: a double-quoted string cannot span lines
+// (CF-214) and a raw string cannot hold a backtick. A change to a command's behaviour,
+// its approval or grant flow, or its exit codes checks them (CLAUDE.md rule 5).
+
+import "core:json"
+
+fn md_lines(lines: []str) -> str {
+    mut s := ""
+    for l in lines {
+        s = s + l + "\n"
+    }
+    return s
+}
+
+fn guide_intro() -> []str {
+    return [
+        "# Flint for AI agents",
+        "",
+        "Flint is the person's SSH client. Its `flint` CLI reaches their servers by alias through one encrypted vault: Flint logs in, and you get the output and the exit code. Passwords, keys and passphrases stay inside Flint. No command prints one, and you never need one.",
+        "",
+        "This guide is printed by `flint agent-guide` and always matches the installed `flint`. It has two parts: how to work with Flint, then the reference, generated from the CLI's own command table.",
+        "",
+    ]
+}
+
+fn guide_rhythm() -> []str {
+    return [
+        "## How to work with Flint",
+        "",
+        "1. **Status first.** Run `flint --json vault status` before anything else. `unlocked` says whether Flint holds the vault open; when it is `false`, your first command asks the person to unlock it.",
+        "2. **Prefer `--json`.** Data goes to stdout, a Flint error is one JSON object on stderr with nothing on stdout. Read the exit code, not the text.",
+        "3. **List, then act.** `flint --json host list` gives the aliases. Never guess one, never run `ssh` directly, never read `~/.ssh` or the vault file.",
+        "4. **Never ask for a password, key or passphrase in the chat**, and never pass one as an argument. Flint asks the person in its own window or terminal. When Flint lacks a secret it needs, tell the person to set it in Flint.",
+        "5. **Wait for the person.** The first command from your program opens Flint's approval window, and a locked vault its unlock screen. The command waits up to the approval wait the person chose (2, 5, 10 or 30 minutes); with `--json` it waits silently. If your tool cuts commands sooner, run `flint` in the background and check on it. Never start a second copy meanwhile.",
+        "6. **Never retry in a loop.** 15 `denied` is a no: ask before trying again. 16 `approval_timeout` means nobody was there: one retry, then ask. 5 `locked`: run `flint vault unlock` (it waits for the person), then retry once. 11 `host_key`: stop and ask the person to check the server's key.",
+        "7. **Quote the remote command as one word.** Everything after `--` is joined with spaces and parsed by the remote shell, as with `ssh`: `flint --json exec web-01 -- 'cd /var/log && tail -n 50 syslog'`. The command gets no terminal and its stdin is closed, so use non-interactive flags (`apt-get -y`, `--no-pager`). For a long job pass `--exec-timeout <secs>` (default 600).",
+        "8. **Copy files with `flint cp`**, never `exec cat` or a heredoc. Exit 20 `exists`: the file is there; ask before passing `--force`.",
+        "9. **Reach a service inside a server with a saved tunnel:** `flint --json tunnel ls`, then `flint --json tunnel up <host>:<name>` and connect to its `listen` address; `flint tunnel down <host>:<name>` when done. Never add or change tunnels without asking.",
+        "10. **Root only through `--sudo`:** `flint --json exec <alias> --sudo -- <command> [args]`, the arguments as separate words, not one quoted string. The person approves each command in Flint (or gives a few minutes of root on that one host) and Flint types the sudo password; you never see it.",
+        "11. **Change the vault only when asked.** Adding, editing or removing hosts, keys, credentials, groups, tunnels or tokens needs a `write` grant and the person's say. Never create a token for yourself.",
+        "",
+    ]
+}
+
+fn guide_reference_intro() -> []str {
+    return [
+        "## Reference",
+        "",
+        "Usage: `flint [--json] [--vault <name|path>] <command> [args] [flags]`. Flags go anywhere before `--`.",
+        "",
+        "### Global flags",
+        "",
+    ]
+}
+
+fn guide_grants() -> []str {
+    return [
+        "### Grants and approval",
+        "",
+        "With Flint open and the vault unlocked there, every command runs through Flint and needs no master password. A program Flint has not seen asks the person once in Flint's window, which shows the program and what started it. They allow it for some time (until the vault locks at most) and choose what the grant covers:",
+        "",
+        "- `read`: list, show and status commands.",
+        "- `exec`: `connect`, `exec`, `cp`, `host test`, `tunnel up` and `tunnel down`, on the hosts or groups they pick (`cp` between two hosts needs both).",
+        "- `write`: commands that change the vault.",
+        "",
+        "Locking the vault ends every grant. While Flint waits for the person, the command waits; it fails with 15 `denied` when they refuse or the grant does not cover the command, and with 16 `approval_timeout` when nobody answers in time.",
+        "",
+        "A program nobody can be asked about (cron, launchd, CI on this machine) uses a token from `flint token create`, passed in the `FLINT_TOKEN` environment variable. With a token Flint never asks: the request runs if the token covers it, else it fails at once with `denied`. The person approves every token in Flint, and no grant covers `token create`.",
+        "",
+        "### `exec --sudo` and root periods",
+        "",
+        "`flint exec <alias> --sudo -- <command> [args]` runs one command as root. No grant or token covers it: Flint's window shows the exact arguments and the person confirms each command with Touch ID, polkit or the master password. Flint runs `sudo` with each argument quoted as one word, never through a shell, so pass pipes on purpose: `--sudo -- sh -c 'journalctl -u nginx | tail -n 50'`. Flint types the host's sudo password itself and leaves no cached sudo session.",
+        "",
+        "A **root period** is the one exception: when the person turned on *Allow sudo for a while* in Settings, the root window offers 2, 5 or 15 minutes of root for your program on that one host. Inside it, `--sudo` on that host runs without a window, and every command shows in the person's notice. A period never covers another host, a group, a plain `exec` or another program. Exit 17 `not_sudoer` or 18 `sudo_password`: tell the person.",
+        "",
+        "`--sudo` needs Flint open with the vault unlocked; otherwise it fails with `locked`.",
+        "",
+        "### `cp`",
+        "",
+        "`flint cp` copies a file, or a folder with `-r`, to a host (`<local> <alias>:<path>`), from a host (`<alias>:<path> <local>`), or between two hosts (`<alias>:<path> <alias>:<path>`, through this machine). `<alias>:` alone is the login folder. An existing file is never replaced without `--force`. With `--json` it prints `\{host, to_host, direction, files, folders, bytes, skipped, duration_ms\}`.",
+        "",
+        "### Output",
+        "",
+        "With `--json` a command prints one JSON document on stdout: an object, or an array for `list` commands. `exec` prints `\{host, exit_code, signal, stdout, stderr, duration_ms\}` and exits with the remote status (255 for a signal). A Flint error prints nothing on stdout and one object on stderr, `\{\"error\":\{\"code\":\"not_found\",\"message\":\"no host 'web-02'\"\}\}`, sometimes with a stable `id` and its `params`. So a remote `exit 3` and a `not_found` error both exit 3: tell them apart by stdout.",
+        "",
+        "No output ever holds a secret: hosts report `has_password`, keys `has_passphrase`.",
+        "",
+    ]
+}
+
+fn guide_skill_note() -> []str {
+    return [
+        "## Keep this guide at hand",
+        "",
+        "Offer the person, once, to turn this guide into a skill, or into the instructions file your tool reads, so you know Flint in later sessions. If they agree, write it in your own tool's format and keep it short: a summary of *How to work with Flint* and the line \"Run `flint agent-guide` for the commands, flags and exit codes.\" Do not copy the reference into it: Flint's updates change it, and `flint agent-guide` always matches the installed `flint`. Flint installs nothing in your tool's folders.",
+    ]
+}
+
+// "the person's grant must give `read`", in the words the reference uses.
+fn grant_text(grant: str) -> str {
+    if grant == ACCESS_SUDO {
+        return "Through Flint only: the person approves each command, or a root period covers it."
+    }
+    if grant == ACCESS_TOKEN {
+        return "Through Flint only: the person approves each token."
+    }
+    if grant.len() > 0 {
+        return "Grant: `{grant}`."
+    }
+    return ""
+}
+
+fn guide_commands() -> str {
+    mut s := ""
+    table := command_table()
+    for g in command_groups() {
+        s = s + "#### {g}\n\n"
+        for c in table {
+            if c.group != g {
+                continue
+            }
+            s = s + "- `flint {c.synopsis}`  \n  {c.summary}"
+            gt := grant_text(c.grant)
+            if gt.len() > 0 {
+                s = s + " " + gt
+            }
+            s = s + "  \n  Example: `{c.example}`\n"
+        }
+        s = s + "\n"
+    }
+    return s
+}
+
+fn guide_global_flags() -> str {
+    mut s := ""
+    for f in global_flags() {
+        s = s + "- `{f.flag}`: {f.meaning}\n"
+    }
+    return s + "\n"
+}
+
+fn guide_exit_codes() -> str {
+    mut s := "### Exit codes\n\n0 is success. The codes are stable; scripts rely on them.\n\n| Exit | Code | Meaning and what to do |\n|---|---|---|\n"
+    for e in exit_code_docs() {
+        s = s + "| {e.exit} | `{e.code}` | {e.meaning} |\n"
+    }
+    return s + "\n"
+}
+
+// The whole guide, as `flint agent-guide` prints it.
+fn agent_guide_text() -> str {
+    return md_lines(guide_intro()) + md_lines(guide_rhythm()) + md_lines(guide_reference_intro()) + guide_global_flags() + "### Commands\n\n" + guide_commands() + md_lines(guide_grants()) + guide_exit_codes() + md_lines(guide_skill_note())
+}
+
+type AgentGuideJson struct {
+    markdown:   str           `json:"markdown"`
+    commands:   []CommandDoc  `json:"commands"`
+    exit_codes: []ExitCodeDoc `json:"exit_codes"`
+}
+
+// `flint agent-guide`: no vault, no socket, nothing asked.
+fn cmd_agent_guide(p: ParsedArgs, as_json: bool) -> void! {
+    try p.allow_flags("agent-guide", [])
+    if p.positionals.len() != 1 {
+        return error(coded(ERR_USAGE, "usage: flint agent-guide"))
+    }
+    if as_json {
+        say(json.stringify(AgentGuideJson{ markdown: agent_guide_text(), commands: command_table(), exit_codes: exit_code_docs() }))
+        return
+    }
+    write_stdout(agent_guide_text())
+}

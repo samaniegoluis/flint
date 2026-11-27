@@ -1,0 +1,149 @@
+package clicmd
+
+// The CLI's command table (milestone 77): every `flint` command with its synopsis, what
+// it does, the grant it needs when it runs through Flint, and an example. `flint
+// agent-guide` prints its reference from this table; the tests in agent_guide_test.cf
+// keep it in step with `usage_text()`, the parser's flags and the grants the socket
+// asks for (`access_need`, `servable`), so the guide cannot drift from the CLI.
+
+// One command. `verb` is empty for the commands that take a host alias next
+// (`connect`, `exec`, `cp`) and for `agent-guide`. `grant` is the access a program's
+// grant must give when the command runs through Flint (domain's ACCESS_*), or empty
+// when the command never goes through a grant.
+type CommandDoc struct {
+    group:    str `json:"group"`
+    noun:     str `json:"noun"`
+    verb:     str `json:"verb"`
+    synopsis: str `json:"synopsis"`
+    summary:  str `json:"summary"`
+    grant:    str `json:"grant"`
+    example:  str `json:"example"`
+}
+
+fn command_doc(group: str, noun: str, verb: str, synopsis: str, summary: str, grant: str, example: str) -> CommandDoc {
+    return CommandDoc{ group: group, noun: noun, verb: verb, synopsis: synopsis, summary: summary, grant: grant, example: example }
+}
+
+// The groups, in the order the guide prints them.
+fn command_groups() -> []str {
+    return ["Vaults", "Groups", "Hosts", "Keys", "Credentials", "SSH", "Files", "Tunnels", "Tokens", "Agents"]
+}
+
+fn command_table() -> []CommandDoc {
+    return [
+        command_doc("Vaults", "vault", "create", "vault create <path> [--name <name>]", "Create a vault; asks the person for a master password.", "", "flint vault create ~/work.flint --name Work"),
+        command_doc("Vaults", "vault", "open", "vault open <path>", "Open an existing vault file and make it the current one.", "", "flint vault open ~/work.flint"),
+        command_doc("Vaults", "vault", "list", "vault list", "The recent vaults; `current` marks the one commands use.", "", "flint --json vault list"),
+        command_doc("Vaults", "vault", "use", "vault use <name|path>", "Make a recent vault the current one.", "", "flint vault use Work"),
+        command_doc("Vaults", "vault", "status", "vault status", "The vault's path, whether it is unlocked in Flint (and why not), its counts and its sync state. Run it first.", "read", "flint --json vault status"),
+        command_doc("Vaults", "vault", "unlock", "vault unlock", "Ask Flint to unlock the vault, and wait for the person to do it, up to the approval wait.", "", "flint vault unlock"),
+        command_doc("Vaults", "vault", "lock", "vault lock", "Lock the vault in Flint and remove its remembered key. Ends every grant.", "", "flint vault lock"),
+        command_doc("Vaults", "vault", "rename", "vault rename <new-name>", "Rename the vault; its file is not moved.", "write", "flint vault rename Personal"),
+        command_doc("Vaults", "vault", "passwd", "vault passwd [--new-master-stdin]", "Change the master password; asks for the old and the new one.", "", "flint vault passwd"),
+        command_doc("Vaults", "vault", "merge", "vault merge <copy.flint>", "Merge a conflict copy of the vault into it, record by record.", "", "flint vault merge ~/work.conflict-1.flint"),
+        command_doc("Vaults", "vault", "connect", "vault connect <url> [--label <text>] [--token-stdin]", "Keep the vault in step with a flint-vault-server; asks for its token and the master password. The label is shown in the server's list, in clear.", "", "flint vault connect https://vault.example.com --label laptop"),
+        command_doc("Vaults", "vault", "connect", "vault connect <url> --list", "The vaults the server keeps: id, label, version.", "", "flint --json vault connect https://vault.example.com --list"),
+        command_doc("Vaults", "vault", "connect", "vault connect <url> --to <path> [--id <id>]", "Download a vault from the server to a new file here (`--id` when the server keeps several).", "", "flint vault connect https://vault.example.com --to ~/work.flint"),
+        command_doc("Vaults", "vault", "sync", "vault sync [--new-master-stdin]", "Sync now with the vault's server; Flint also syncs on its own.", "write", "flint --json vault sync"),
+        command_doc("Vaults", "vault", "token", "vault token [--token-stdin]", "Replace the server's token after it was rotated.", "", "flint vault token"),
+        command_doc("Vaults", "vault", "disconnect", "vault disconnect", "Stop syncing on this machine; the file stays.", "", "flint vault disconnect"),
+        command_doc("Vaults", "vault", "forget", "vault forget <name|path>", "Drop a vault from the recent list; the file stays.", "", "flint vault forget Work"),
+        command_doc("Groups", "group", "add", "group add <path>", "Create a group, for example homelab/proxmox.", "write", "flint group add homelab/proxmox"),
+        command_doc("Groups", "group", "list", "group list", "Every group with its host and subgroup counts.", "read", "flint --json group list"),
+        command_doc("Groups", "group", "rename", "group rename <path> <new-name>", "Rename a group; its hosts follow.", "write", "flint group rename homelab/proxmox pve"),
+        command_doc("Groups", "group", "rm", "group rm <path>", "Remove a group.", "write", "flint group rm homelab/pve"),
+        command_doc("Hosts", "host", "add", "host add <alias> --hostname <host> [--port N] [--user U] [--label L] [--group <path>] [--tag T]... [--color #rrggbb] [--notes N] [--jump <alias>] [--cred <name>] [--key <name>] [--password | --password-stdin] [--command <cmd> [--no-keep-shell]] [--sudo-password | --sudo-password-stdin]", "Add an SSH host. `--command` runs on connect, then a login shell (`--no-keep-shell` ends the session there); the sudo password defaults to the login one.", "write", "flint host add web-01 --hostname 10.0.0.5 --user deploy --group prod"),
+        command_doc("Hosts", "host", "add", "host add <alias> --type rdp --hostname <host> [--port N] [--user U] [--domain D] [--password | --password-stdin | --cred <name>] [--audio local|remote|off] [--microphone]", "Add a remote desktop host (port 3389); it opens in the desktop app only.", "write", "flint host add win-01 --type rdp --hostname 10.0.0.9 --user admin"),
+        command_doc("Hosts", "host", "edit", "host edit <alias> [the add flags] [--alias <new>] [--no-tags] [--no-password] [--no-sudo-password] [--command \"\"] [--keep-shell] [--no-microphone]", "Change a host; only the flags given change.", "write", "flint host edit web-01 --tag nginx"),
+        command_doc("Hosts", "host", "list", "host list [--group <path>] [--tag <tag>]", "Every host: alias, type, hostname, user, group, tags. Never a secret.", "read", "flint --json host list"),
+        command_doc("Hosts", "host", "show", "host show <alias>", "One host, with `has_password` and `has_sudo_password` in place of the passwords.", "read", "flint --json host show web-01"),
+        command_doc("Hosts", "host", "rm", "host rm <alias>", "Remove a host.", "write", "flint host rm web-01"),
+        command_doc("Hosts", "host", "test", "host test <alias> [--timeout <secs>] [--accept-new-host-key]", "Connect, verify the host key, log in and hang up.", "exec", "flint --json host test web-01"),
+        command_doc("Keys", "key", "add", "key add <name> (--file <path> | --key-stdin) [--passphrase | --passphrase-stdin]", "Import a private key into the vault.", "write", "flint key add deploy --file ~/.ssh/id_ed25519"),
+        command_doc("Keys", "key", "list", "key list", "Every key: name, type, fingerprint, whether it has a passphrase.", "read", "flint --json key list"),
+        command_doc("Keys", "key", "show", "key show <name>", "One key, with its public key. Never the private key.", "read", "flint --json key show deploy"),
+        command_doc("Keys", "key", "rename", "key rename <name> <new-name>", "Rename a key; hosts that use it follow.", "write", "flint key rename deploy deploy-2026"),
+        command_doc("Keys", "key", "rm", "key rm <name>", "Remove a key.", "write", "flint key rm deploy-2026"),
+        command_doc("Credentials", "cred", "add", "cred add <name> --user <user> [--key <name>] [--password | --password-stdin]", "A user, key and password shared by several hosts.", "write", "flint cred add ops --user ops --key deploy"),
+        command_doc("Credentials", "cred", "edit", "cred edit <name> [--name N] [--user U] [--key K] [--password | --password-stdin | --no-password]", "Change a credential.", "write", "flint cred edit ops --user operator"),
+        command_doc("Credentials", "cred", "list", "cred list", "Every credential: name, user, key, whether it has a password.", "read", "flint --json cred list"),
+        command_doc("Credentials", "cred", "show", "cred show <name>", "One credential, with `has_password` in place of the password.", "read", "flint --json cred show ops"),
+        command_doc("Credentials", "cred", "rm", "cred rm <name>", "Remove a credential.", "write", "flint cred rm ops"),
+        command_doc("SSH", "connect", "", "connect <alias> [--timeout <secs>] [--accept-new-host-key] [--no-command]", "An interactive shell, through jump hosts; for a person at a terminal, not for an agent.", "exec", "flint connect web-01"),
+        command_doc("SSH", "exec", "", "exec <alias> [--timeout <secs>] [--exec-timeout <secs>] [--accept-new-host-key] -- <command>", "Run one command; exits with its status. `--timeout` is the connect deadline, `--exec-timeout` the command's (default 600 s).", "exec", "flint --json exec web-01 -- 'systemctl is-active nginx'"),
+        command_doc("SSH", "exec", "", "exec <alias> --sudo -- <command> [args]", "Run it as root: Flint asks the person in its window for each one (or inside a root period they gave) and types the sudo password itself. Needs Flint open.", "sudo", "flint --json exec web-01 --sudo -- systemctl restart nginx"),
+        command_doc("SSH", "known-host", "list", "known-host list", "The server keys Flint has recorded.", "read", "flint --json known-host list"),
+        command_doc("SSH", "known-host", "rm", "known-host rm <alias|address>", "Forget a server's recorded key.", "write", "flint known-host rm web-01"),
+        command_doc("Files", "cp", "", "cp [-r | --recursive] [--force] <local path> <alias>:<path>", "Copy to the host, into `<path>` when it is a folder; `-r` for a folder.", "exec", "flint --json cp ./app.conf web-01:/etc/app/"),
+        command_doc("Files", "cp", "", "cp [-r | --recursive] [--force] <alias>:<path> <local path>", "Copy from the host; an existing file here needs `--force`. `<alias>:` alone is the login folder.", "exec", "flint --json cp web-01:/var/log/app.log ./"),
+        command_doc("Files", "cp", "", "cp [-r | --recursive] [--force] <alias>:<path> <alias>:<path>", "Copy from one host to another through this machine; no key or password goes to a host. The grant must reach both.", "exec", "flint --json cp web-01:/srv/dump.sql db-01:/tmp/"),
+        command_doc("Tunnels", "tunnel", "add", "tunnel add <host> <name> --local <port> [--to <host:port>] [--open-on-connect]", "Save a local forward in a host: 127.0.0.1:<port> here reaches `<host:port>` as the host sees it (default localhost:<port>).", "write", "flint tunnel add db-01 postgres --local 15432 --to localhost:5432"),
+        command_doc("Tunnels", "tunnel", "edit", "tunnel edit <host>:<name> [--name N] [--local P] [--to D] [--open-on-connect | --no-open-on-connect]", "Change a saved tunnel.", "write", "flint tunnel edit db-01:postgres --local 25432"),
+        command_doc("Tunnels", "tunnel", "ls", "tunnel ls [<host>]", "The saved tunnels, with `listen` and `state`.", "read", "flint --json tunnel ls"),
+        command_doc("Tunnels", "tunnel", "rm", "tunnel rm <host>:<name>", "Remove a saved tunnel.", "write", "flint tunnel rm db-01:postgres"),
+        command_doc("Tunnels", "tunnel", "up", "tunnel up <host>:<name> [--timeout <secs>] [--accept-new-host-key]", "Start a saved tunnel in Flint; it keeps running after the command returns. Needs Flint open.", "exec", "flint --json tunnel up db-01:postgres"),
+        command_doc("Tunnels", "tunnel", "down", "tunnel down <host>:<name>", "Stop a running tunnel. Needs Flint open.", "exec", "flint tunnel down db-01:postgres"),
+        command_doc("Tunnels", "tunnel", "status", "tunnel status [<host>:<name>]", "The running tunnels and their state. Needs Flint open.", "read", "flint --json tunnel status"),
+        command_doc("Tokens", "token", "create", "token create --name <name> --allow read,exec[,write] [--hosts <alias,@group,...> | --all] [--ttl 15m|1h|4h|1d|7d|30d|90d]", "A token for a program nobody can be asked about (cron, launchd, CI on this machine). Flint asks the person to approve it every time; prints the token once (default `--ttl 1d`).", "token", "flint token create --name nightly --allow exec --hosts nas --ttl 30d"),
+        command_doc("Tokens", "token", "list", "token list", "Every token with its status. Never its secret.", "read", "flint --json token list"),
+        command_doc("Tokens", "token", "revoke", "token revoke <id|name>", "End a token at once.", "write", "flint token revoke nightly"),
+        command_doc("Agents", "agent-guide", "", "agent-guide", "This guide, in Markdown (with `--json`: the guide, the commands and the exit codes).", "", "flint agent-guide"),
+    ]
+}
+
+// A global flag, as the guide lists it.
+type FlagDoc struct {
+    flag:    str `json:"flag"`
+    meaning: str `json:"meaning"`
+}
+
+fn global_flags() -> []FlagDoc {
+    return [
+        FlagDoc{ flag: "--json", meaning: "Write JSON to stdout; an error is one JSON object on stderr." },
+        FlagDoc{ flag: "--vault <name|path>", meaning: "Use this vault instead of the current one." },
+        FlagDoc{ flag: "--master-stdin", meaning: "Read the master password from the first line of stdin (for a person's scripts; an agent never has it)." },
+        FlagDoc{ flag: "--version, -V", meaning: "Print the version and the linked libraries." },
+        FlagDoc{ flag: "--help, -h", meaning: "Print the short usage." },
+    ]
+}
+
+// What an exit code means and what an agent does about it, in exit-code order: the
+// first is `internal` (exit 1), then each of `known_error_codes()` after it.
+type ExitCodeDoc struct {
+    exit:    i64 `json:"exit"`
+    code:    str `json:"code"`
+    meaning: str `json:"meaning"`
+}
+
+fn exit_code_doc(code: str, meaning: str) -> ExitCodeDoc {
+    return ExitCodeDoc{ exit: i64(exit_code_for(code)), code: code, meaning: meaning }
+}
+
+fn exit_code_docs() -> []ExitCodeDoc {
+    return [
+        exit_code_doc(ERR_INTERNAL, "An unexpected failure. Report it to the person."),
+        exit_code_doc(ERR_USAGE, "Bad command line: unknown command or flag, a missing argument. Fix the command; see this guide."),
+        exit_code_doc(ERR_NOT_FOUND, "No such vault, host, group, key, credential or tunnel. List them; never guess."),
+        exit_code_doc(ERR_CONFLICT, "Already exists, or still in use."),
+        exit_code_doc(ERR_LOCKED, "Nobody unlocked the vault within the approval wait, or Flint could not start. Run `flint vault unlock` (it waits for the person), then retry once."),
+        exit_code_doc(ERR_WRONG_PASSWORD, "The master password is wrong. Only a person types it."),
+        exit_code_doc(ERR_INVALID, "A value breaks a rule (alias, port, colour, key format)."),
+        exit_code_doc(ERR_UNSUPPORTED, "The vault was written by a newer Flint. Tell the person to update."),
+        exit_code_doc(ERR_KEYCHAIN, "The OS keychain refused (`vault lock`, `vault forget`, `vault connect`). Tell the person."),
+        exit_code_doc(ERR_IO, "The vault or a config file could not be read or written."),
+        exit_code_doc(ERR_HOST_KEY, "A server key is unknown and could not be confirmed, or it changed. Stop and ask the person to check it; never pass `--accept-new-host-key` on your own."),
+        exit_code_doc(ERR_AUTH, "The server accepted no login method in the vault. Tell the person."),
+        exit_code_doc(ERR_NETWORK, "The host could not be reached, or the connection dropped: VPN, address, firewall."),
+        exit_code_doc(ERR_TIMEOUT, "The command ran past `--exec-timeout`, or a server did not answer in time."),
+        exit_code_doc(ERR_DENIED, "The person said no, or the grant or token does not cover this command. Never retry without asking."),
+        exit_code_doc(ERR_APPROVAL_TIMEOUT, "Nobody answered Flint's window within the approval wait. One retry is fair, then ask."),
+        exit_code_doc(ERR_NOT_SUDOER, "`exec --sudo`: the host's login user may not use sudo. Tell the person."),
+        exit_code_doc(ERR_SUDO_PASSWORD, "`exec --sudo`: sudo refused the password Flint typed, or Flint has none for that host. Tell the person."),
+        exit_code_doc(ERR_PERMISSION, "`cp`: the user may not read that file or write in that folder, here or on the host."),
+        exit_code_doc(ERR_EXISTS, "`cp`: the file is already there. Ask before passing `--force`."),
+        exit_code_doc(ERR_NOT_DIR, "`cp`: a path that has to be a folder is a file."),
+        exit_code_doc(ERR_PORT_IN_USE, "`tunnel up`: another program holds that local port. Tell the person."),
+        exit_code_doc(ERR_HOST_TYPE, "A remote desktop host given to something only SSH does (`exec`, `cp`, `host test`, a tunnel)."),
+        exit_code_doc(ERR_REFUSED, "A remote desktop server or a vault server answered and refused."),
+    ]
+}

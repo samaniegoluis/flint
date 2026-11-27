@@ -95,6 +95,23 @@ test('the demo knows every CLI flag', () => {
 	}
 });
 
+test('agent-guide prints the CLI\'s guide, the same text as the docs page (milestone 77)', () => {
+	const w = worldFromSeed(seed);
+	const r = flint(w, 'agent-guide');
+	assert.equal(r.code, 0);
+	assert.equal(r.out[0], '# Flint for AI agents');
+	const page = repo('site/src/content/docs/guides/agent-guide.md');
+	const body = page.slice(page.indexOf('-->\n\n') + 5);
+	assert.equal(r.out.slice(2).join('\n') + '\n', body, 'the demo and the docs page print the same guide');
+	const j = flint(w, 'agent-guide --json');
+	const d = JSON.parse(j.out[0]);
+	assert.deepEqual(Object.keys(d), ['markdown', 'commands', 'exit_codes']);
+	assert.equal(d.exit_codes.length, ERROR_CODES.length);
+	assert.equal(flint(w, 'agent-guide extra').code, 2);
+	assert.equal(flint(w, 'agent-guide --force').code, 2);
+	assert.ok(USAGE.includes('AI agents: run flint agent-guide first'));
+});
+
 // ---- output, as the real CLI prints it -------------------------------------------
 
 test('host list is the CLI table', () => {
@@ -577,7 +594,7 @@ test('the shell tokenizer refuses pipes and keeps quotes', () => {
 
 test('the guide always says what to do, with the exact command', () => {
 	const { s, text } = session();
-	assert.deepEqual(s.guide(), { text: 'Step 1/14 · Every command, on one screen:', command: 'flint help' });
+	assert.deepEqual(s.guide(), { text: 'Step 1/15 · Every command, on one screen:', command: 'flint help' });
 	assert.ok(text().includes('#   flint help'), 'the step hint in the log carries its command');
 	s.submit('flint');
 	assert.equal(s.tourStep, 1, '`flint` alone shows the help, so it completes step 1');

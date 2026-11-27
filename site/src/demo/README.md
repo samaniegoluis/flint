@@ -14,6 +14,7 @@ A simulated `flint` in the browser (D-026). It opens from **Try the CLI** on the
 | `data/seed-vault.json` | The demo vaults (`Demo`, unlocked; `Work`, locked) |
 | `data/remote-fs.json` | The read-only files of the fake Linux |
 | `data/tour.json` | The guided tour's steps |
+| `data/agent-guide.json` | `flint --json agent-guide`, written by `scripts/agent-guide-docs.sh`; never edited by hand |
 
 ## When the CLI changes
 

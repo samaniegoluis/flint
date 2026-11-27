@@ -20,6 +20,9 @@ fn usage_text() -> str {
 
 Usage: flint [--json] [--vault <name|path>] <command> [args] [flags]
 
+AI agents: run flint agent-guide first. It prints the whole CLI, how to wait for the
+person's approval and what each exit code means, in Markdown.
+
 Vaults
   vault create <path> [--name <name>]   Create a vault (asks for a master password)
   vault open <path>                     Open an existing vault and make it current
@@ -119,6 +122,9 @@ Tokens (for programs Flint cannot ask about: cron, launchd, CI on this machine)
                                         Flint asks you to approve it; prints the
                                         token once (default --ttl 1d)
   token list | token revoke <id|name>
+
+Agents
+  agent-guide                           The guide for AI agents, in Markdown
 
 Global flags
   --json            Write JSON to stdout (errors as JSON to stderr)
@@ -256,6 +262,11 @@ fn run_local(p: ParsedArgs, sec: SecretInput, as_json: bool) -> i32! {
 fn run_cli(p: ParsedArgs, args: []str, as_json: bool) -> i32! {
     if wants_help(p) {
         write_stdout(usage_text())
+        return 0
+    }
+    // Milestone 77: static text, no vault and no socket, as `help`.
+    if p.positional(0) == "agent-guide" {
+        try cmd_agent_guide(p, as_json)
         return 0
     }
     try check_command(p)

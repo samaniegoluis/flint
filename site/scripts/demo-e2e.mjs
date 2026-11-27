@@ -61,7 +61,7 @@ try {
 		await dialog.waitFor({ state: 'visible' });
 		check(await page.evaluate(() => document.activeElement?.id === 'cli-demo-input'), 'desktop: the input has focus on open');
 		check((await logText(page)).includes("Welcome to Flint's demo"), 'desktop: the welcome and first step are shown');
-		check((await page.locator('[data-step]').innerText()) === 'Step 1 of 14', 'desktop: the bar shows the tour step');
+		check((await page.locator('[data-step]').innerText()) === 'Step 1 of 15', 'desktop: the bar shows the tour step');
 		check((await page.locator('[data-guide]').innerText()).includes('Every command'), 'desktop: the guide shows the current step');
 		check((await page.locator('.cli-demo__chip--next').innerText()).includes('flint help'), 'desktop: the step command is the highlighted chip');
 		await type(page, 'flint list');
@@ -92,6 +92,8 @@ try {
 		await type(page, 'flint vault status');
 		await type(page, 'flint vault rename "Home Lab"');
 		await type(page, 'flint host list --json');
+		await type(page, 'flint agent-guide');
+		check((await logText(page)).includes('Keep this guide at hand'), 'desktop: agent-guide prints the guide');
 		await type(page, 'flint token create --name nightly --allow exec --hosts nas --ttl 30d');
 		await type(page, 'flint exec web-01 --sudo -- whoami');
 		const all = await logText(page);

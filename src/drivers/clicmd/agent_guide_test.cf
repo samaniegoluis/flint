@@ -1,0 +1,229 @@
+package clicmd
+
+// Milestone 77: the guide's reference cannot drift from the CLI. The command table must
+// name exactly the commands of `usage_text()`, every flag the parser knows, the grant
+// each command really asks for, and the exit codes in the CLI's order; the hand-written
+// part may name only commands that exist.
+
+fn guide_nouns() -> []str {
+    return ["vault", "group", "host", "key", "cred", "connect", "exec", "known-host", "cp", "tunnel", "token", "agent-guide"]
+}
+
+// The commands whose next word is an alias or nothing, not a verb.
+fn verbless_noun(noun: str) -> bool {
+    return noun == "connect" || noun == "exec" || noun == "cp" || noun == "agent-guide"
+}
+
+fn command_key(noun: str, verb: str) -> str {
+    if verb.len() == 0 {
+        return noun
+    }
+    return noun + " " + verb
+}
+
+// "status." -> "status": a word as prose ends it.
+fn strip_punct(w: str) -> str {
+    mut s := w
+    for s.len() > 0 && (s.ends_with(".") || s.ends_with(",") || s.ends_with(":") || s.ends_with(";") || s.ends_with(")")) {
+        s = s[..s.len() - 1]
+    }
+    return s
+}
+
+fn words_of(text: str) -> []str {
+    mut ws: []str = []
+    for w in text.split(" ") {
+        if w.len() > 0 {
+            ws.push(w)
+        }
+    }
+    return ws
+}
+
+// "noun verb" for every command a line of the usage text names. A command line has
+// exactly two spaces of indent; several commands on one line are split by " | ".
+fn usage_commands() -> []str {
+    mut keys: []str = []
+    for line in usage_text().split("\n") {
+        if line.len() < 3 || !line.starts_with("  ") || line[2..3] == " " {
+            continue
+        }
+        for seg in line.split(" | ") {
+            ws := words_of(seg)
+            if ws.len() == 0 || !list_has(guide_nouns(), ws[0]) {
+                continue
+            }
+            mut verb := ""
+            if !verbless_noun(ws[0]) && ws.len() > 1 {
+                verb = ws[1]
+            }
+            k := command_key(ws[0], verb)
+            if !list_has(keys, k) {
+                keys.push(k)
+            }
+        }
+    }
+    return keys
+}
+
+fn table_commands() -> []str {
+    mut keys: []str = []
+    for c in command_table() {
+        k := command_key(c.noun, c.verb)
+        if !list_has(keys, k) {
+            keys.push(k)
+        }
+    }
+    return keys
+}
+
+fn is_flag_char(c: str) -> bool {
+    return c == "-" || (c >= "a" && c <= "z") || (c >= "A" && c <= "Z") || (c >= "0" && c <= "9")
+}
+
+// Whether `tok` appears in `text` as a whole word (no flag character on either side).
+fn has_token(text: str, tok: str) -> bool {
+    mut from: usize = 0
+    for from + tok.len() <= text.len() {
+        rest := text[from..]
+        at := rest.index_of(tok) or {
+            return false
+        }
+        start := from + at
+        end := start + tok.len()
+        before_ok := start == 0 || !is_flag_char(text[start - 1..start])
+        after_ok := end == text.len() || !is_flag_char(text[end..end + 1])
+        if before_ok && after_ok {
+            return true
+        }
+        from = start + 1
+    }
+    return false
+}
+
+test "the command table names exactly the commands of the usage text" {
+    usage := usage_commands()
+    table := table_commands()
+    assert(usage.len() > 40)
+    for k in usage {
+        if !list_has(table, k) {
+            print("in usage_text, not in command_table: {k}")
+        }
+        assert(list_has(table, k))
+    }
+    for k in table {
+        if !list_has(usage, k) {
+            print("in command_table, not in usage_text: {k}")
+        }
+        assert(list_has(usage, k))
+    }
+}
+
+test "every group of the table is printed and every command is in the guide" {
+    guide := agent_guide_text()
+    for c in command_table() {
+        assert(list_has(command_groups(), c.group))
+        assert(guide.contains("`flint {c.synopsis}`"))
+        assert(c.example.starts_with("flint "))
+    }
+}
+
+test "every flag the parser knows is in the guide" {
+    guide := agent_guide_text()
+    mut flags: []str = value_flags()
+    for f in bool_flags() {
+        flags.push(f)
+    }
+    for f in flags {
+        if !has_token(guide, f) {
+            print("flag missing from the guide: {f}")
+        }
+        assert(has_token(guide, f))
+    }
+}
+
+test "each command's grant is the one Flint asks for" {
+    for c in command_table() {
+        p := try parse_cli_args(words_of(c.example[6..]))
+        assert_eq(p.positional(0), c.noun)
+        if c.verb.len() > 0 {
+            assert_eq(p.positional(1), c.verb)
+        }
+        through_flint := servable(p) || is_session_command(p)
+        if c.grant.len() == 0 {
+            if through_flint {
+                print("goes through a grant, the table says none: {c.example}")
+            }
+            assert(!through_flint)
+        } else {
+            if !through_flint || access_need(p).action != c.grant {
+                print("grant differs: {c.example} table={c.grant} cli={access_need(p).action}")
+            }
+            assert(through_flint)
+            assert_eq(access_need(p).action, c.grant)
+        }
+    }
+}
+
+test "the guide's exit codes are the CLI's, in order" {
+    docs := exit_code_docs()
+    codes := known_error_codes()
+    assert_eq(docs.len(), codes.len())
+    for i, code in codes {
+        assert_eq(docs[i].code, code)
+        assert_eq(docs[i].exit, i64(i) + 1)
+        assert_eq(i64(exit_code_for(code)), docs[i].exit)
+        assert(docs[i].meaning.len() > 0)
+    }
+    guide := agent_guide_text()
+    for d in docs {
+        assert(guide.contains("| {d.exit} | `{d.code}` |"))
+    }
+}
+
+test "the hand-written part names only commands that exist" {
+    hand := md_lines(guide_intro()) + md_lines(guide_rhythm()) + md_lines(guide_grants()) + md_lines(guide_skill_note())
+    ws := words_of(hand.replace_all("`", " ").replace_all("\n", " "))
+    table := table_commands()
+    mut checked := 0
+    for i, w in ws {
+        if w != "flint" {
+            continue
+        }
+        mut j := i + 1
+        for j < ws.len() && ws[j].starts_with("--") {
+            j += 1
+        }
+        if j >= ws.len() || !list_has(guide_nouns(), ws[j]) {
+            continue
+        }
+        noun := ws[j]
+        if verbless_noun(noun) {
+            checked += 1
+            continue
+        }
+        mut verb := ""
+        if j + 1 < ws.len() {
+            verb = strip_punct(ws[j + 1])
+        }
+        k := command_key(noun, verb)
+        if !list_has(table, k) {
+            print("the hand-written part names a command that does not exist: flint {k}")
+        }
+        assert(list_has(table, k))
+        checked += 1
+    }
+    assert(checked > 10)
+}
+
+test "--help names the guide and agent-guide takes nothing" {
+    assert(usage_text().contains("flint agent-guide"))
+    p := try parse_cli_args(["agent-guide", "extra"])
+    mut bad := ""
+    cmd_agent_guide(p, false) or err { bad = "{err.message()}" }
+    assert_eq(error_code_of(bad), "usage")
+    q := try parse_cli_args(["agent-guide", "--force"])
+    mut flag := ""
+    cmd_agent_guide(q, false) or err { flag = "{err.message()}" }
+    assert_eq(error_code_of(flag), "usage")
+}

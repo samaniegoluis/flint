@@ -8,7 +8,8 @@ flint [--json] [--vault <name|path>] <command> [args] [flags]
 ```
 
 Flags can go anywhere on the line, up to a bare `--`: what follows it is the remote
-command of `flint exec`. `flint help` prints a summary.
+command of `flint exec`. `flint help` prints a summary, and `flint agent-guide` the long
+form for an AI agent.
 
 With the Flint app open and the vault unlocked there, every command on that vault,
 `connect` and `exec` included, runs inside the app and needs no master password.
@@ -205,6 +206,15 @@ password typed for one command. With `--json`, `create` prints `{token, secret}`
 `list` an array of `{id, name, all, groups, hosts, read, exec, write, created_at,
 expires_at, revoked_at, status}` (Unix seconds); no output ever carries a token's hash.
 See [Tokens for scheduled jobs](/guides/ai-agents/#tokens-for-scheduled-jobs).
+
+### Agents
+
+| Command | What it does |
+|---|---|
+| `agent-guide` | Print the guide for AI agents in Markdown: how to work with Flint, then every command, flag and exit code, generated from the CLI's own command table. Needs no vault and asks nothing. With `--json`, `{markdown, commands, exit_codes}` |
+
+`flint --help` names it, so an agent finds it on its own. The same text is
+[The agent guide](/guides/agent-guide/).
 
 ## Secrets
 

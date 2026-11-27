@@ -125,40 +125,27 @@ on at any time. Notices are cleared when the vault locks, which also ends every 
 
 ## Tell your agent about Flint
 
-Paste this into your project's `CLAUDE.md`, `AGENTS.md` or the agent's instructions:
+Flint's CLI carries its own manual for agents. `flint --help` names it, and
+`flint agent-guide` prints it in Markdown: how to work with Flint (status first, wait for
+your approval and never retry in a loop, never ask you for a password), then every
+command, flag and exit code, generated from the CLI's own command table. It always matches
+the installed `flint`, so it never goes stale. Read it as [The agent guide](/guides/agent-guide/).
+
+To have an agent read it from the start, paste this into your project's `CLAUDE.md`,
+`AGENTS.md` or the agent's instructions:
 
 ```md
 ## Servers
 
-This machine reaches servers through Flint. Never ask for, read or use SSH passwords,
-keys or `ssh` directly.
-
-- List hosts: `flint --json host list`
-- Run a command: `flint --json exec <alias> -- '<command>'`. Quote the whole remote
-  command: the remote shell parses it.
-- Long jobs: add `--exec-timeout <secs>` (default 600).
-- Copy files: `flint --json cp ./file <alias>:/path/` or `flint --json cp <alias>:/path ./`,
-  or from one host to another: `flint --json cp <alias>:/path <other>:/path/` (the grant
-  must reach both hosts)
-  (`-r` for a folder). Never `exec cat` or a heredoc. Exit 20 (`exists`): the file is
-  there; ask me before passing `--force`.
-- Reach a service inside a server: `flint --json tunnel ls`, then
-  `flint --json tunnel up <host>:<name>` and connect to its `listen` address; stop it
-  with `flint tunnel down <host>:<name>` when done. Never add or change tunnels without
-  asking me. Exit 22 (`port_in_use`): tell me.
-- `flint` waits for me in Flint (to approve, or to unlock the vault) for up to the
-  approval wait I set; if your tool cuts commands sooner, run `flint` in the background
-  and check on it. Exit 15 (`denied`): I said no; never retry without asking me.
-  16 (`approval_timeout`): I was not there; one retry is fair, then ask me.
-  5 (`locked`): nobody unlocked in time; run `flint vault unlock` (it waits for me),
-  then retry once.
-  11 (`host_key`): ask me to check the server's key. Never pass `--accept-new-host-key`.
-- As root: `flint --json exec <alias> --sudo -- <command> [args]`. I approve each one
-  in Flint, or a few minutes of root on that one host, and Flint types the sudo
-  password; you never see it. Pass the arguments as
-  separate words, not one quoted string. Exit 17 (`not_sudoer`) or 18 (`sudo_password`):
-  tell me.
+This machine reaches servers through Flint. Run `flint agent-guide` before the first
+`flint` command and follow it. Never ask for, read or use SSH passwords, keys or `ssh`
+directly.
 ```
+
+The guide ends by asking the agent to offer you a skill made from it. If you agree, the
+agent writes the skill in its own format, with a short summary and a pointer back to
+`flint agent-guide`, so the skill survives Flint's updates. Flint itself writes nothing
+in your agents' folders.
 
 ## Commands an agent uses
 

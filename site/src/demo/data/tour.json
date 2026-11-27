@@ -141,6 +141,17 @@
 		},
 		{
 			"hint": [
+				"An agent learns the rest from Flint itself: --help points it to the long form,",
+				"every command, flag and exit code, and how to wait for your approval:"
+			],
+			"run": "flint agent-guide",
+			"accept": [
+				"flint agent-guide"
+			],
+			"where": "local"
+		},
+		{
+			"hint": [
 				"A nightly job has nobody to approve it. Give it a token: Flint asks you in its",
 				"window (the demo allows it), then prints the token once, for FLINT_TOKEN:"
 			],

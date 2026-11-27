@@ -5,6 +5,7 @@ import { FlintError, exitCodeFor, fail, failWith } from './errors.ts';
 import { ParsedArgs, parseFlintArgs, parsePort, parseSeconds, wantsJson } from './args.ts';
 import { dash, fields, hostTarget, json, table, yesNo } from './format.ts';
 import { RemoteShell } from './remote.ts';
+import agentGuide from '../data/agent-guide.json' with { type: 'json' };
 import {
 	VaultOps, credView, hostView, keyView, parsePortText, requireSshHost, parseTunnelDestination, serverKeyFor, splitTunnelRef, tokenAllows, tokenReach, tokenStatus, tokenView, utcText,
 	type CredPatch, type Host, type HostPatch, type TokenRequest, type TunnelPatch, type TunnelView, type Vault, type World,
@@ -43,6 +44,9 @@ export type Run = Generator<Ask, Outcome, string>;
 export const USAGE = `flint - SSH client over one encrypted vault
 
 Usage: flint [--json] [--vault <name|path>] <command> [args] [flags]
+
+AI agents: run flint agent-guide first. It prints the whole CLI, how to wait for the
+person's approval and what each exit code means, in Markdown.
 
 Vaults
   vault create <path> [--name <name>]   Create a vault (asks for a master password)
@@ -144,6 +148,9 @@ Tokens (for programs Flint cannot ask about: cron, launchd, CI on this machine)
                                         token once (default --ttl 1d)
   token list | token revoke <id|name>
 
+Agents
+  agent-guide                           The guide for AI agents, in Markdown
+
 Global flags
   --json            Write JSON to stdout (errors as JSON to stderr)
   --vault <v>       Use this vault instead of the current one
@@ -173,6 +180,7 @@ export const COMMANDS: Record<string, string[]> = {
 	exec: [],
 	cp: [],
 	help: [],
+	'agent-guide': [],
 };
 
 /** `host show`'s command line: "herdr (then a login shell)", "… (ends the session)" or "-". */
@@ -213,6 +221,16 @@ function* dispatch(args: string[], world: World, io: Io, asJson: boolean): Run {
 	const noun = p.positional(0);
 	if (!noun || noun === 'help' || p.has('--help') || p.has('-h')) {
 		USAGE.split('\n').forEach((l) => io.out(l));
+		return { code: 0 };
+	}
+	// cmd_agent_guide (src/drivers/clicmd/agent_guide.cf, milestone 77): static text, no
+	// vault. data/agent-guide.json is `flint --json agent-guide`, written by
+	// scripts/agent-guide-docs.sh.
+	if (noun === 'agent-guide') {
+		p.allowFlags('agent-guide', []);
+		if (p.positionals.length !== 1) fail('usage', 'usage: flint agent-guide');
+		if (asJson) io.out(json({ markdown: agentGuide.markdown, commands: agentGuide.commands, exit_codes: agentGuide.exit_codes }));
+		else agentGuide.markdown.replace(/\n$/, '').split('\n').forEach((l) => io.out(l));
 		return { code: 0 };
 	}
 	const session = noun === 'connect' || noun === 'exec' || noun === 'cp';

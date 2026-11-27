@@ -93,6 +93,22 @@ case "$(uname -s)" in
 esac
 is_json() { python3 -c 'import json,sys; json.loads(sys.stdin.read())' 2>/dev/null; }
 
+echo "== agent guide (milestone 77)"
+expect 0 "flint agent-guide prints the guide" "" -- agent-guide
+check "it is Markdown with the reference and the exit codes" '[[ "$out" == "# Flint for AI agents"* && "$out" == *"### Exit codes"* && "$out" == *'"'"'`flint exec <alias> --sudo -- <command> [args]`'"'"'* ]]'
+check "it ends offering a skill that points back to it" '[[ "$out" == *"Run \`flint agent-guide\` for the commands"* ]]'
+expect 0 "flint --json agent-guide" "" -- --json agent-guide
+check "--json holds the guide, the commands and the exit codes" '[[ "$(echo "$out" | json_get "[d[\"markdown\"][:21], len(d[\"exit_codes\"]) > 20, any(c[\"noun\"] == \"exec\" for c in d[\"commands\"])]")" == "['"'"'# Flint for AI agents'"'"', True, True]" ]]'
+expect 2 "agent-guide takes no argument" "" -- agent-guide extra
+expect 0 "flint --help" "" -- --help
+check "--help names the agent guide" '[[ "$out" == *"AI agents: run flint agent-guide first"* ]]'
+checks=$((checks + 1))
+if FLINT_BIN="$flint" "$root/scripts/agent-guide-docs.sh" --check; then
+  echo "ok    the docs site's agent guide is the CLI's text"
+else
+  failures=$((failures + 1)); echo "FAIL  the docs site's agent guide differs: run scripts/agent-guide-docs.sh"
+fi
+
 echo "== vault lifecycle"
 vault="$tmp/home.flint"
 expect 0 "vault create" "$MASTER"$'\n' -- --json vault create "$vault" --name "Home Lab" --master-stdin
