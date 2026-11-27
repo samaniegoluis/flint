@@ -2,7 +2,8 @@ package application
 
 // The signed self-update (milestone 53, spec v13, D-106 (5), D-111, D-118). Download:
 // the package named by a verified manifest, its SHA-256 checked before a byte of it is
-// unpacked (Principle 15), unpacked beside the installed folder. Relaunch: the new CLI
+// unpacked (Principle 15), unpacked beside the installed folder, and on macOS its code
+// signature checked against the installed one's (milestone 79). Relaunch: the new CLI
 // copied out and started as `flint update-apply`, which swaps the folders once the app
 // quit and puts the old one back when the new app does not say it started. Nothing is
 // retried on its own: a failure discards the download and the person decides again.
@@ -15,10 +16,18 @@ fn discard_staging[F: ports.UpdateFiles](mut files: F, p: domain.UpdatePaths) {
     files.upd_remove(p.staging) or {}
 }
 
+SIGNATURE_REFUSED: str = "the download is not signed by the same developer as this Flint and was discarded"
+
+// Milestone 79 (D-158 (3)): the unpacked bundle verifies and, over a Developer ID
+// install, carries its Team ID. Checked after Download and again before the swap.
+fn signed_like_installed[S: ports.UpdateSigner](signer: S, p: domain.UpdatePaths) -> bool {
+    return domain.update_signature_accepts(signer.upd_signer(p.installed), signer.upd_signer(p.new_root))
+}
+
 // Downloads, checks and unpacks the package `s` offers (a status whose action is
 // Download, from a verified manifest). The staging folder is made anew; on any failure
 // it is removed, so nothing unverified stays on disk.
-fn download_update[D: ports.UpdateDownloader, H: ports.UpdateHasher, F: ports.UpdateFiles](mut dl: D, hasher: H, mut files: F, s: domain.UpdateStatus, installed: str, os: str) -> void! {
+fn download_update[D: ports.UpdateDownloader, H: ports.UpdateHasher, S: ports.UpdateSigner, F: ports.UpdateFiles](mut dl: D, hasher: H, signer: S, mut files: F, s: domain.UpdateStatus, installed: str, os: str) -> void! {
     if s.action != UPDATE_ACTION_DOWNLOAD || s.asset_url.len() == 0 || s.asset_size <= 0 || !is_hex64(s.asset_sha256) {
         return error(coded(ERR_INVALID, "there is no package to download for this copy of Flint"))
     }
@@ -45,6 +54,10 @@ fn download_update[D: ports.UpdateDownloader, H: ports.UpdateHasher, F: ports.Up
     if !files.upd_exists(update_app_exe(p.new_root, os)) || !files.upd_exists(update_cli_exe(p.new_root, os)) {
         discard_staging(mut files, p)
         return error(coded(ERR_INVALID, "the download did not hold Flint and was discarded"))
+    }
+    if !signed_like_installed(signer, p) {
+        discard_staging(mut files, p)
+        return error(coded(ERR_INVALID, SIGNATURE_REFUSED))
     }
     files.upd_write(p.ready, s.version) or err {
         discard_staging(mut files, p)
@@ -111,10 +124,16 @@ fn take_apply_outcome_at[F: ports.UpdateFiles](mut files: F, p: domain.UpdatePat
 
 // Relaunch: the new CLI copied to `temp_dir` and started as update-apply for this
 // process (`pid`); the caller quits right after. Its log goes to `temp_dir`.
-fn relaunch_update[F: ports.UpdateFiles, P: ports.UpdateProcesses](mut files: F, mut procs: P, installed: str, os: str, current: str, temp_dir: str, pid: i64) -> void! {
+fn relaunch_update[F: ports.UpdateFiles, P: ports.UpdateProcesses, S: ports.UpdateSigner](mut files: F, mut procs: P, signer: S, installed: str, os: str, current: str, temp_dir: str, pid: i64) -> void! {
     p := update_paths(installed, os)
     if staged_update(mut files, installed, os, current).len() == 0 {
         return error(coded(ERR_NOT_FOUND, "no update is ready to apply"))
+    }
+    // The staged bundle again, right before it runs: a package changed on disk since
+    // Download is discarded, never applied.
+    if !signed_like_installed(signer, p) {
+        discard_staging(mut files, p)
+        return error(coded(ERR_INVALID, SIGNATURE_REFUSED))
     }
     files.upd_remove(p.started) or {}
     files.upd_remove(p.outcome) or {}

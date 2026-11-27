@@ -315,8 +315,8 @@ JSON
 # the package's own copy of it. apply: Download, Ready, Relaunch, the new copy runs and
 # the old folder is gone; badsha: a package whose SHA-256 is not the manifest's is
 # discarded and nothing changes; rollback: a package whose app quits at once is put
-# back, and the old Flint says why. Only a build from source accepts the test feed and
-# key (D-116).
+# back, and the old Flint says why; signed and signedapply (milestone 79), below. Only a
+# build from source accepts the test feed and key (D-116).
 run_selfupdate() {
   local js="$1" log="$2" win=""
   case "$(uname -s)" in MINGW*|MSYS*) win=1 ;; esac
@@ -344,8 +344,20 @@ run_selfupdate() {
     sleep 1
   fi
   local scenario st=0 fport fpid
+  # signed, signedapply (milestone 79, D-158 (3)), macOS with FLINT_MACOS_SIGN_IDENTITY
+  # (and FLINT_MACOS_KEYCHAIN, scripts/macos/keychain.sh): the installed copy is signed
+  # with that Developer ID; an ad-hoc package is discarded as a bad SHA-256 is, and one
+  # signed by the same team is applied.
+  local scenarios="apply badsha rollback"
+  if [[ "$(uname -s)" == Darwin && -n "${FLINT_MACOS_SIGN_IDENTITY:-}" ]]; then
+    scenarios="$scenarios signed signedapply"
+  elif [[ "$(uname -s)" == Darwin ]]; then
+    echo "gui-e2e: selfupdate: skip signed and signedapply (FLINT_MACOS_SIGN_IDENTITY is not set)"
+  fi
+  local kc=()
+  [[ -z "${FLINT_MACOS_KEYCHAIN:-}" ]] || kc=(--keychain "$FLINT_MACOS_KEYCHAIN")
   # FLINT_E2E_SELFUPDATE=<scenario> runs one of them (a diagnosis in seconds, rule 9).
-  for scenario in ${FLINT_E2E_SELFUPDATE:-apply badsha rollback}; do
+  for scenario in ${FLINT_E2E_SELFUPDATE:-$scenarios}; do
     local w="$base/$scenario" inst
     rm -rf "$w"; mkdir -p "$w/Apps" "$w/pkg" "$w/feed" "$w/t" "$w/config"
     # Each scenario creates its vault anew (the page script's VAULT is one path).
@@ -361,6 +373,28 @@ run_selfupdate() {
       # A copy of cmd.exe: with no console and nothing to read, it quits at once.
       cp "$(cygpath -u "${SYSTEMROOT:-C:\\Windows}")/System32/cmd.exe" "$w/pkg/$name/$exe"
     elif [[ "$scenario" == rollback ]]; then printf '#!/bin/sh\nexit 1\n' > "$w/pkg/$name/$exe"; chmod 755 "$w/pkg/$name/$exe"; fi
+    if [[ "$(uname -s)" == Darwin ]]; then
+      # Both copies changed after build-gui.sh signed them (the CLI, the page script, the
+      # marker): signed again, as a package is, since the update checks the signature
+      # (milestone 79). The installed copy with the Developer ID in the signed runs, the
+      # package ad hoc unless signedapply. No timestamp (nothing here is notarized) and no
+      # hardened runtime: this build links Homebrew's libraries, which the runtime's
+      # library validation refuses under another Team ID; a release links them statically
+      # and runs under it (scripts/macos/sign.sh). What is checked here is the Team ID.
+      local dev=(codesign --force --timestamp=none ${kc[@]+"${kc[@]}"} -s "${FLINT_MACOS_SIGN_IDENTITY:-}")
+      if [[ "$scenario" == signed || "$scenario" == signedapply ]]; then
+        "${dev[@]}" "$inst/$cli" >/dev/null 2>&1 && "${dev[@]}" "$inst" >/dev/null 2>&1 \
+          || { echo "e2e: fail: selfupdate $scenario: cannot sign the installed copy with $FLINT_MACOS_SIGN_IDENTITY" | tee -a "$log"; st=1; continue; }
+      else
+        codesign --force --deep -s - "$inst" >/dev/null 2>&1
+      fi
+      if [[ "$scenario" == signedapply ]]; then
+        "${dev[@]}" "$w/pkg/$name/$cli" >/dev/null 2>&1 && "${dev[@]}" "$w/pkg/$name" >/dev/null 2>&1 \
+          || { echo "e2e: fail: selfupdate $scenario: cannot sign the package" | tee -a "$log"; st=1; continue; }
+      else
+        codesign --force --deep -s - "$w/pkg/$name" >/dev/null 2>&1 || true
+      fi
+    fi
     local zipf="$w/feed/Flint-99.0.0-pkg.zip"
     if [[ "$(uname -s)" == Darwin ]]; then ditto -c -k --keepParent "$w/pkg/$name" "$zipf"
     elif [[ -n "$win" ]]; then
@@ -438,8 +472,9 @@ PY
     cat "$w/app1.log" >> "$log"
     grep -E "the page heard the download move|the toast's percentage moved" "$w/app1.log" | sed 's/^\[page\] /  /' || true
     local fail=""
-    if [[ "$scenario" == badsha ]]; then
+    if [[ "$scenario" == badsha || "$scenario" == signed ]]; then
       grep -q 'selfupdate: discarded' "$w/app1.log" && grep -q '^e2e: pass' "$w/app1.log" || fail="the bad download was not discarded as the page saw it"
+      [[ -z "$fail" && "$scenario" == signed ]] && ! grep -q 'not signed by the same developer' "$w/app1.log" && fail="the core did not say the signature was refused"
       [[ -z "$fail" && -e "$w/Apps/.flint-update" ]] && fail="the discarded download left $w/Apps/.flint-update"
       [[ -z "$fail" && -e "$inst/$res/e2e-new" ]] && fail="the installed copy changed"
     else
@@ -448,7 +483,7 @@ PY
       for _ in $(seq 1 600); do grep -q '^e2e: ' "$w/app2.log" 2>/dev/null && break; [[ -n "$fail" ]] && break; sleep 0.2; done
       [[ -f "$w/app2.log" ]] && cat "$w/app2.log" >> "$log"
       [[ -z "$fail" ]] && ! grep -q '^e2e: pass' "$w/app2.log" 2>/dev/null && fail="the relaunched app gave no pass"
-      if [[ -z "$fail" && "$scenario" == apply ]]; then
+      if [[ -z "$fail" && ( "$scenario" == apply || "$scenario" == signedapply ) ]]; then
         grep -q 'selfupdate: relaunched into the new package' "$w/app2.log" || fail="the relaunched app was not the new one"
         [[ -e "$inst/$res/e2e-new" ]] || fail="the installed folder is not the package"
       fi
@@ -483,7 +518,7 @@ PY
     return 1
   fi
   echo "e2e: pass" >> "$log"
-  echo "3 checks passed" >> "$log"
+  echo "$(wc -w <<<"${FLINT_E2E_SELFUPDATE:-$scenarios}" | tr -d ' ') checks passed" >> "$log"
 }
 
 # A packaged app (FLINT_E2E_NOBUILD on a release build, or a Linux package installed and

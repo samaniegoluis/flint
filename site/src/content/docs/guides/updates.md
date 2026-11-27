@@ -35,8 +35,10 @@ updates** in the command palette (<kbd>⌘K</kbd>).
    it: the download goes on.
 2. **Checked before anything else.** When it finishes, Flint checks the file against
    the SHA-256 the signed manifest gives for it. A file that does not match is deleted
-   at once: *Flint 0.18.0 didn't pass verification and was discarded*. Nothing was
-   installed, and Flint does not try again on its own. A download that fails on the way
+   at once: *Flint 0.18.0 didn't pass verification and was discarded*. On macOS the
+   unpacked app must also pass macOS's own signature check, and a signed Flint takes
+   only an app signed by the same developer; one that is not is discarded the same way.
+   Nothing was installed, and Flint does not try again on its own. A download that fails on the way
    (no connection, a stalled transfer) offers **Retry**.
 3. **Ready.** *Flint 0.18.0 is ready*, with **Relaunch**. It stays until you choose. If
    you close it, nothing happens at the next launch either: **Relaunch** stays in the
@@ -57,10 +59,11 @@ exec`, say), Flint waits for it for half a minute, then opens the old version ag
 keeps the download, so you can choose **Relaunch** once it ends.
 
 **macOS:** an update downloaded by Flint carries no download flag, so Gatekeeper does
-not stop it as it did the zip from your browser (no **Open Anyway** this time). But an
-unsigned Flint is a new app to macOS after each update, so the Keychain asks once more
-for the vault you keep with *Remember on this computer* and for a vault server's token:
-choose **Always Allow**. Signed builds, which keep that permission, are planned.
+not stop it as it did the zip from your browser. From 0.38.0 Flint is signed with a
+Developer ID, so an update keeps what you allowed (the Keychain's **Always Allow**, the
+microphone). The update to 0.38.0 itself, from an unsigned version, asks once more: for
+the vault you keep with *Remember on this computer* and for a vault server's token
+(choose **Always Allow**), and for the microphone in a remote desktop.
 
 **Windows:** the whole `Flint` folder is replaced, by renaming it, never by writing over
 a file in use. A program that keeps a file in it open (a terminal whose current folder is
@@ -126,7 +129,9 @@ in the command palette. The full history is in the
 Every release's manifest is signed with Flint's own Ed25519 key, and Flint carries the
 public half inside it. A manifest whose signature does not verify is ignored before
 Flint reads it, and one that names anything but this project's own releases is refused.
-The package is checked against the manifest's SHA-256 before it is unpacked. On Linux,
+The package is checked against the manifest's SHA-256 before it is unpacked. On macOS,
+the unpacked app must pass `codesign`'s check and, over a signed Flint, carry the same
+developer's Team ID, checked again right before **Relaunch** swaps it in. On Linux,
 where installing takes the system's password, the system checks it all again on its own
 copy before the package manager sees it. Details in the
 [security model](/reference/security-model/#updates).

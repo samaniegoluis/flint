@@ -111,6 +111,28 @@ fn sha256_matches(expected: str, got: str) -> bool {
     return is_hex64(expected.to_lower()) && expected.to_lower() == got.to_lower()
 }
 
+// A bundle's code signature (milestone 79, D-158 (3)): the Team ID of a Developer ID
+// signature ("" when ad hoc, unsigned, or on a system whose packages carry none), and
+// whether the whole bundle verifies (`codesign --verify --deep --strict` on macOS).
+type CodeSignature struct {
+    team:  str
+    valid: bool
+}
+
+// Whether a downloaded package may replace the installed Flint: it must verify, and
+// over a Developer ID install it must carry the same Team ID. An ad-hoc or unsigned
+// install (built from source, or a release before signing) takes either, so the first
+// signed update reaches it.
+fn update_signature_accepts(installed: CodeSignature, candidate: CodeSignature) -> bool {
+    if !candidate.valid {
+        return false
+    }
+    if installed.team.len() == 0 {
+        return true
+    }
+    return candidate.team == installed.team
+}
+
 // What `flint update-apply` was asked to do.
 type ApplyRequest struct {
     // The app's process, which must quit first (0: none to wait for).

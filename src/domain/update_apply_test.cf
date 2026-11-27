@@ -88,3 +88,23 @@ test "a held folder's message names up to three programs and counts the rest" {
     five := [FolderHolder{ name: "A", pid: 1 }, FolderHolder{ name: "B", pid: 2 }, FolderHolder{ name: "C", pid: 3 }, FolderHolder{ name: "D", pid: 4 }, FolderHolder{ name: "E", pid: 5 }]
     assert_eq(held_message("x", "C:/Flint", five), "close A (pid 1), B (pid 2), C (pid 3) and 2 more and Relaunch again: they have files in Flint open, so it could not be replaced")
 }
+
+test "a package replaces a signed Flint only with the same Team ID" {
+    team := CodeSignature{ team: "5U6B4AKQV5", valid: true }
+    other := CodeSignature{ team: "KWBM9VVBU5", valid: true }
+    adhoc := CodeSignature{ team: "", valid: true }
+    broken := CodeSignature{ team: "5U6B4AKQV5", valid: false }
+    // Signed over signed: the same team only.
+    assert(update_signature_accepts(team, team))
+    assert(!update_signature_accepts(team, other))
+    // Ad hoc over signed: refused.
+    assert(!update_signature_accepts(team, adhoc))
+    // Anything that verifies over an ad-hoc or unsigned install (the first signed update).
+    assert(update_signature_accepts(adhoc, team))
+    assert(update_signature_accepts(adhoc, adhoc))
+    // A bundle that does not verify, never; a tampered install keeps its team's rule.
+    assert(!update_signature_accepts(adhoc, broken))
+    assert(!update_signature_accepts(team, broken))
+    assert(!update_signature_accepts(broken, adhoc))
+    assert(update_signature_accepts(broken, team))
+}

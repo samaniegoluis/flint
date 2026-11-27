@@ -112,6 +112,42 @@ fn (mut self: OsUpdateFiles) upd_copy_exe(from: str, to: str) -> void! {
     }
 }
 
+// The `UpdateSigner` port (milestone 79, D-158 (3)): a bundle's code signature through
+// macOS's own `codesign`, arguments one by one, never a shell. `-dv` names the Team ID
+// (`TeamIdentifier=not set` when ad hoc); `--verify --deep --strict` says whether every
+// file still matches it. Linux and Windows packages carry no signature Flint checks
+// (Windows signing waits, D-157): every folder reads as valid and unsigned there.
+type OsUpdateSigner struct {
+    ready: bool
+}
+
+fn new_os_update_signer() -> OsUpdateSigner {
+    return OsUpdateSigner{ ready: true }
+}
+
+fn (self: OsUpdateSigner) upd_signer(root: str) -> domain.CodeSignature {
+    if os_name() != "mac" {
+        return domain.CodeSignature{ team: "", valid: true }
+    }
+    mut team := ""
+    shown := os.command("/usr/bin/codesign", ["-dv", "--verbose=2", root]) or {
+        return domain.CodeSignature{ team: "", valid: false }
+    }
+    for line in "{shown.stderr}\n{shown.stdout}".split("\n") {
+        l := line.trim()
+        if l.starts_with("TeamIdentifier=") {
+            v := "{l[15..]}"
+            if v != "not set" {
+                team = v
+            }
+        }
+    }
+    checked := os.command("/usr/bin/codesign", ["--verify", "--deep", "--strict", root]) or {
+        return domain.CodeSignature{ team: team, valid: false }
+    }
+    return domain.CodeSignature{ team: team, valid: shown.exit_code == 0 && checked.exit_code == 0 }
+}
+
 // Leaves whatever folder this process started in for `dir` (its own). update-apply
 // inherits the app's current directory, which on Windows is the installed folder when
 // the app was opened from its Start menu shortcut, and Windows does not rename a folder

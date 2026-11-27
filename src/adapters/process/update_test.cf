@@ -249,3 +249,31 @@ test "the programs that hold a file in the folder are named on Windows, nobody e
     write_stderr("holders: {seen[0].name} (pid {seen[0].pid})\n")
     assert_eq(procs.proc_holders(dir + "/Flint").len(), 0)
 }
+
+test "a bundle's code signature through codesign on macOS; valid and unsigned elsewhere" {
+    s := new_os_update_signer()
+    dir := update_tmp("signer")
+    if os_name() != "mac" {
+        got := s.upd_signer(dir)
+        assert(got.valid)
+        assert_eq(got.team, "")
+        return
+    }
+    try fs.mkdir_all(dir)
+    mut files := new_os_update_files()
+    defer { files.upd_remove(dir) or {} }
+    // A path that is not there, or a file never signed, does not verify.
+    assert(!s.upd_signer(dir + "/missing").valid)
+    exe := dir + "/tool"
+    try fs.write_text(exe, "#!/bin/sh\necho hi\n")
+    assert(!s.upd_signer(exe).valid)
+    // Signed ad hoc: valid, no Team ID.
+    signed := try os.command("/usr/bin/codesign", ["-s", "-", "-f", exe])
+    assert_eq(signed.exit_code, 0)
+    adhoc := s.upd_signer(exe)
+    assert(adhoc.valid)
+    assert_eq(adhoc.team, "")
+    // Changed after signing: no longer verifies.
+    try fs.write_text(exe, "#!/bin/sh\necho changed\n")
+    assert(!s.upd_signer(exe).valid)
+}

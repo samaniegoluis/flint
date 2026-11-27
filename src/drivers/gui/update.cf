@@ -225,6 +225,7 @@ fn run_update_loop(c: flint_crypto.Sodium, settings_store: config.JsonSettingsSt
     mut dl := new_http_update_downloader()
     mut files := new_os_update_files()
     mut procs := new_os_update_processes()
+    signer := new_os_update_signer()
     mut runner := new_os_root_runner()
     here := update_here()
     root := install_root()
@@ -296,7 +297,7 @@ fn run_update_loop(c: flint_crypto.Sodium, settings_store: config.JsonSettingsSt
                     why = "{err.message()}"
                 }
             } else {
-                download_update(mut dl, c, mut files, last, root, os_name()) or err {
+                download_update(mut dl, c, signer, mut files, last, root, os_name()) or err {
                     fetched = false
                     why = "{err.message()}"
                 }
@@ -348,10 +349,16 @@ fn run_update_loop(c: flint_crypto.Sodium, settings_store: config.JsonSettingsSt
                 app.emit("update:status", last)
                 continue
             }
-            relaunch_update(mut files, mut procs, root, os_name(), here.version, temp, current_pid()) or err {
+            relaunch_update(mut files, mut procs, signer, root, os_name(), here.version, temp, current_pid()) or err {
                 msg := "{err.message()}"
                 last.code = error_code_of(msg)
                 last.message = error_text_of(msg)
+                if last.code == ERR_INVALID {
+                    // The staged bundle's signature no longer passed (milestone 79): it was
+                    // discarded, so the version is offered again, never retried on its own.
+                    staged = ""
+                    last.state = UPDATE_AVAILABLE
+                }
                 write_stderr("flint-gui: Relaunch failed ({last.code}): {last.message}\n")
                 app.emit("update:status", last)
                 continue

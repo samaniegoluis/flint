@@ -570,6 +570,13 @@ type UpdateHasher interface {
     update_file_sha256(path: str) -> str!
 }
 
+// A bundle's code signature (milestone 79, D-158 (3), adapters/process): macOS reads it
+// with `codesign` (the Team ID, and whether the bundle verifies); a bundle it cannot
+// read does not verify. Elsewhere every folder reads as valid and unsigned.
+type UpdateSigner interface {
+    upd_signer(root: str) -> domain.CodeSignature
+}
+
 // The files of an update (milestone 53, adapters/process): the staging folder beside
 // the installed one, the swap by rename, unpacking a zip with the system's own tool
 // (macOS `ditto`, keeping the bundle's links and signature; `bsdtar` / `unzip`

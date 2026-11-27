@@ -255,6 +255,14 @@ connect, 30 s in all) and a size cap, and redirects are followed over HTTPS only
   nothing received ends it), capped at the size the manifest gives. Its SHA-256
   (libsodium) must match the manifest's before it is unpacked, beside the installed
   app; a mismatch deletes it and nothing is retried on its own.
+- **The same developer, on macOS.** From 0.38.0 releases are signed with a Developer ID
+  (hardened runtime, the microphone as the only entitlement) and notarized. The
+  unpacked app must pass `codesign --verify --deep --strict`, and over a Developer
+  ID-signed Flint it must carry the same Team ID; it is checked after **Download** and
+  again before the swap, and a failure deletes it like a SHA-256 mismatch. An unsigned
+  install (a build from source, a version before 0.38.0) takes any app that verifies, so
+  the first signed version reaches it. This adds to the manifest's signature; it does
+  not replace it.
 - **You decide when.** Nothing is applied until you choose **Relaunch**, and nothing at
   the next launch if you don't. Relaunch starts `flint update-apply` from a copy of the
   new `flint` outside the app, which waits for the app (and any `flint` running from it)

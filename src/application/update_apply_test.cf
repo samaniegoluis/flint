@@ -198,6 +198,24 @@ fn (self: FakeProcesses) proc_now_ms() -> i64 {
 
 INSTALLED: str = "/Apps/Flint.app"
 
+// The code signatures `codesign` would read (milestone 79): the installed bundle's, and
+// any other folder's (the unpacked package).
+type FakeSigner struct {
+    installed: domain.CodeSignature
+    unpacked:  domain.CodeSignature
+}
+
+fn (self: FakeSigner) upd_signer(root: str) -> domain.CodeSignature {
+    if root == INSTALLED {
+        return self.installed
+    }
+    return self.unpacked
+}
+
+fn same_team() -> FakeSigner {
+    return FakeSigner{ installed: domain.CodeSignature{ team: "TEAM1", valid: true }, unpacked: domain.CodeSignature{ team: "TEAM1", valid: true } }
+}
+
 fn offer(sha: str) -> domain.UpdateStatus {
     mut s := update_status_idle("0.17.0", true, 1)
     s.state = UPDATE_AVAILABLE
@@ -216,7 +234,7 @@ fn installed_files() -> FakeUpdateFiles {
 test "a verified download is unpacked beside the installed folder and ready" {
     mut files := installed_files()
     mut dl := FakeDownloader{ fail: "", urls: [] }
-    try download_update(mut dl, FakeHasher{ sha: "a".repeat(64) }, mut files, offer("a".repeat(64)), INSTALLED, "mac")
+    try download_update(mut dl, FakeHasher{ sha: "a".repeat(64) }, same_team(), mut files, offer("a".repeat(64)), INSTALLED, "mac")
     assert_eq(dl.urls.len(), 1)
     assert(files.upd_exists("/Apps/.flint-update/new/Flint.app/Contents/Helpers/flint"))
     assert(!files.upd_exists("/Apps/.flint-update/package.zip"))
@@ -227,7 +245,7 @@ test "a download whose SHA-256 does not match is discarded, never unpacked" {
     mut files := installed_files()
     mut dl := FakeDownloader{ fail: "", urls: [] }
     mut r := ""
-    download_update(mut dl, FakeHasher{ sha: "b".repeat(64) }, mut files, offer("a".repeat(64)), INSTALLED, "mac") or err { r = "{err.message()}" }
+    download_update(mut dl, FakeHasher{ sha: "b".repeat(64) }, same_team(), mut files, offer("a".repeat(64)), INSTALLED, "mac") or err { r = "{err.message()}" }
     assert(r.starts_with("invalid:") && r.contains("SHA-256"))
     assert(!files.upd_exists("/Apps/.flint-update"))
     assert(files.upd_exists(INSTALLED + "/Contents/MacOS/Flint"))
@@ -237,21 +255,21 @@ test "a failed download, a bad zip or a zip without Flint leave nothing behind" 
     mut files := installed_files()
     mut dl := FakeDownloader{ fail: ERR_TIMEOUT, urls: [] }
     mut r := ""
-    download_update(mut dl, FakeHasher{ sha: "a".repeat(64) }, mut files, offer("a".repeat(64)), INSTALLED, "mac") or err { r = "{err.message()}" }
+    download_update(mut dl, FakeHasher{ sha: "a".repeat(64) }, same_team(), mut files, offer("a".repeat(64)), INSTALLED, "mac") or err { r = "{err.message()}" }
     assert(r.starts_with("timeout:"))
     assert(!files.upd_exists("/Apps/.flint-update"))
 
     files.fail_unzip = true
     dl.fail = ""
     r = ""
-    download_update(mut dl, FakeHasher{ sha: "a".repeat(64) }, mut files, offer("a".repeat(64)), INSTALLED, "mac") or err { r = "{err.message()}" }
+    download_update(mut dl, FakeHasher{ sha: "a".repeat(64) }, same_team(), mut files, offer("a".repeat(64)), INSTALLED, "mac") or err { r = "{err.message()}" }
     assert(r.starts_with("io:"))
     assert(!files.upd_exists("/Apps/.flint-update"))
 
     files.fail_unzip = false
     files.unzip_holds = ["Other.app/readme"]
     r = ""
-    download_update(mut dl, FakeHasher{ sha: "a".repeat(64) }, mut files, offer("a".repeat(64)), INSTALLED, "mac") or err { r = "{err.message()}" }
+    download_update(mut dl, FakeHasher{ sha: "a".repeat(64) }, same_team(), mut files, offer("a".repeat(64)), INSTALLED, "mac") or err { r = "{err.message()}" }
     assert(r.contains("did not hold Flint"))
     assert(!files.upd_exists("/Apps/.flint-update"))
 }
@@ -262,7 +280,7 @@ test "nothing is downloaded for How to update" {
     mut s := offer("a".repeat(64))
     s.action = UPDATE_ACTION_HOW
     mut r := ""
-    download_update(mut dl, FakeHasher{ sha: "a".repeat(64) }, mut files, s, INSTALLED, "mac") or err { r = "{err.message()}" }
+    download_update(mut dl, FakeHasher{ sha: "a".repeat(64) }, same_team(), mut files, s, INSTALLED, "mac") or err { r = "{err.message()}" }
     assert(r.starts_with("invalid:"))
     assert_eq(dl.urls.len(), 0)
 }
@@ -270,21 +288,21 @@ test "nothing is downloaded for How to update" {
 fn staged_files() -> FakeUpdateFiles {
     mut files := installed_files()
     mut dl := FakeDownloader{ fail: "", urls: [] }
-    download_update(mut dl, FakeHasher{ sha: "a".repeat(64) }, mut files, offer("a".repeat(64)), INSTALLED, "mac") or {}
+    download_update(mut dl, FakeHasher{ sha: "a".repeat(64) }, same_team(), mut files, offer("a".repeat(64)), INSTALLED, "mac") or {}
     return files
 }
 
 test "Relaunch starts update-apply from a copy of the new CLI" {
     mut files := staged_files()
     mut procs := fake_procs()
-    try relaunch_update(mut files, mut procs, INSTALLED, "mac", "0.17.0", "/tmp/fu", 42)
+    try relaunch_update(mut files, mut procs, same_team(), INSTALLED, "mac", "0.17.0", "/tmp/fu", 42)
     assert_eq(procs.spawned.len(), 1)
     assert_eq(procs.spawned[0], "/tmp/fu/flint update-apply --wait 42 --from /Apps/.flint-update/new/Flint.app --to /Apps/Flint.app")
     assert(files.upd_exists("/tmp/fu/flint"))
     // Nothing staged: nothing to apply.
     mut empty := installed_files()
     mut r := ""
-    relaunch_update(mut empty, mut procs, INSTALLED, "mac", "0.17.0", "/tmp/fu", 42) or err { r = "{err.message()}" }
+    relaunch_update(mut empty, mut procs, same_team(), INSTALLED, "mac", "0.17.0", "/tmp/fu", 42) or err { r = "{err.message()}" }
     assert(r.starts_with("not_found:"))
 }
 
@@ -429,4 +447,36 @@ test "a held folder names the programs the Restart Manager reports" {
     assert_eq(o.step, APPLY_STEP_SWAP)
     assert(o.kept)
     assert_eq(o.message, "close Windows PowerShell (pid 4120) and Relaunch again: it has a file in Flint.app open, so it could not be replaced")
+}
+
+test "a package signed by another team, or ad hoc, is discarded over a signed install" {
+    mut files := installed_files()
+    mut dl := FakeDownloader{ fail: "", urls: [] }
+    mut signer := same_team()
+    signer.unpacked = domain.CodeSignature{ team: "", valid: true }
+    mut r := ""
+    download_update(mut dl, FakeHasher{ sha: "a".repeat(64) }, signer, mut files, offer("a".repeat(64)), INSTALLED, "mac") or err { r = "{err.message()}" }
+    assert(r.starts_with("invalid:") && r.contains("signed"))
+    assert(!files.upd_exists("/Apps/.flint-update"))
+    signer.unpacked = domain.CodeSignature{ team: "TEAM2", valid: true }
+    r = ""
+    download_update(mut dl, FakeHasher{ sha: "a".repeat(64) }, signer, mut files, offer("a".repeat(64)), INSTALLED, "mac") or err { r = "{err.message()}" }
+    assert(r.starts_with("invalid:"))
+    assert(!files.upd_exists("/Apps/.flint-update"))
+    // Over an ad-hoc install, a signed package is taken (the first signed update).
+    signer.installed = domain.CodeSignature{ team: "", valid: true }
+    try download_update(mut dl, FakeHasher{ sha: "a".repeat(64) }, signer, mut files, offer("a".repeat(64)), INSTALLED, "mac")
+    assert_eq(staged_update(mut files, INSTALLED, "mac", "0.17.0"), "0.18.0")
+}
+
+test "Relaunch checks the staged bundle's signature again and discards it on a change" {
+    mut files := staged_files()
+    mut procs := fake_procs()
+    mut signer := same_team()
+    signer.unpacked = domain.CodeSignature{ team: "TEAM1", valid: false }
+    mut r := ""
+    relaunch_update(mut files, mut procs, signer, INSTALLED, "mac", "0.17.0", "/tmp/fu", 42) or err { r = "{err.message()}" }
+    assert(r.starts_with("invalid:"))
+    assert_eq(procs.spawned.len(), 0)
+    assert(!files.upd_exists("/Apps/.flint-update"))
 }
