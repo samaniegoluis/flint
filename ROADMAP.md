@@ -55,11 +55,15 @@ remote-vault fixes, and to v20 (2026-11-26, D-149), after v19's panes and worksp
 |---|---|
 | macOS signing | Developer ID and notarization on the owner's personal account (the exact identity and Team ID, checked after signing), in `scripts/package.sh` and the workflow's `release` environment; the self-update keeps the signature (the new `.app` verified with `codesign` before the swap) |
 | The keychain by signed identity | The server token and *Remember* created with an access list naming Flint.app and `flint` (D-099), so an update no longer brings back the dialog; whether sync-e2e's `FLINT_KEYCHAIN_SERVICE` seam can go |
-| A macOS `.dmg` | With the Applications link; the self-update learns the installed layout |
 | Touch ID to open a vault | On the signed app (§4) |
+| A signed Mac's loose ends | A macOS `.dmg` with the Applications link (the self-update learns the installed layout); `flint vault lock` no longer says the keychain refused when the key was not this binary's (§2); the README's Downloads table, macOS first (§7) |
 
 macOS only (owner, 2026-11-27, D-157): the owner's Apple account is renewed and signs the
 mobile app, so the Mac side no longer waits; Windows waits on SignPath.
+
+**Order (owner, 2026-11-27):** these come right after v19's milestone 79 (macOS signing),
+in this order: the keychain by signed identity, Touch ID, then the loose ends; each is
+added to the current spec as its own milestone when it starts, as 78 and 79 were.
 
 ### Later · Signing and an installer on Windows (tentative)
 
