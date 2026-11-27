@@ -4,6 +4,16 @@ What changed in each version of Flint, newest first. Versions follow
 [SemVer](https://semver.org): a release with a new feature bumps the minor version, one
 with only fixes the patch. Written by `scripts/release.sh` from the commit history.
 
+## 0.38.0 — 2026-11-27
+
+Flint for macOS is now signed with a Developer ID and notarized by Apple: a download opens after one *Open*, with no trip to Privacy & Security. Its id is now `engineer.samaniego.flint.desktop`, so this first signed version asks once more for the Keychain (choose **Always Allow**) and for the microphone in a remote desktop. Later updates keep those permissions, and an update is applied only if it is signed by the same developer.
+
+### Added
+
+- **update:** A macOS update keeps the developer's signature (D-158)
+- **release:** MacOS packages signed with a Developer ID and notarized (D-158)
+
+
 ## 0.37.0 — 2026-11-27
 
 The vault server now handles several machines at once: a slow or stalled connection no longer holds up anyone else's sync. Chunked uploads are accepted under the size cap, and a port already in use is reported again at start. The server's Docker image builds again.
