@@ -87,6 +87,22 @@ is `docs/build-log.md` plus `git log`.
     It commits `CHANGELOG.md` and tags `vX.Y.Z`; it never pushes, so the tag goes up with
     the branch (`git push origin main vX.Y.Z`) and the merge stays a fast-forward. A
     milestone with no `feat` or `fix` makes no release.
+11. **Run the checks the diff can reach; name what was skipped** (owner, 2026-11-27, D-159).
+    Pick them from `git diff main...HEAD --stat`, per area:
+
+    | The diff touches | Run |
+    |---|---|
+    | Only docs, `site/`, ROADMAP, comments | The site build and its tests |
+    | `src/domain`, `src/application`, `src/ports` | Their `cfire test` suites, and a build of every binary |
+    | An adapter | Its suite on each OS whose code changed (a Linux or Windows branch: Docker or the VM) |
+    | A driver, `ui/`, a page string | The e2e run that drives it (`FLINT_E2E_ONLY=<run>`); vitest and tsc for `ui/` |
+    | Keys, the vault format, the socket, the window, a migration | The whole set on all three systems |
+    | Packaging, the workflow, `scripts/` | That script on its system (`package.sh`, `release-test.sh`) |
+
+    The whole set (`scripts/test.sh`, every gui-e2e run, Docker with every step, the VM)
+    runs only when a row asks for it or a change spans several areas. Docker defaults to
+    `FLINT_LINUX_STEPS=tests` unless the diff has Linux code an e2e step reaches. Every
+    check left out goes into the build-log line with its reason; rule 3 still holds.
 
 ## Language
 
