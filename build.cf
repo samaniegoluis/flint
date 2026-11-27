@@ -36,9 +36,11 @@ FlintGui := build.Executable("Flint", {
     Subsystem: "gui",
     OutDir:    "build/gui",
     Icon:      "assets/app-icon/Flint.icns",
-    // Milestone 48 (D-112): the id v14 signs, beside polkit's dev.flint.policy. macOS
-    // keeps permissions and WebKit data per id, so it does not change again.
-    BundleId:  "dev.flint.app",
+    // Milestone 79 (D-158 (1)): the owner's domain, named by form (the mobile app is
+    // engineer.samaniego.flint.mobile), moved with the first signed version, which asks
+    // for macOS's permissions again anyway. macOS keeps permissions and WebKit data per
+    // id, so it does not change again. The CLI in Helpers is signed as `<id>.cli`.
+    BundleId:  "engineer.samaniego.flint.desktop",
     MacosMin:  "13.3",
     PkgConfig: ["flint-native", "flint-native-gui", "flint-rdp", "flint-remote", "libsodium", "libssh", "sqlcipher"],
 })

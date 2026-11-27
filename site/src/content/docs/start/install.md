@@ -27,23 +27,25 @@ it from a checkout:
 1. Unzip `Flint-<version>-macos-arm64.zip`.
 2. Move `Flint.app` where you keep apps, usually **Applications**. It runs from any
    folder.
-3. Open it. macOS refuses the first time, because the app is not signed by an identified
-   developer: it says *"Flint.app" Not Opened* and offers **Move to Trash** or **Done**.
-   Choose **Done**, open **System Settings → Privacy & Security**, and under
-   **Security** choose **Open Anyway** beside *"Flint.app" was blocked*, then confirm with
-   your password. Open Flint again and choose **Open Anyway** once more. macOS remembers
-   the choice for this copy. Updates from inside Flint do not ask again
-   ([Updates](/guides/updates/)).
+3. Open it. From 0.38.0 Flint is signed with a Developer ID and notarized by Apple, so
+   macOS asks only whether to open an app downloaded from the internet: choose **Open**.
 
-   If Privacy & Security shows no such button, remove the download's quarantine flag
-   instead: `xattr -dr com.apple.quarantine /Applications/Flint.app`.
+   A version before 0.38.0 is not signed, and macOS refuses it the first time: it says
+   *"Flint.app" Not Opened*. Choose **Done**, open **System Settings → Privacy &
+   Security**, choose **Open Anyway** beside *"Flint.app" was blocked* and confirm with
+   your password, then open Flint again and choose **Open Anyway** once more. If there
+   is no such button, remove the download's quarantine flag instead:
+   `xattr -dr com.apple.quarantine /Applications/Flint.app`.
 
 Your vaults and settings live in your user folder, never inside `Flint.app`, so replacing
 the app keeps them.
 
-An unsigned app is a new program to the macOS Keychain each time it is replaced: a vault
-opened with **Remember on this computer**, and a remote vault's server token, ask for
-Keychain access again after an update. Choose **Always Allow**.
+The first signed version (0.38.0) is a new app to macOS, under a new id
+(`engineer.samaniego.flint.desktop`): the Keychain asks once more for a vault opened with
+**Remember on this computer** and for a remote vault's server token (choose **Always
+Allow**), and a remote desktop asks once more for the microphone. From then on an update
+signed by the same developer keeps those permissions. An unsigned version before it asks
+again after every update.
 
 Flint tells you when a new version is out, at launch and every hour, downloads and checks
 it when you choose **Download**, and relaunches into it when you choose **Relaunch**:

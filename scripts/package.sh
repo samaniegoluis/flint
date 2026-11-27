@@ -2,6 +2,8 @@
 # Builds Flint's release packages for one system into dist/ (spec v13, D-111, D-112):
 #
 #   scripts/package.sh macos      # → dist/Flint-<version>-macos-arm64.zip
+#   FLINT_MACOS_SIGN_IDENTITY="Developer ID Application: … (TEAMID)" scripts/package.sh macos
+#                                 # the same, signed with a Developer ID (then scripts/macos/notarize.sh)
 #   scripts/package.sh windows    # → dist/Flint-<version>-windows-x86_64.zip (windows/package.sh, MSYS2 CLANG64)
 #   scripts/package.sh linux      # → dist/flint_<version>_amd64.deb, dist/flint-<version>.x86_64.rpm
 #   scripts/package.sh linux deb  # one of the two
@@ -15,8 +17,10 @@
 # refuses it.
 #
 # The same script runs on a person's machine and in the release workflow, which calls
-# it and nothing else (Principle 16). It reads no secret and signs nothing but ad hoc;
-# prints each package's path and SHA-256. Exit 1 when a step fails.
+# it and nothing else (Principle 16). It reads no secret: macOS is signed with the
+# Developer ID FLINT_MACOS_SIGN_IDENTITY names (a name, found in the keychain), ad hoc
+# without it (milestone 79, D-158); prints each package's path and SHA-256. Exit 1 when
+# a step fails.
 #
 # Linux (D-120): each format is built in its own image (scripts/linux/package.Dockerfile:
 # Ubuntu 24.04 for the .deb, Fedora 43 for the .rpm, x86_64) against the system's
@@ -190,10 +194,18 @@ for bin in "$app/Contents/MacOS/Flint" "$app/Contents/Helpers/flint"; do
 done
 [[ $fail -eq 0 ]] || exit 1
 
-# 5. Signed ad hoc (Apple silicon runs nothing unsigned; Developer ID is v14), then zipped
-# with ditto so the bundle's links and attributes survive.
-codesign --force --deep -s - "$app"
-codesign --verify --deep --strict "$app"
+# 5. Signed (milestone 79, D-158): with a Developer ID when FLINT_MACOS_SIGN_IDENTITY
+# names one (scripts/macos/sign.sh: hardened runtime, timestamp, the Team ID checked),
+# ad hoc otherwise (Apple silicon runs nothing unsigned), which a person building their
+# own copy gets. Then zipped with ditto so the bundle's links and attributes survive.
+# Notarizing is scripts/macos/notarize.sh, run on the zip after this.
+if [[ -n "${FLINT_MACOS_SIGN_IDENTITY:-}" ]]; then
+  scripts/macos/sign.sh "$app"
+else
+  echo "package: signed ad hoc (FLINT_MACOS_SIGN_IDENTITY is not set): Gatekeeper will not open a download of it"
+  codesign --force --deep -s - "$app"
+  codesign --verify --deep --strict "$app"
+fi
 mkdir -p dist
 zip="$root/dist/$name.zip"
 rm -f "$zip"

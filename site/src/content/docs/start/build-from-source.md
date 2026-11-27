@@ -256,7 +256,8 @@ beside it on Linux), so run the script again after each update. `FLINT_PREFIX` p
 CLI in another folder.
 
 - A build is signed ad hoc, so each install is a new program to the macOS Keychain: a
-  vault opened with **Remember on this computer** asks for Keychain access again.
+  vault opened with **Remember on this computer** asks for Keychain access again. A
+  signed release keeps it ([Build a release package](#build-a-release-package)).
 - A build with a new migration updates the vault the first time it opens it, and an older
   Flint then refuses that vault. Try a new build on a copy of the vault first.
 - One Flint runs per config folder. With the installed app open, starting a build from
@@ -284,7 +285,41 @@ minutes the first time; kept while the versions stay). It needs `cmake`, `ninja`
 Then it links the app and the CLI against them (`cfire build --portable --macos-min
 13.3`), checks that neither links anything outside macOS nor asks for a newer one, puts
 the CLI in `Contents/Helpers`, writes the version into `Info.plist`, adds every library's
-licence, signs the bundle ad hoc and zips it. It prints the zip's SHA-256.
+licence, signs the bundle and zips it. It prints the zip's SHA-256.
+
+It signs ad hoc, which runs on your own Mac but which Gatekeeper refuses on another, unless
+`FLINT_MACOS_SIGN_IDENTITY` names a *Developer ID Application* identity in your keychain,
+exactly, with its Team ID in parentheses as `security find-identity -v -p codesigning`
+prints it. Then `scripts/macos/sign.sh` signs the CLI and the app inside out under the
+hardened runtime with a secure timestamp and `packaging/macos/flint.entitlements` (the
+microphone only), and fails unless both carry that Team ID. Notarizing is a second step,
+on the zip:
+
+```sh
+FLINT_MACOS_SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" scripts/package.sh macos
+APPLE_NOTARY_KEY_ID=… APPLE_NOTARY_ISSUER_ID=… APPLE_NOTARY_KEY_P8="$(cat AuthKey_….p8)" \
+  scripts/macos/notarize.sh dist/Flint-<version>-macos-arm64.zip
+```
+
+`notarize.sh` submits the zip with an App Store Connect API key, waits for Apple's answer
+(printing Apple's log when it is not *Accepted*), staples the ticket to the app and zips
+it again, printing the new SHA-256. The packaging script itself reads no secret: the
+identity is a name your keychain resolves.
+
+### The secrets of a release
+
+The release workflow signs in GitHub's `release` environment, from a temporary keychain
+`scripts/macos/keychain.sh` makes and removes; the maintainer keeps the same values in
+Infisical (`/flint`).
+
+| Name | Kind | Use |
+|---|---|---|
+| `FLINT_MACOS_SIGN_IDENTITY` | variable | The Developer ID identity's name, as above |
+| `APPLE_DEVELOPER_ID_P12_BASE64` | secret | The Developer ID certificate and its key, a `.p12` in base64 |
+| `APPLE_DEVELOPER_ID_P12_PASSWORD` | secret | The `.p12`'s password |
+| `APPLE_NOTARY_KEY_ID`, `APPLE_NOTARY_ISSUER_ID` | secret | The App Store Connect API key's id and its issuer |
+| `APPLE_NOTARY_KEY_P8` | secret | That key's `.p8`, as text |
+| `FLINT_UPDATE_SIGNING_KEY` | secret | The update manifest's Ed25519 key ([Updates](/guides/updates/)) |
 
 The script leaves `build/flint` and `build/gui/Flint.app` as the release build, so the
 end-to-end suites can run on exactly what ships:
