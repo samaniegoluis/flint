@@ -51,6 +51,11 @@ is `docs/build-log.md` plus `git log`.
    **The landing's CLI demo ships with the CLI too:** any change to a CLI command, flag,
    output or error updates the demo (`site/src/demo/`) in the same commit: the command, its
    data and its tour step (D-026).
+   **The agent guide ships with the CLI too** (D-160): a change to a command's behaviour,
+   its approval or grant flow, or its exit codes also checks the hand-written part of
+   `flint agent-guide` (`src/drivers/clicmd/agent_guide.cf`), then reruns
+   `scripts/agent-guide-docs.sh` for the site's copies. The generated part follows the
+   command table (`commands_table.cf`), held to the CLI by its `cfire test`.
 6. **The landing grows with the product** (`site/src/content/docs/index.mdx`, D-027). When
    a change adds something a visitor would care about (a surface, a headline feature, a
    screen worth showing, a security or scripting property), update the landing in the
