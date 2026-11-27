@@ -11,14 +11,17 @@ Security.framework.
 
 ## 1. Install cfire
 
-Flint is built against cfire's release `v0.12.2`. cfire's installer downloads that
+Flint is built against cfire's release `v0.12.7`. cfire's installer downloads that
 release's archive for your system and checks it against the release's `SHA256SUMS.txt`:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/gsandoval/cfire/v0.12.2/docs/install.sh \
-  | sh -s -- --version v0.12.2
-cfire --version     # cfire 0.12.2 (5be0987, …)
+curl -fsSL https://raw.githubusercontent.com/gsandoval/cfire/v0.12.7/docs/install.sh \
+  | sh -s -- --version v0.12.7
+cfire --version     # cfire 0.12.7 (ad846a3, …)
 ```
+
+`scripts/install-cfire.sh` in Flint's repository does the same with the checksums kept in
+the repository, which is how the release builds get it.
 
 It installs `cfire` into `~/.local/bin` and its runtime beside it, in
 `~/.local/share/cfire/runtime`, then runs `cfire doctor`. Do not run `cfire setup`: Flint
@@ -47,8 +50,8 @@ sudo apt install libssh-dev libcurl4-openssl-dev libsodium-dev libsqlcipher-dev 
   pkg-config openssh-server
 ```
 
-If you install one of them after a build failed for want of it, delete cfire's probe cache
-(`rm ~/.cache/cfire/probes.json`): cfire 0.12.2 keeps the miss.
+If a build fails for want of one of them, install it and build again: cfire probes
+pkg-config again for a package it did not find.
 
 #### Ubuntu 24.04 and Zorin OS 18
 

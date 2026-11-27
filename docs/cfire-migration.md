@@ -963,3 +963,50 @@ second, short script).
 | 7 (docs) | 2026-11-19 | D-105 (the `v0.12.2` pin, how it is installed per OS, supersedes D-060), *Build from source* on the release (simdjson 4 gone, CF-087), `.claude/rules/cfire.md` and `CLAUDE.md` for 0.12. Merge, release and the old cfire's removal wait for the owner | this commit |
 | 7 | 2026-11-19 | Closed. `cfire-0.12-windows` fast-forwarded into `main` and release **`v0.13.0`** (`dae5365`), pushed with its tag; the changelog leaves out the reverted W-16 shim. On the Mac the old cfire is gone (`~/.local/bin/cfire` 0.10 and four older binaries, `~/.cfire` with its runtimes) and `v0.12.2` is installed with cfire's `install.sh --version v0.12.2`, as *Build from source* says; `~/.local/opt/cfire-0.12.*`, `scripts/cfire-next.sh` and the `cfire-next` MCP server removed; Flint builds and `src/domain` passes on it. alexandria no longer builds until it moves (owner: not in production yet; its guide is `docs/cfire-0.12-migration.md` there). WSL on the owner's work machine cleaned the same day: the patched fork `cfire-windows` (its 18 unpushed commits kept in `cfire-fork-patches.bundle` in the owner's Windows home), its cfire 0.10 and 0.9.5 binaries and runtimes, llvm-mingw, the `flint-windows` worktree and the port's test leftovers on the Windows side removed (`origin/windows-port-2` kept); cfire `v0.12.2` installed there with `install.sh`, `cfire doctor` passes, no Flint build kept on that machine (the Windows exe comes from the dedicated host, later from CI). This file is kept as the move's record | `7dd98b2`, this commit |
 | 7 (Zorin) | 2026-11-19 | Zorin's battery, the last item left. On the box: `main` pulled (an uncommitted M25 paste experiment on `m25-linux-paste` kept as `stash@{0}`), the old cfire removed (`43431f2` and its `~/.cfire`, `cfire-pre43431f2`, `cfire-466751b`, `~/.local/share/cfire-2d8613d` and `cfire-466751b`), the `~/.local` simdjson 4 gone with CF-087, the `clang++` → `clang++-19` link kept, and `v0.12.2` installed with *Build from source*'s command. The build needed `libcurl4-openssl-dev`, which that page did not list (fixed, `4bd86b0`), then a deleted `probes.json` (CF-169, new, `5c24a42`). All green: test.sh 17/17 (keychain on a rerun once the harness's keyring stopped opening the box's own), cli-e2e 483, server-e2e 70, sync-e2e 110, gui-e2e six runs (rdp and vim skipped), serve-e2e 214/214; detail under *Baseline → Zorin*. **The move is done on all three systems** | `e6c6f80`, this commit |
+
+## The move to `v0.12.7` (2026-11-26)
+
+From `v0.12.2` to `v0.12.7` (D-154), planned in the version review kept outside the repo
+(`../cfire-version-review/`: `migration-guide.md`, `README.md` "Review: `v0.12.7`",
+`diff-audit.md`, `upstream-drafts.md`). Branch `cfire-0.12.7` from `main` at `3a44980`;
+the review's tested patch (`spike-tested.patch`, on `542bc9b`) applied cleanly, since
+`main` had moved by one ROADMAP commit only.
+
+| Commit (before the squash) | What |
+|---|---|
+| pins and decision | `install-cfire.sh`, `scripts/linux/Dockerfile`, `package.Dockerfile`, `windows/bin/setup.sh` and `env.sh` on the `v0.12.7` archives, SHA-256 checked against `SHA256SUMS.txt`; D-154; `CLAUDE.md`, `.claude/rules/cfire.md`. `install-cfire.sh` now removes the old binary before copying (macOS killed a signed binary copied over itself, `Killed: 9`) |
+| mechanical | the guide's steps 1-4 (`spike-all.patch`): 2,214 qualified names, 125 `getenv`, 143 `return try`, 11 `cfire fix --only` |
+| hand fixes | step 5, every workaround tagged: CF-196 typed locals, CF-197 `package flint_crypto`, CF-203 `ipc_close`, CF-206 `[]str` for a `[]bool` field, CF-147 `shared[T]` accessors |
+| Windows | `windows/bin/cfire-shim/cfire`, first on `PATH`, adds `--no-shard` to build, test, run and bench (CF-207: the sharded link command is over `cmd.exe`'s 8,191 characters); the W-NN probes read `os.getenv` as `str?` |
+| `cfire-upstream.md` | "Status at cfire `v0.12.7`", an At line per tagged entry, CF-195 to CF-207 (the review's drafts CF-194..205 renumbered: CF-194 is stdin) |
+
+### Results
+
+| Check | Mac | Docker (Linux arm64) | Zorin (x86_64) | Windows VM |
+|---|---|---|---|---|
+| `cfire check`, per package | 0 errors, 24 packages | | | |
+| Build, cold | `flint` 103 s, vault server 25 s, update-root 36 s, app 118 s | ok | 2,377 s (10 min 37 s on `v0.12.2`) | 751 s, 4 targets (`--no-shard`) |
+| `scripts/test.sh` | **1,934 / 0**, 20 of 20 suites, release-test 56/56, i18n complete (25 min) | **1,934 / 0**, 20 of 20 | **1,934 / 0**, 20 of 20 (90 min) | 15 suites pass; rootupdate's 3 known failures (ROADMAP §7, since milestone 61); 4 skipped |
+| cli-e2e | 518/518 | 529/529 | 518/518 | 516/516 |
+| server-e2e | 83/0 | 83/0 | 83/0 | 81/0 |
+| sync-e2e | 110/0 | 115/0 | 115/0 | 113/0 (desktop) |
+| serve-e2e | 250/250 | 245/251 in the full run, **251/251** alone (the known intermittent launched-app check, ROADMAP §6) | 230/230 | 225/225 (desktop) |
+| gui-e2e | every run | every run (multimon 32) | 5 runs fail on the box's clipboard and GPU, as since milestones 61 and 68 (ROADMAP §7) | 11 of 12; `vault`'s *browser keys* step fails on MSYS2's pty, which echoes no `^R` (new ROADMAP §7 row; both keys reach the remote) |
+| keychain | in test.sh | in test.sh | ok | ok (desktop) |
+
+No failure came from the move: every one is a known test or environment issue, or the
+new CF-207, fixed. Probes on Windows: all pass (W-18 covered by cfire now).
+
+### Build times
+
+One C++ unit per `.cf` file (new in `v0.12.6`) makes cold builds slower where cores are
+few: Zorin (4 cores) 40 min against 10 min 37 s on `v0.12.2`, Docker's full cold
+`linux-check.sh` 96 min against 31 min. On the Mac a cold app build is about as before
+(118 s; the app links Objective-C, which cfire never shards). Windows builds a single
+unit (`--no-shard`, CF-207). Warm builds were not measured.
+
+### Left for later
+
+The cleanup by tag (ROADMAP §5, about 90 tags), the answers on CF-195 and CF-203, the
+HTTP client on `core:http` (CF-142), per-OS lists in `build.cf` (CF-031), the by-hand
+checks of CF-186 and CF-188 (Windows) and CF-189 and CF-077 (Zorin).
