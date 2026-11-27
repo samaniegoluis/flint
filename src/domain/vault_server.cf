@@ -156,8 +156,8 @@ type GateClient struct {
     locked_until: i64
 }
 
-// Per-client rate limit and bad-token lockout. Not thread-safe: the server serves one
-// request at a time (D-097).
+// Per-client rate limit and bad-token lockout. Not thread-safe: the server keeps it
+// behind its lock, with the store (D-156).
 type ServerGate struct {
     clients: []GateClient
 }

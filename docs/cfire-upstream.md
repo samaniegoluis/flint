@@ -3914,7 +3914,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   request handed to middleware with its status.
 
 ### CF-212 · bug · `confirmed`: a closure handed to `serve_in_background` captures by reference
-- **Seen (milestone 78) [ran, `v0.12.7`, macOS]:** a closure passed to
+- **Seen (milestone 78) [ran, `v0.12.7`, macOS, Docker Linux, Windows VM]:** a closure passed to
   `HttpServer.serve_in_background` lowers to a C++ lambda with `[&]`, though the server's
   threads keep it after the call returns: once the function that started the server returns,
   the handler reads its dead frame. `flint-vault-server`'s first version of the move
