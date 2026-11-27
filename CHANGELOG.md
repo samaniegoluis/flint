@@ -4,6 +4,15 @@ What changed in each version of Flint, newest first. Versions follow
 [SemVer](https://semver.org): a release with a new feature bumps the minor version, one
 with only fixes the patch. Written by `scripts/release.sh` from the commit history.
 
+## 0.38.1 — 2026-11-27
+
+The first signed and notarized Flint for macOS (0.38.0's packages never shipped: the release could not find its signing identity). Everything in 0.38.0 applies: one *Open* on a download, **Always Allow** once more for the Keychain, the microphone asked once more, and updates kept to the same developer.
+
+### Fixed
+
+- **release:** The signing keychain joins the search list, so codesign finds the identity
+
+
 ## 0.38.0 — 2026-11-27
 
 Flint for macOS is now signed with a Developer ID and notarized by Apple: a download opens after one *Open*, with no trip to Privacy & Security. Its id is now `engineer.samaniego.flint.desktop`, so this first signed version asks once more for the Keychain (choose **Always Allow**) and for the microphone in a remote desktop. Later updates keep those permissions, and an update is applied only if it is signed by the same developer.
