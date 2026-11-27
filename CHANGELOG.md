@@ -4,6 +4,16 @@ What changed in each version of Flint, newest first. Versions follow
 [SemVer](https://semver.org): a release with a new feature bumps the minor version, one
 with only fixes the patch. Written by `scripts/release.sh` from the commit history.
 
+## 0.36.1 — 2026-11-27
+
+Flint is now built with cfire 0.12.7, the language it is written in. Nothing changes in how Flint works, in your vaults or in its files: this release moves the build to a newer toolchain that fixes several of its bugs, checked on macOS, Linux and Windows.
+
+### Fixed
+
+- Built with cfire 0.12.7
+- **windows:** Builds again on cfire 0.12.7
+
+
 ## 0.36.0 — 2026-11-26
 
 Type into several panes of a tab at once. Each pane's header has a toggle that adds it to the broadcast, and the Split menu and the palette can add every pane in one go. A bar above the panes says how many receive your keys and stops it in one click, and broadcast is never on by itself in a new tab. Also fixed: when Flint was started from a terminal, bash servers didn't show what you typed.
