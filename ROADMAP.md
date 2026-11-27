@@ -33,7 +33,7 @@ spec or a few milestones; `lean-spec` draws the next spec from the top of this l
 | 7g | **Spec v17, The app in English and Spanish** (D-084, D-138, D-140): shipped as `v0.33.0`, archived as `docs/spec-v17.md`, milestones 66 (the catalog and the setting), 67 (the rest of the page), 68 (Spanish), 69 (the core's messages) | The language setting, the catalog and the core's message ids (§6); four milestones of one session each so a session that runs out resumes from `git log` (owner, 2026-11-23) |
 | 7h | **Spec v18, Tunnels and the remote vault, in daily use** (D-146): shipped as `v0.33.1` and `v0.34.0` (milestone 71 closed it), archived as `docs/spec-v18.md`, milestones 70 (a tunnel that says what it is), 71 (a remote vault that stops on a refused token) | From the owner's daily use on 2026-11-24: a tunnel that read *listening* with no port open, its error cut to one line, a refused server token that keeps being sent (one public address behind NAT locks every machine out) and a 401 that reads as a lockout; with it the self-host guide on how clients are counted and the server's small debts (§10). Placed before signing, which waits for outside steps |
 | 7i | **Spec v19, Many hosts in one tab** (D-149): the current `docs/spec.md`, milestones 72 (split with another host), 73 (broadcast input), 74 (workspaces), 75 (restore open sessions) | Chosen by the owner on 2026-11-26, ahead of signing, which still waits for outside steps: splits that leave empty panes to connect to any host, typing into several panes, a saved layout of hosts in the vault, and the tabs back after a restart (§6) |
-| 7j | **Spec v20, Signing and installers** (D-111), tentative: see *Next specs*. Moved from v14 (D-126), v15 (D-134), v16 (D-138), v18 (D-146) and v19 (D-149) by the owner | macOS Developer ID and notarization, SignPath, a Windows installer and a macOS `.dmg`, the keychain by signed identity (D-099), Touch ID (§7, §4) |
+| 7j | **Spec v20, Signing on macOS** (D-111, D-157), tentative: see *Next specs*. Moved from v14 (D-126), v15 (D-134), v16 (D-138), v18 (D-146) and v19 (D-149) by the owner; Windows split out (D-157) | macOS Developer ID and notarization, the keychain by signed identity (D-099), a macOS `.dmg`, Touch ID (§7, §4). Windows signing and installer later, when SignPath approves |
 | 8 | **`flint agent`** | The SSH agent, in the process that holds the key. Moved down on 2026-11-10: the owner uses nothing that needs it day to day, and it is costly for him to test |
 | 9 | **Later: review once the plan is done** | No date. Optional features the owner reviews when nothing above is left (2026-11-06): **`flint inventory`** for Ansible (§2), **fleet key rotation** (§3), the Ansible-style options of **`flint exec @group`** (§2), **last command time per pane** (§6) |
 | 10 | **MCP server**, optional | Only after the owner weighs what it adds over the CLI, which agents already use under the same grants |
@@ -43,7 +43,7 @@ spec or a few milestones; `lean-spec` draws the next spec from the top of this l
 Tentative: the versions after the current spec, in order. `lean-spec` draws the next spec
 from the first block, confirmed with the owner.
 
-### v20 · Signing and installers (tentative)
+### v20 · Signing on macOS (tentative)
 
 From D-111 (5): v13's portable, unsigned packages and self-update come first; each signed
 version then reaches people through the self-update. Moved from v14 to v15 by the owner
@@ -55,9 +55,20 @@ remote-vault fixes, and to v20 (2026-11-26, D-149), after v19's panes and worksp
 |---|---|
 | macOS signing | Developer ID and notarization on the owner's personal account (the exact identity and Team ID, checked after signing), in `scripts/package.sh` and the workflow's `release` environment; the self-update keeps the signature (the new `.app` verified with `codesign` before the swap) |
 | The keychain by signed identity | The server token and *Remember* created with an access list naming Flint.app and `flint` (D-099), so an update no longer brings back the dialog; whether sync-e2e's `FLINT_KEYCHAIN_SERVICE` seam can go |
-| Installers | A Windows setup (Inno Setup or MSIX, chosen then) per user with no UAC, the Start menu, `PATH` and an uninstaller, replacing `install.ps1`; a macOS `.dmg` with the Applications link; the self-update learns the installed layout |
-| Windows signing | SignPath Foundation (Certum Open Source as the fallback) when its approval arrives, from CI only |
+| A macOS `.dmg` | With the Applications link; the self-update learns the installed layout |
 | Touch ID to open a vault | On the signed app (§4) |
+
+macOS only (owner, 2026-11-27, D-157): the owner's Apple account is renewed and signs the
+mobile app, so the Mac side no longer waits; Windows waits on SignPath.
+
+### Later · Signing and an installer on Windows (tentative)
+
+Split from v20 (D-157). No date: when SignPath approves the project.
+
+| Milestone | Delivers |
+|---|---|
+| Windows signing | SignPath Foundation (Certum Open Source as the fallback) when its approval arrives, from CI only |
+| A Windows installer | A setup (Inno Setup or MSIX, chosen then) per user with no UAC, the Start menu, `PATH` and an uninstaller, replacing `install.ps1`; the self-update learns the installed layout |
 
 ## 1. Parity with Tether
 
