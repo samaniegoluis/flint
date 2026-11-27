@@ -1,0 +1,22 @@
+package serverfs
+
+// Whether flint-vault-server can listen on `host:port` (milestone 78): cfire's listen
+// reports success on a busy port, on an in-process port nothing can reach (CF-208).
+
+// CFIRE-UPSTREAM: CF-208
+import cpp "flint_server.hpp"
+
+// "" when the address can be bound now; otherwise why not.
+fn listen_refusal(host: str, port: u16) -> str {
+    mut ok := false
+    mut reason := ""
+    p := i32(port)
+    // CFIRE-UPSTREAM: CF-208
+    cpp {
+        ok = flint_server::port_free(host, p, reason);
+    }
+    if ok {
+        return ""
+    }
+    return reason
+}

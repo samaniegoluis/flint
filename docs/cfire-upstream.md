@@ -47,7 +47,7 @@ its scope (CF-138).
 | In part | 138 (no unscoped `spawn`), 146 (headers still blocked by 142) |
 | Still open | 142 |
 | Declined upstream | 112 |
-| **New**, found by the audit | 208 (a busy port listens on a virtual port), 209 ("408 Error"), 210 (the header cap is loose), 211 (refused requests are invisible) |
+| **New**, found by the audit | 208 (a busy port listens on a virtual port), 209 ("408 Error"), 210 (the header cap is loose), 211 (refused requests are invisible), 212 (a closure the server keeps captures by reference) |
 
 ## Status at cfire `v0.12.7` (`ad846a3`, 2026-11-26): the move to `v0.12.7`
 
@@ -2594,7 +2594,8 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   flint_fs.hpp`, and `::symlink` in a test, tagged `// CFIRE-UPSTREAM: CF-136`.
 - **Ideal:** `fs.real_path(path) -> str!` and `fs.symlink(target, link) -> void!`.
 
-### CF-137 · bug · `confirmed`: `HttpServer` has no request deadline and a fixed body cap
+### CF-137 · bug · `resolved ✓`: `HttpServer` has no request deadline and a fixed body cap
+- **Resolved at `v0.12.7` (milestone 78):** `flint-vault-server` serves on `http.Server` with explicit `ServerLimits` (header 10 s + body 50 s, the cap answered `413` by the loop); `read_request`, its own `core:net` loop and the tag are gone (D-156).
 - **At `v0.12.7` (milestone 78 audit, 2026-11-26):** [ran] on macOS, Docker Linux and the Windows VM (`--no-shard`), `tools/cfire-repros/cf-137/`: `ServerLimits` bounds the headers (`header_timeout_ms`, from accept) and the whole body (`body_timeout_ms`, one deadline from the end of the headers, not per read: a body dripped a byte every 250 ms got `408` at 1.5 s), answers `413` above `max_body_bytes` before reading the body, and a body cut short never reaches the handler (the loop answers `400`). **Fixed**; milestone 78 moves the server onto it. What `ServerLimits` still cannot hold is CF-209, CF-210 and CF-211.
 - **At `v0.12.7` (cfire version review, 2026-11-26):** [read] unchanged (redesign) (1 tag).
 - **At `v0.12.2` (migration step 5):** [read] `HttpServer.set_limits(ServerLimits{ header_timeout_ms, body_timeout_ms, max_body_bytes, … })`, `413` above the cap, `408` on a deadline, `req.remote_addr`. **fixed differently: the listener rewritten on `HttpServer`** (1 tag).
@@ -2641,7 +2642,8 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   `// CFIRE-UPSTREAM: CF-139`.
 - **Ideal:** `fn (c: TcpConn) peer_addr() -> str` and `req.remote_addr`.
 
-### CF-140 · bug · `confirmed`: a chunked request body reaches the handler undecoded
+### CF-140 · bug · `resolved ✓`: a chunked request body reaches the handler undecoded
+- **Resolved at `v0.12.7` (milestone 78):** the vault server accepts a chunked upload, decoded under its cap; its `411` to `Transfer-Encoding` is gone (a PUT with no length and no body still gets `411`).
 - **At `v0.12.7` (milestone 78 audit, 2026-11-26):** [ran] on macOS, Docker Linux and the Windows VM (`--no-shard`), `tools/cfire-repros/cf-140/`: a chunked body reaches the handler decoded (`hello world`), with `Transfer-Encoding` removed from its headers, and one over `max_body_bytes` is `413`. **Fixed**.
 - **Seen (milestone 42 spike) [ran, macOS, `c5b1d4b`]:** `curl -X PUT -H 'Transfer-Encoding:
   chunked' --data-binary @file` hands the handler the chunk framing (`req.body[0]` is the
@@ -2650,7 +2652,8 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
 - **Workaround:** the vault server answers `411` to any request with `Transfer-Encoding`.
 - **Ideal:** decode chunked request bodies under the same cap, or answer `411` itself.
 
-### CF-141 · improvement · `confirmed`: `make_server` binds only `0.0.0.0`; `Router.put` undocumented
+### CF-141 · improvement · `resolved ✓`: `make_server` binds only `0.0.0.0`; `Router.put` undocumented
+- **Resolved at `v0.12.7` (milestone 78):** the vault server binds `FLINT_VAULT_LISTEN`'s host through `make(http.Server, port, host:)`.
 - **At `v0.12.7` (milestone 78 audit, 2026-11-26):** [ran] on macOS, Docker Linux and the Windows VM (`--no-shard`), `tools/cfire-repros/cf-141/`: `make(http.Server, port, host: "127.0.0.1")` binds that address and a name that is not an IP literal is refused; `Router.put` and `delete_` are in the stdlib docs. **Fixed**.
 - **Seen (milestone 42 spike) [read, `c5b1d4b`]:** `make_server(port)` calls `listen_tcp`,
   which binds every interface; a bare server behind a local reverse proxy wants
@@ -3909,3 +3912,18 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   sees, and no longer for those (D-156).
 - **Ideal:** `ServerLimits{ on_refused: fn(remote_addr, status, reason) }`, or a refused
   request handed to middleware with its status.
+
+### CF-212 · bug · `confirmed`: a closure handed to `serve_in_background` captures by reference
+- **Seen (milestone 78) [ran, `v0.12.7`, macOS]:** a closure passed to
+  `HttpServer.serve_in_background` lowers to a C++ lambda with `[&]`, though the server's
+  threads keep it after the call returns: once the function that started the server returns,
+  the handler reads its dead frame. `flint-vault-server`'s first version of the move
+  crashed with SIGSEGV on its first request; the repro answers without the captured
+  text. No diagnostic: `cfire/ESCAPING-CAPTURE-MUT` (CF-098) checks a mutation only.
+- **Repro:** `tools/cfire-repros/cf-212/`: `start()` captures a local in the handler and
+  returns the server; a GET does not get the local back.
+- **Workaround:** the server never outlives the frame that made its handler:
+  `serve_while(crypto, cfg, opts, body)` in `src/drivers/vault-server/listen.cf` serves
+  while `body(port)` runs, then stops it (forever in `serve`, the test's body in tests).
+- **Ideal:** an escaping closure captures by value (`[=]`, or a move of each capture), as
+  `async.scope`'s tasks do; or `cfire/ESCAPING-CAPTURE-REF` when it cannot.

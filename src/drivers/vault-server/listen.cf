@@ -1,118 +1,35 @@
 package main
 
-// flint-vault-server's own accept loop over core:net (milestone 42, D-097). Each
-// request is read under a deadline for its headers and one for the whole request, its
-// body capped and required whole, then mapped to one call of the use case and back.
-// One request at a time: cfire cannot start a thread (CF-138), so the deadlines are
-// what bounds a slow or hostile client (Principle 8).
-// CFIRE-UPSTREAM: CF-137 (core:net/http's server has no deadline and a fixed cap),
-// CF-140 (chunked bodies), CF-141 (no listen address)
+// flint-vault-server on cfire's HTTP server (milestones 42 and 78, D-097, D-156): an
+// event loop reads every request whole under a deadline for its headers and one for its
+// body, its body capped (413), so a slow or hostile client holds no worker; a pool of
+// workers runs the handler, which maps one request to one call of the use case and back.
+// Requests run at once, so the store and the gate are behind one lock: a vault's version
+// check and its write stay one step (Principle 14), and the rate limits are shared.
 
-import "core:net"
 import "core:net/http"
+import "core:sync"
 import "core:time"
 import "../../domain"
 import "../../ports"
 import "../../application/vaultserver"
 import "../../adapters/serverfs"
 
-HEADER_TIMEOUT_MS: i64 = 10000
-REQUEST_TIMEOUT_MS: i64 = 60000
-WRITE_TIMEOUT_MS: i32 = 30000
-HEADER_MAX_BYTES: usize = 65536
-READ_CHUNK: usize = 65536
+// The header and body deadlines add up to the whole request's 60 s of milestone 42
+// (Principle 8). The body's is one deadline from the end of the headers, not per read.
+HEADER_TIMEOUT_MS: i32 = 10000
+BODY_TIMEOUT_MS: i32 = 50000
+// Requests waiting for a worker, and connections open at once; past either a client
+// gets 503. An idle connection closes after KEEPALIVE_MS.
+MAX_PENDING: usize = 64
+MAX_CONNECTIONS: usize = 256
+KEEPALIVE_MS: i32 = 5000
+REQUESTS_PER_CONNECTION: usize = 100
 
-// What reading one request came to: a request, a status to answer at once, or a
-// connection to drop with no answer (closed before a request, or nothing to say).
-type ReadOutcome struct {
-    status:   i32
-    note:     str
-    method:   str
-    path:     str
-    headers:  http.Request
-    body:     str
-    drop:     bool
-}
-
-fn early(status: i32, note: str) -> ReadOutcome {
-    return ReadOutcome{ status: status, note: note, method: "", path: "", headers: http.Request{}, body: "", drop: false }
-}
-
-fn read_request(mut conn: net.TcpConn, max_body: i64) -> ReadOutcome {
-    start := time.now_ms()
-    mut raw := ""
-    mut head_end: usize = 0
-    for {
-        if at := raw.index_of("\r\n\r\n") {
-            head_end = at
-            break
-        }
-        if raw.len() > HEADER_MAX_BYTES {
-            return early(431, "headers_too_large")
-        }
-        left := start + HEADER_TIMEOUT_MS - time.now_ms()
-        if left <= 0 || !conn.poll(left) {
-            if raw.len() == 0 {
-                return ReadOutcome{ status: 0, note: "idle", method: "", path: "", headers: http.Request{}, body: "", drop: true }
-            }
-            return early(408, "header_timeout")
-        }
-        chunk := conn.read_text(READ_CHUNK) or err {
-            return ReadOutcome{ status: 0, note: "read_error", method: "", path: "", headers: http.Request{}, body: "", drop: true }
-        }
-        if chunk.len() == 0 {
-            return ReadOutcome{ status: 0, note: "closed", method: "", path: "", headers: http.Request{}, body: "", drop: true }
-        }
-        raw += chunk
-    }
-    // The body is binary (sealed blobs): every cut of `raw` is by byte.
-    head := byte_slice(raw, 0, head_end + 4)
-    req := http.parse_request(head) or err {
-        return early(400, "bad_request")
-    }
-    if req.header("transfer-encoding").len() > 0 {
-        return early(411, "chunked_refused")
-    }
-    cl_text := req.header("content-length").trim()
-    mut length: i64 = 0
-    if cl_text.len() > 0 {
-        length = parse_version_tag(cl_text)
-        if length < 0 && cl_text != "0" {
-            return early(400, "bad_content_length")
-        }
-        if length < 0 {
-            length = 0
-        }
-    } else if req.method == "PUT" {
-        return early(411, "length_required")
-    }
-    if length > max_body {
-        return early(413, "too_large")
-    }
-    mut body := byte_tail(raw, head_end + 4)
-    for i64(body.len()) < length {
-        left := start + REQUEST_TIMEOUT_MS - time.now_ms()
-        if left <= 0 || !conn.poll(left) {
-            return early(408, "body_timeout")
-        }
-        want := length - i64(body.len())
-        mut n := READ_CHUNK
-        if want < i64(n) {
-            n = usize(want)
-        }
-        chunk := conn.read_text(n) or err {
-            return ReadOutcome{ status: 0, note: "read_error", method: "", path: "", headers: http.Request{}, body: "", drop: true }
-        }
-        if chunk.len() == 0 {
-            // The client went away before its body was whole: nothing is stored.
-            return ReadOutcome{ status: 0, note: "body_cut_short", method: "", path: "", headers: http.Request{}, body: "", drop: true }
-        }
-        body += chunk
-    }
-    if i64(body.len()) > length {
-        body = byte_slice(body, 0, usize(length))
-    }
-    return ReadOutcome{ status: 0, note: "", method: req.method, path: req.path, headers: req, body: body, drop: false }
+// The server's limits, explicit: `workers` 0 is cfire's pool (twice the cores, at least
+// 4); no WebSocket route, so none is accepted.
+fn server_limits(max_body: i64) -> http.ServerLimits {
+    return http.ServerLimits{ header_timeout_ms: HEADER_TIMEOUT_MS, body_timeout_ms: BODY_TIMEOUT_MS, max_body_bytes: usize(max_body), workers: 0, max_pending: MAX_PENDING, keepalive_timeout_ms: KEEPALIVE_MS, max_requests_per_conn: REQUESTS_PER_CONNECTION, max_websockets: 0, max_connections: MAX_CONNECTIONS }
 }
 
 // The client the gate and the log know: the socket's peer, or, behind a reverse proxy
@@ -134,12 +51,11 @@ fn client_of(peer: str, req: http.Request, trust_proxy: bool) -> str {
     return peer
 }
 
-fn to_server_request(o: ReadOutcome, client: str) -> vaultserver.ServerRequest {
-    h := o.headers
-    return vaultserver.ServerRequest{ method: o.method, path: o.path, client: client, authorization: h.header("authorization"), if_match: h.header("if-match"), if_none_match: h.header("if-none-match"), vault_id: h.header("x-flint-vault-id"), body: o.body }
+fn to_server_request(req: http.Request, client: str) -> vaultserver.ServerRequest {
+    return vaultserver.ServerRequest{ method: req.method, path: req.path, client: client, authorization: req.header("authorization"), if_match: req.header("if-match"), if_none_match: req.header("if-none-match"), vault_id: req.header("x-flint-vault-id"), body: req.body }
 }
 
-// Reason phrases core:net/http does not know (it sends "Error" for them).
+// Reason phrases core:net/http does not know (it sends "Error" for them, CF-209).
 fn reason_phrase(status: i32) -> str {
     if status == 304 {
         return "Not Modified"
@@ -192,16 +108,8 @@ fn to_http_response(r: vaultserver.ServerReply) -> http.Response {
 // A reply for a request refused before it reached the use case.
 fn early_reply(status: i32, note: str) -> vaultserver.ServerReply {
     mut message := "the request was refused"
-    if status == 408 {
-        message = "the request took too long"
-    } else if status == 411 {
-        message = "send the upload with Content-Length, not chunked"
-    } else if status == 413 {
-        message = "the upload is over the server's cap"
-    } else if status == 431 {
-        message = "the request headers are too large"
-    } else if status == 400 {
-        message = "the request could not be read"
+    if status == 411 {
+        message = "send the upload with Content-Length"
     }
     return json_reply(status, note, message)
 }
@@ -223,56 +131,81 @@ type ServeOptions struct {
     port:        u16
     data_dir:    str
     trust_proxy: bool
+    // HEADER_TIMEOUT_MS and BODY_TIMEOUT_MS when serving; tests shorten them.
+    header_ms:   i32
+    body_ms:     i32
 }
 
-// Serves until the process ends. One line per request on stderr: never a header's
-// value, a token or a body (Principle 13).
-fn serve_forever[C: ports.Crypto](crypto: C, cfg: vaultserver.ServerConfig, opts: ServeOptions) -> void! {
-    mut store := try new_file_blob_store(opts.data_dir)
-    mut gate := new_server_gate()
-    mut ln := net.listen(opts.port, opts.host) or err {
-        return error(coded(ERR_PORT_IN_USE, "cannot listen on {opts.host}:{opts.port}"))
-    }
-    if store.moved.len() > 0 {
-        log_line("moved the vault {store.moved} into {opts.data_dir}/vaults/{store.moved} (one folder per vault since 0.12)")
-    }
-    vaults := try store.blob_vaults()
-    log_line("listening on {opts.host}:{ln.port()}, data in {opts.data_dir}, {vaults.len()} vaults (at most {cfg.max_vaults})")
-    for {
-        mut conn := ln.accept() or err {
-            continue
-        }
-        serve_one(crypto, cfg, opts, mut store, mut gate, mut conn)
-        conn.close()
-    }
+// What every request shares, behind one lock.
+type ServerState struct {
+    store: serverfs.FileBlobStore
+    gate:  domain.ServerGate
 }
 
-fn serve_one[C: ports.Crypto](crypto: C, cfg: vaultserver.ServerConfig, opts: ServeOptions, mut store: serverfs.FileBlobStore, mut gate: domain.ServerGate, mut conn: net.TcpConn) {
+// One request, on a worker: the use case under the lock, then one line on stderr: never
+// a header's value, a token or a body (Principle 13). The loop answers what it refuses
+// itself (400, 408, 413, 431, 503) with no line here (CF-211).
+fn handle_request[C: ports.Crypto](crypto: C, cfg: vaultserver.ServerConfig, trust_proxy: bool, state: sync.Mutex[ServerState], req: http.Request) -> http.Response {
     started := time.now_ms()
-    peer := conn.remote_addr()
-    o := read_request(mut conn, cfg.max_body)
-    if o.drop {
-        return
-    }
-    mut reply := early_reply(o.status, o.note)
-    mut client := peer
-    mut method := "-"
-    mut path := "-"
-    if o.status == 0 {
-        client = client_of(peer, o.headers, opts.trust_proxy)
-        method = loggable(o.method)
-        path = loggable(o.path)
-        reply = serve_vault_request(crypto, mut store, mut gate, cfg, to_server_request(o, client), time.now_ms(), time.now().unix_millis())
-    }
-    conn.set_timeout_ms(WRITE_TIMEOUT_MS)
-    resp := to_http_response(reply)
-    _ = conn.write_text(resp.to_http_wire()) or err {
-        log_line("{client} {method} {path} {reply.status} write failed")
-        return
+    client := client_of(req.remote_addr, req, trust_proxy)
+    mut reply := early_reply(411, "length_required")
+    // A PUT with no Content-Length and no chunk: there is no upload to store.
+    if req.method != "PUT" || req.header("content-length").len() > 0 || req.body.len() > 0 {
+        sreq := to_server_request(req, client)
+        reply = state.with_lock(|mut st: ServerState| -> vaultserver.ServerReply {
+            return serve_vault_request(crypto, mut st.store, mut st.gate, cfg, sreq, time.now_ms(), time.now().unix_millis())
+        })
     }
     mut tail := ""
     if reply.note.len() > 0 {
         tail = " " + reply.note
     }
-    log_line("{client} {method} {path} {reply.status} {time.now_ms() - started}ms{tail}")
+    log_line("{client} {loggable(req.method)} {loggable(req.path)} {reply.status} {time.now_ms() - started}ms{tail}")
+    return to_http_response(reply)
+}
+
+// Binds the server and serves while `body(port)` runs, then stops it. The handler's
+// captures live in this frame: cfire captures them by reference even in a closure the
+// server's threads keep (CF-212), so the server never outlives this call.
+fn serve_while[C: ports.Crypto](crypto: C, cfg: vaultserver.ServerConfig, opts: ServeOptions, body: fn(u16) -> void!) -> void! {
+    store := try new_file_blob_store(opts.data_dir)
+    if opts.port > 0 {
+        refused := listen_refusal(opts.host, opts.port)
+        if refused.len() > 0 {
+            return error(coded(ERR_PORT_IN_USE, "cannot listen on {opts.host}:{opts.port}: {refused}"))
+        }
+    }
+    mut srv := make(http.Server, opts.port, host: opts.host) or err {
+        return error(coded(ERR_PORT_IN_USE, "cannot listen on {opts.host}:{opts.port}"))
+    }
+    mut limits := server_limits(cfg.max_body)
+    limits.header_timeout_ms = opts.header_ms
+    limits.body_timeout_ms = opts.body_ms
+    srv.set_limits(limits)
+    if store.moved.len() > 0 {
+        log_line("moved the vault {store.moved} into {opts.data_dir}/vaults/{store.moved} (one folder per vault since 0.12)")
+    }
+    vaults := try store.blob_vaults()
+    state := make(sync.Mutex[ServerState], ServerState{ store: store, gate: new_server_gate() })
+    trust := opts.trust_proxy
+    srv.serve_in_background(|req: http.Request| -> http.Response {
+        return handle_request(crypto, cfg, trust, state, req)
+    })
+    log_line("listening on {opts.host}:{srv.port()}, data in {opts.data_dir}, {vaults.len()} vaults (at most {cfg.max_vaults})")
+    body(srv.port()) or err {
+        srv.stop()
+        return error(err.message())
+    }
+    srv.stop()
+}
+
+fn forever(port: u16) -> void! {
+    for {
+        time.sleep_ms(60000)
+    }
+}
+
+// Serves until the process ends (a signal: main's on_stop).
+fn serve_forever[C: ports.Crypto](crypto: C, cfg: vaultserver.ServerConfig, opts: ServeOptions) -> void! {
+    try serve_while(crypto, cfg, opts, forever)
 }

@@ -67,7 +67,7 @@ fn listen_parts(spec: str) -> ServeOptions! {
     if port < 1 || port > 65535 {
         return error(coded(ERR_USAGE, "FLINT_VAULT_LISTEN has no valid port"))
     }
-    return ServeOptions{ host: host, port: u16(port), data_dir: "", trust_proxy: false }
+    return ServeOptions{ host: host, port: u16(port), data_dir: "", trust_proxy: false, header_ms: HEADER_TIMEOUT_MS, body_ms: BODY_TIMEOUT_MS }
 }
 
 fn cmd_serve() -> void! {

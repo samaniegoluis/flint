@@ -3,6 +3,7 @@ package serverfs
 // The server's store on disk (milestones 42 and 45, D-097, D-103).
 
 import "core:fs"
+import "core:net"
 import "core:json"
 import "core:os"
 import "core:time"
@@ -317,4 +318,20 @@ test "a store from before that never got a vault leaves no folder behind" {
     s := try new_file_blob_store(dir)
     assert(!fs.exists(dir + "/versions"))
     assert_eq((try s.blob_vaults()).len(), usize(0))
+}
+
+// The refusal while a listener of its own holds a port on `bound`, and the port.
+fn refusal_while_held(host: str, bound: str) -> (str, u16)! {
+    held := try net.listen(0, bound)
+    return (listen_refusal(host, held.port()), held.port())
+}
+
+test "a port another socket holds cannot be listened on (CF-208)" {
+    (busy, port) := try refusal_while_held("127.0.0.1", "127.0.0.1")
+    assert_eq(busy, "the port is in use")
+    // The listener is gone with the function: the port is free again.
+    assert_eq(listen_refusal("127.0.0.1", port), "")
+    (every, _) := try refusal_while_held("0.0.0.0", "0.0.0.0")
+    assert_eq(every, "the port is in use")
+    assert_eq(listen_refusal("not-an-address", 9), "not an address")
 }

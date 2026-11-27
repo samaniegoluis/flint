@@ -1,66 +1,209 @@
 package main
 
-// The server's own request reader over a socket pair, and the mapping of a reply to
-// HTTP (milestone 42, D-097). scripts/server-e2e.sh drives the real binary.
+// The server on cfire's HTTP server, driven over real sockets on loopback (milestones
+// 42 and 78, D-097, D-156), and the mapping of a reply to HTTP. scripts/server-e2e.sh
+// drives the real binary.
 
+import "core:fs"
 import "core:net"
 import "core:net/http"
+import "core:os"
+import "core:sync"
+import "core:time"
 
-fn read_from(raw: str, max_body: i64, close_after: bool) -> ReadOutcome {
-    return read_pair(raw, max_body, close_after) or err {
-        assert(false)
-        return early(0, "no pair")
+TEST_TOKEN: str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+TEST_VID: str = "00112233445566778899aabbccddeeff"
+
+fn test_dir(name: str) -> str {
+    mut base := (os.getenv("TMPDIR") or "")
+    if base.len() == 0 {
+        base = "/tmp"
     }
+    return base + "/flint-listen-{name}-{time.now_ms()}"
 }
 
-fn read_pair(raw: str, max_body: i64, close_after: bool) -> ReadOutcome! {
-    (c0, s0) := try net.socketpair()
-    mut client := move c0
-    mut server := move s0
-    _ = try client.write_text(raw)
-    if close_after {
-        client.close()
+// Runs `body` with a server on an ephemeral loopback port, its body cap `max_body`,
+// with the given deadlines (the real ones are 10 s and 50 s).
+fn with_server(name: str, max_body: i64, header_ms: i32, body_ms: i32, body: fn(u16) -> void!) -> void! {
+    sodium := try new_sodium()
+    cfg := try server_config_from(sodium, TEST_TOKEN, "", max_body)
+    opts := ServeOptions{ host: "127.0.0.1", port: 0, data_dir: test_dir(name), trust_proxy: false, header_ms: header_ms, body_ms: body_ms }
+    try serve_while(sodium, cfg, opts, body)
+}
+
+// Sends `text` and reads until the server closes or 5 s pass.
+fn raw(port: u16, text: str) -> str {
+    mut c := net.connect("127.0.0.1", port) or err {
+        return "connect failed"
     }
-    o := read_request(mut server, max_body)
-    client.close()
-    server.close()
-    return o
+    c.set_timeout_ms(5000)
+    _ = c.write_text(text) or err {
+        return "write failed"
+    }
+    return read_all(mut c)
 }
 
-test "a whole request is read, with its body exact" {
-    o := read_from("PUT /v1/vault HTTP/1.1\r\nHost: x\r\nIf-Match: \"3\"\r\nContent-Length: 5\r\n\r\nab\u{1}de", 100, false)
-    assert_eq(o.status, i32(0))
-    assert(!o.drop)
-    assert_eq(o.method, "PUT")
-    assert_eq(o.path, "/v1/vault")
-    assert_eq(o.body.len(), usize(5))
-    assert_eq(o.headers.header("if-match"), "\"3\"")
+fn read_all(mut c: net.TcpConn) -> str {
+    mut got := ""
+    for {
+        chunk := c.read_text(65536) or err {
+            break
+        }
+        if chunk.len() == 0 {
+            break
+        }
+        got += chunk
+    }
+    return got
 }
 
-test "a GET needs no length, and bytes past the length are ignored" {
-    o := read_from("GET /v1/vault HTTP/1.1\r\nHost: x\r\n\r\n", 100, false)
-    assert_eq(o.status, i32(0))
-    assert_eq(o.body, "")
-    o2 := read_from("PUT /v1/vault HTTP/1.1\r\nContent-Length: 2\r\n\r\nabcdef", 100, false)
-    assert_eq(o2.body, "ab")
+fn auth() -> str {
+    return "Authorization: Bearer {TEST_TOKEN}\r\n"
 }
 
-test "a chunked body, a PUT with no length and one over the cap are refused before the body" {
-    assert_eq(read_from("PUT /v1/vault HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n0\r\n\r\n", 100, false).status, i32(411))
-    assert_eq(read_from("PUT /v1/vault HTTP/1.1\r\n\r\n", 100, false).status, i32(411))
-    assert_eq(read_from("PUT /v1/vault HTTP/1.1\r\nContent-Length: 101\r\n\r\n", 100, false).status, i32(413))
-    assert_eq(read_from("PUT /v1/vault HTTP/1.1\r\nContent-Length: -4\r\n\r\n", 100, false).status, i32(400))
+fn put_text(path: str, precondition: str, body: str) -> str {
+    return "PUT {path} HTTP/1.1\r\nHost: x\r\nConnection: close\r\n{auth()}X-Flint-Vault-Id: {TEST_VID}\r\n{precondition}\r\nContent-Length: {body.len()}\r\n\r\n{body}"
 }
 
-test "a body cut short is dropped, never handed on" {
-    o := read_from("PUT /v1/vault HTTP/1.1\r\nContent-Length: 50\r\n\r\nonly ten b", 100, true)
-    assert(o.drop)
-    assert_eq(o.note, "body_cut_short")
+fn get_text(path: str) -> str {
+    return "GET {path} HTTP/1.1\r\nHost: x\r\nConnection: close\r\n{auth()}\r\n"
 }
 
-test "a connection closed before a request is dropped quietly" {
-    o := read_from("", 100, true)
-    assert(o.drop)
+fn body_of(resp: str) -> str {
+    at := resp.index_of("\r\n\r\n") or 0
+    if at == 0 {
+        return ""
+    }
+    return byte_tail(resp, at + 4)
+}
+
+test "a whole upload is stored with its body exact, and served back" {
+    try with_server("whole", 100, 2000, 2000, |port: u16| -> void! {
+        // A NUL and a high byte: the body is binary (CF-145: built from bytes).
+        mut bytes: []byte = [byte(u8(97)), byte(u8(1)), byte(u8(0)), byte(u8(255)), byte(u8(98))]
+        data := str(bytes)
+        put := raw(port, put_text("/v1/vaults/{TEST_VID}", "If-None-Match: *", data))
+        assert(put.starts_with("HTTP/1.1 200"))
+        got := raw(port, get_text("/v1/vaults/{TEST_VID}"))
+        assert(got.starts_with("HTTP/1.1 200"))
+        assert(got.contains("ETag: \"1\"") || got.contains("etag: \"1\""))
+        assert_eq(body_of(got), data)
+    })
+}
+
+test "bytes past the length are not part of the upload" {
+    try with_server("past", 100, 2000, 2000, |port: u16| -> void! {
+        req := "PUT /v1/vaults/{TEST_VID} HTTP/1.1\r\nHost: x\r\nConnection: close\r\n{auth()}X-Flint-Vault-Id: {TEST_VID}\r\nIf-None-Match: *\r\nContent-Length: 2\r\n\r\nabcdef"
+        assert(raw(port, req).starts_with("HTTP/1.1 200"))
+        assert_eq(body_of(raw(port, get_text("/v1/vaults/{TEST_VID}"))), "ab")
+    })
+}
+
+test "a PUT with no length is 411, one over the cap 413, a bad length 400; a chunked one is stored" {
+    try with_server("refused", 100, 2000, 2000, |port: u16| -> void! {
+        assert(raw(port, "PUT /v1/vault HTTP/1.1\r\nHost: x\r\n{auth()}\r\n").starts_with("HTTP/1.1 411 Length Required"))
+        assert(raw(port, "PUT /v1/vault HTTP/1.1\r\nHost: x\r\nContent-Length: 101\r\n\r\n").starts_with("HTTP/1.1 413"))
+        assert(raw(port, "PUT /v1/vault HTTP/1.1\r\nHost: x\r\nContent-Length: -4\r\n\r\n").starts_with("HTTP/1.1 400"))
+        over := "PUT /v1/vault HTTP/1.1\r\nHost: x\r\nTransfer-Encoding: chunked\r\n\r\n65\r\n" + "x".repeat(101) + "\r\n0\r\n\r\n"
+        assert(raw(port, over).starts_with("HTTP/1.1 413"))
+        chunked := "PUT /v1/vaults/{TEST_VID} HTTP/1.1\r\nHost: x\r\nConnection: close\r\n{auth()}X-Flint-Vault-Id: {TEST_VID}\r\nIf-None-Match: *\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n0\r\n\r\n"
+        assert(raw(port, chunked).starts_with("HTTP/1.1 200"))
+        assert_eq(body_of(raw(port, get_text("/v1/vaults/{TEST_VID}"))), "hello")
+    })
+}
+
+test "a body cut short stores nothing" {
+    try with_server("cut", 100, 2000, 2000, |port: u16| -> void! {
+        mut c := try net.connect("127.0.0.1", port)
+        _ = try c.write_text("PUT /v1/vaults/{TEST_VID} HTTP/1.1\r\nHost: x\r\n{auth()}X-Flint-Vault-Id: {TEST_VID}\r\nIf-None-Match: *\r\nContent-Length: 50\r\n\r\nonly ten b")
+        c.close()
+        time.sleep_ms(300)
+        assert(raw(port, get_text("/v1/vaults/{TEST_VID}")).starts_with("HTTP/1.1 404"))
+    })
+}
+
+test "headers that stall get 408 at the header deadline, a dripped body at the body deadline" {
+    try with_server("stall", 100, 800, 1200, |port: u16| -> void! {
+        mut c := try net.connect("127.0.0.1", port)
+        c.set_timeout_ms(5000)
+        _ = try c.write_text("GET /v1/vault HTTP/1.1\r\nHost: x\r\n")
+        t0 := time.now_ms()
+        head := read_all(mut c)
+        waited := time.now_ms() - t0
+        assert(head.starts_with("HTTP/1.1 408"))
+        assert(waited >= 600 && waited < 2500)
+        mut d := try net.connect("127.0.0.1", port)
+        _ = try d.write_text("PUT /v1/vault HTTP/1.1\r\nHost: x\r\nContent-Length: 50\r\n\r\n")
+        t1 := time.now_ms()
+        for i in 0..40 {
+            if d.poll(200) {
+                break
+            }
+            _ = d.write_text("x") or err {
+                break
+            }
+        }
+        d.set_timeout_ms(3000)
+        body := read_all(mut d)
+        assert(body.starts_with("HTTP/1.1 408"))
+        assert(time.now_ms() - t1 < 3000)
+    })
+}
+
+test "a client dripping its body does not delay another client's GET" {
+    try with_server("drip", 100, 5000, 5000, |port: u16| -> void! {
+        mut slow := try net.connect("127.0.0.1", port)
+        _ = try slow.write_text("PUT /v1/vault HTTP/1.1\r\nHost: x\r\nContent-Length: 50\r\n\r\nab")
+        time.sleep_ms(100)
+        t0 := time.now_ms()
+        got := raw(port, get_text("/v1/vaults"))
+        assert(got.starts_with("HTTP/1.1 200"))
+        assert(time.now_ms() - t0 < 1000)
+        slow.close()
+    })
+}
+
+test "two uploads over the same version at once: one is stored, the other is 409" {
+    try with_server("race", 1000, 5000, 5000, |port: u16| -> void! {
+        assert(raw(port, put_text("/v1/vaults/{TEST_VID}", "If-None-Match: *", "first")).starts_with("HTTP/1.1 200"))
+        results := make(sync.Channel[str], 2)
+        async.scope |scope| {
+            scope.spawn || {
+                results.send(raw(port, put_text("/v1/vaults/{TEST_VID}", "If-Match: \"1\"", "from a")))
+            }
+            scope.spawn || {
+                results.send(raw(port, put_text("/v1/vaults/{TEST_VID}", "If-Match: \"1\"", "from b")))
+            }
+        }
+        a := results.try_recv() or ""
+        b := results.try_recv() or ""
+        mut ok := 0
+        mut conflict := 0
+        for r in [a, b] {
+            if r.starts_with("HTTP/1.1 200") {
+                ok += 1
+            } else if r.starts_with("HTTP/1.1 409") {
+                conflict += 1
+            }
+        }
+        assert_eq(ok, 1)
+        assert_eq(conflict, 1)
+        got := raw(port, get_text("/v1/vaults/{TEST_VID}"))
+        assert(got.contains("\"2\""))
+    })
+}
+
+test "a port another socket holds is refused as in use (CF-208)" {
+    mut held := try net.listen(0, "127.0.0.1")
+    sodium := try new_sodium()
+    cfg := try server_config_from(sodium, TEST_TOKEN, "", 100)
+    opts := ServeOptions{ host: "127.0.0.1", port: held.port(), data_dir: test_dir("busy"), trust_proxy: false, header_ms: HEADER_TIMEOUT_MS, body_ms: BODY_TIMEOUT_MS }
+    mut code := ""
+    serve_while(sodium, cfg, opts, forever) or err {
+        code = error_code_of(err.message())
+        return
+    }
+    assert_eq(code, ERR_PORT_IN_USE)
 }
 
 test "the client is the peer, or the last forwarded address behind a trusted proxy" {
@@ -86,6 +229,14 @@ test "a reply carries its version, vault id and waits as headers" {
     assert(w.to_http_wire().starts_with("HTTP/1.1 429 Too Many Requests\r\n"))
     assert_eq(to_http_response(json_reply(401, "unauthorized", "x")).header("www-authenticate"), "Bearer")
     assert_eq(to_http_response(json_reply(405, "method_not_allowed", "x")).header("allow"), "GET, PUT")
+}
+
+test "the limits are explicit: deadlines add up to 60 s, the cap is the server's, no WebSocket" {
+    l := server_limits(1234)
+    assert_eq(i64(l.header_timeout_ms) + i64(l.body_timeout_ms), i64(60000))
+    assert_eq(l.max_body_bytes, usize(1234))
+    assert_eq(l.max_websockets, usize(0))
+    assert(l.max_connections > 0 && l.max_pending > 0)
 }
 
 test "a path is logged printable and short" {

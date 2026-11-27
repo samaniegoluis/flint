@@ -1,0 +1,46 @@
+package main
+
+// CF-212: a closure handed to `serve_in_background` keeps what it captures after the
+// function that made it returns. Open: the C++ lambda captures by reference (`[&]`), so
+// the handler reads a dead frame (a crash, or garbage).
+
+import "core:net"
+import "core:net/http"
+
+fn start(greeting: str) -> http.HttpServer! {
+    mut srv := try make(http.Server, 0, host: "127.0.0.1")
+    srv.set_limits(http.ServerLimits{ keepalive_timeout_ms: 0 })
+    word := greeting + "!"
+    srv.serve_in_background(|req: http.Request| -> http.Response {
+        return http.Response.text(200, "said {word}")
+    })
+    return srv
+}
+
+fn burn(n: i64) -> i64 {
+    mut parts: []str = []
+    for i in 0..n {
+        parts.push("overwrite the stack {i}")
+    }
+    return i64(parts.len())
+}
+
+test "a handler's captures outlive the function that started the server" {
+    mut srv := try start("hello")
+    _ = burn(64)
+    mut c := try net.connect("127.0.0.1", srv.port())
+    c.set_timeout_ms(3000)
+    _ = try c.write_text("GET / HTTP/1.1\r\nHost: x\r\n\r\n")
+    mut got := ""
+    for {
+        chunk := c.read_text(65536) or err {
+            break
+        }
+        if chunk.len() == 0 {
+            break
+        }
+        got += chunk
+    }
+    assert(got.contains("said hello!"))
+    srv.stop()
+}

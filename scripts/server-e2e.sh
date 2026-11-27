@@ -172,9 +172,11 @@ check "GET naming the newest version is 304" "304" "$(status "${auth[@]}" -H 'If
 check "a 304 carries no body" "0" "$(curl -s -m 20 "${auth[@]}" -H 'If-None-Match: "2"' "$url" | wc -c | tr -d ' ')"
 check "GET naming an older version is the file" "second" "$(curl -s -m 20 "${auth[@]}" -H 'If-None-Match: "1"' "$url")"
 check "another vault id is 412" "412" "$(put "$tmp/v2.bin" 'If-Match: "2"' ffeeddccbbaa99887766554433221100)"
-check "a chunked upload is 411" "411" "$(status -X PUT "${auth[@]}" -H 'If-Match: "2"' -H "X-Flint-Vault-Id: $vid" -H 'Transfer-Encoding: chunked' --data-binary @"$tmp/v2.bin" "$url")"
 head -c 1500000 /dev/zero >"$tmp/big.bin"
 check "an upload over the cap is 413" "413" "$(put "$tmp/big.bin" 'If-Match: "2"')"
+# Chunked bodies are decoded under the same cap since milestone 78 (CF-140).
+check "a chunked upload over the cap is 413" "413" "$(status -X PUT "${auth[@]}" -H 'If-Match: "2"' -H "X-Flint-Vault-Id: $vid" -H 'Transfer-Encoding: chunked' --data-binary @"$tmp/big.bin" "$url")"
+check "a PUT with no body and no length is 411" "411" "$(status -X PUT "${auth[@]}" -H 'If-Match: "2"' -H "X-Flint-Vault-Id: $vid" -H 'Content-Length:' "$url")"
 
 # A body cut short: Content-Length 1000, ten bytes, then the client goes away.
 python3 -I - "$port" "$token" "$vid" <<'PY'
@@ -187,7 +189,8 @@ PY
 sleep 0.3
 check "a body cut short stores nothing" '"2"' "$(header ETag "${auth[@]}" "$url")"
 
-# A client that stalls in its headers holds the server only until the header deadline.
+# A client that stalls in its headers gets 408 at the header deadline, and holds no one
+# else meanwhile (milestone 78: the event loop waits on it, not a worker).
 stall_out="$(python3 -I - "$port" "$url" "$token" <<'PY'
 import socket, subprocess, sys, time
 s = socket.create_connection(("127.0.0.1", int(sys.argv[1])))
@@ -197,12 +200,12 @@ t = time.time()
 r = subprocess.run(["curl", "-s", "-o", "/dev/null", "-w", "%{http_code}", "-m", "30",
                     "-H", "Authorization: Bearer " + sys.argv[3], sys.argv[2]], capture_output=True)
 waited = time.time() - t
-s.settimeout(5)
+s.settimeout(15)
 got = s.recv(100).split(b"\r\n")[0].decode()
-print("%s %s %d" % (got, r.stdout.decode(), 1 if waited < 11.5 else 0))
+print("%s %s %d" % (" ".join(got.split(" ")[:2]), r.stdout.decode(), 1 if waited < 2 else 0))
 PY
 )"
-check "a stalled client gets 408 at the deadline; the next one is served" "HTTP/1.1 408 Request Timeout 200 1" "$stall_out"
+check "a stalled client gets 408 at the deadline; another is served meanwhile" "HTTP/1.1 408 200 1" "$stall_out"
 
 # The rate limit: 120 a minute per client.
 codes="$(for _ in $(seq 125); do status "${auth[@]}" "$url"; echo; done | sort | uniq -c | awk '{print $2":"$1}' | tr '\n' ' ')"

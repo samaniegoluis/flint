@@ -116,9 +116,12 @@ With **Nginx Proxy Manager**, add a proxy host for `http://<server>:8787`, reque
 certificate, and under *Advanced* set `client_max_body_size 32m;`. Nginx reads each
 upload whole before it passes it on, which also keeps a slow client away from the server.
 
-The server serves **one request at a time** and gives each one 10 seconds for its headers
-and 60 for its body; a client that stalls is cut off at those limits. A proxy that buffers
-requests (Nginx does by default) keeps that from delaying anyone.
+The server serves **several requests at once**: it waits on every connection in one
+event loop and reads each request whole before a worker handles it, so a slow or stalled
+client delays no one else. Each request gets 10 seconds for its headers and 50 more for
+its body (60 in all); past either it is answered `408` and closed. Two machines uploading
+over the same version at once still get one `200` and one `409`. A proxy that buffers
+requests (Nginx does by default) is still worth having, for TLS.
 
 ## Limits
 
@@ -131,11 +134,17 @@ requests (Nginx does by default) keeps that from delaying anyone.
   to count clients by the address the proxy forwards. Only set it behind a proxy you run:
   exposed directly, a client could forge that header. More in
   [How the server counts clients](#how-the-server-counts-clients).
-- **Size**: an upload over `FLINT_VAULT_MAX_BYTES` is refused with `413`.
+- **Size**: an upload over `FLINT_VAULT_MAX_BYTES` is refused with `413` before it is
+  read, chunked or not.
+- **Connections**: at most 256 open and 64 requests waiting for a worker; past either a
+  client gets `503` and tries again at its next sync. An idle connection closes after
+  5 seconds.
 - **Vaults**: at most `FLINT_VAULT_MAX_VAULTS`. A stolen token could add vaults, so the
   cap bounds the disk it can fill.
 
-The log has one line per request (client, method, path, status, time) and never a token,
+The log has one line per request the server handles (client, method, path, status, time;
+a request refused before it is whole, with `400`, `408`, `413`, `431` or `503`, has none)
+and never a token,
 a header's value, a vault's label or a vault file. A `500` adds its cause, an I/O error
 naming a file under the data folder (`io: cannot read /data/vaults/…/head.json`); the
 client gets only "the server could not read its store". A vault whose `head.json` cannot
@@ -330,6 +339,6 @@ For the curious, and for anyone writing a client. Every request carries
 | `GET`/`PUT /v1/vault` | The single vault of Flint 0.11 and earlier: served while the server keeps at most one, `410` once it keeps several |
 
 A `PUT` whose `X-Flint-Vault-Id` is not the id in its path is refused with `400`, one
-without a precondition with `428`, a chunked one with `411`, a new vault past
+without a precondition with `428`, one with no body and no `Content-Length` with `411`, a new vault past
 `FLINT_VAULT_MAX_VAULTS` with `507`. A client that gets `409` downloads the newest version,
 merges it with its own copy, and uploads the result over that version.
