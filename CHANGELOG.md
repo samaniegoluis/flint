@@ -4,6 +4,15 @@ What changed in each version of Flint, newest first. Versions follow
 [SemVer](https://semver.org): a release with a new feature bumps the minor version, one
 with only fixes the patch. Written by `scripts/release.sh` from the commit history.
 
+## 0.39.0 — 2026-11-27
+
+Agents can now learn Flint from Flint itself: `flint agent-guide` prints every command, flag and exit code, and how to wait for your approval, and `flint --help` points agents to it.
+
+### Added
+
+- **cli:** Flint agent-guide, the CLI's guide for AI agents
+
+
 ## 0.38.1 — 2026-11-27
 
 The first signed and notarized Flint for macOS (0.38.0's packages never shipped: the release could not find its signing identity). Everything in 0.38.0 applies: one *Open* on a download, **Always Allow** once more for the Keychain, the microphone asked once more, and updates kept to the same developer.
