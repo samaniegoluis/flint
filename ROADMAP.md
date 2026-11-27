@@ -57,6 +57,7 @@ remote-vault fixes, and to v20 (2026-11-26, D-149), after v19's panes and worksp
 | The keychain by signed identity | The server token and *Remember* created with an access list naming Flint.app and `flint` (D-099), so an update no longer brings back the dialog; whether sync-e2e's `FLINT_KEYCHAIN_SERVICE` seam can go |
 | Touch ID to open a vault | On the signed app (§4) |
 | A signed Mac's loose ends | A macOS `.dmg` with the Applications link (the self-update learns the installed layout); `flint vault lock` no longer says the keychain refused when the key was not this binary's (§2); the README's Downloads table, macOS first (§7) |
+| Desktop ids on Linux | The owner's domain on Linux too (D-158 (1)): `engineer.samaniego.flint.desktop` for the `.desktop` file and icon (the app's Wayland app id and X11 class with it), polkit's `dev.flint.update` and `dev.flint.approve` renamed under it (Principle 17, owner review; the package drops the old files on upgrade, and the installed helper's action must still match during the update that renames it), and libsecret's `dev.flint.VaultKey` read under both names once so *Remember on this computer* survives. No rush: nothing outside Flint depends on these names. After the loose ends, unless the owner places it sooner |
 
 macOS only (owner, 2026-11-27, D-157): the owner's Apple account is renewed and signs the
 mobile app, so the Mac side no longer waits; Windows waits on SignPath.
