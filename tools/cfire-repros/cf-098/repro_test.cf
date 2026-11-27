@@ -1,0 +1,15 @@
+package main
+
+// CF-098: an assignment to a captured variable inside `scope.spawn` is either seen
+// after the scope or rejected at compile time. Fixed: this file does not build (a
+// diagnostic), or the test passes. Open: it builds and the value is lost.
+
+test "a value a task assigns to a capture is not lost" {
+    mut seen := 0
+    async.scope |scope| {
+        scope.spawn || {
+            seen = 5
+        }
+    }
+    assert_eq(seen, 5)
+}

@@ -1,0 +1,30 @@
+package main
+
+// CF-208: listening on a port another socket holds fails. Open: `net.listen` and
+// `make(http.Server)` return a listener on an in-process "virtual" port instead
+// (`listen_tcp_addr`'s fallback when `bind` fails), so nothing is reachable.
+
+import "core:net"
+import "core:net/http"
+
+test "net.listen on a busy port fails" {
+    mut held := try net.listen(0, "127.0.0.1")
+    port := held.port()
+    mut failed := false
+    _ = net.listen(port, "127.0.0.1") or err {
+        failed = true
+        return
+    }
+    assert(failed)
+}
+
+test "make(http.Server) on a busy port fails" {
+    mut held := try net.listen(0, "0.0.0.0")
+    port := held.port()
+    mut failed := false
+    _ = make(http.Server, port, host: "0.0.0.0") or err {
+        failed = true
+        return
+    }
+    assert(failed)
+}

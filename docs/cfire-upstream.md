@@ -31,6 +31,24 @@ as is.
 - Each entry gives: what Flint needed, a minimal repro or source pointer, the workaround and
   where it lives, and what an ideal API would look like.
 
+## Status at cfire `v0.12.7`: milestone 78's audit (threads, sockets, HTTP)
+
+Every `confirmed` entry about threads, sockets, HTTP or WebSocket, rerun with a repro kept
+in `tools/cfire-repros/<cf-nnn>/` (`tools/cfire-repros/run.sh`; in Docker
+`FLINT_LINUX_STEPS=repros scripts/linux-check.sh`) on macOS, Docker Linux and the Windows
+VM, the same result on all three. **Can user code start a thread?** Yes, scoped:
+`async.scope` + `scope.spawn` run at once and join at the scope's end; no `spawn` outlives
+its scope (CF-138).
+
+| On `v0.12.7` [ran] | Entries |
+|---|---|
+| **Fixed**; the vault server moves onto `http.Server` (milestone 78) | 137, 140, 141 |
+| Fixed, a diagnostic now; nothing to remove | 098 |
+| In part | 138 (no unscoped `spawn`), 146 (headers still blocked by 142) |
+| Still open | 142 |
+| Declined upstream | 112 |
+| **New**, found by the audit | 208 (a busy port listens on a virtual port), 209 ("408 Error"), 210 (the header cap is loose), 211 (refused requests are invisible) |
+
 ## Status at cfire `v0.12.7` (`ad846a3`, 2026-11-26): the move to `v0.12.7`
 
 Flint moves from `v0.12.2` to `v0.12.7` (D-154), from the version review kept outside the
@@ -1933,7 +1951,8 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
 - **Ideal:** with hide-on-close set, webui answers reopen by showing the window (and emits
   `window:reopened`), and its Quit item quits (`app.quit()`) whatever hide-on-close says.
 
-### CF-098 · bug · `confirmed`: assigning a captured variable inside `scope.spawn` compiles and is lost
+### CF-098 · bug · `resolved ✓`: assigning a captured variable inside `scope.spawn` compiles and is lost
+- **At `v0.12.7` (milestone 78 audit, 2026-11-26):** [ran] on macOS, Docker Linux and the Windows VM (`--no-shard`), `tools/cfire-repros/cf-098/`: the assignment inside `scope.spawn` is now rejected at compile time (`cfire/ESCAPING-CAPTURE-MUT`: "wrap shared mutable state in `sync.Mutex[T]`, `sync.Atomic[T]`, or communicate via `sync.Channel[T]`"), the diagnostic the entry asked for. Flint's channel workaround is the pattern the diagnostic names: **resolved, nothing to remove**.
 - **At `c5b1d4b`:** [ran] Still compiles and is lost: `seen = 5` inside `scope.spawn` leaves `seen` at 0.
 - **Repro (43431f2, macOS):** `mut heard := ""` then `async.scope(workers: 2) |scope| { scope.spawn || { heard = "x" } }`;
   after the scope, `heard` is still `""`. The task gets a copy of every capture (as `src/drivers/gui/main.cf`
@@ -2112,7 +2131,8 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   off-screen window, then the WKWebView's frame), as `app.run()` has it.
 
 
-### CF-112 · missing · `confirmed`: no way to wait on several sockets at once
+### CF-112 · missing · `declined upstream`: no way to wait on several sockets at once
+- **At `v0.12.7` (milestone 78 audit, 2026-11-26):** [ran] on macOS, Docker Linux and the Windows VM (`--no-shard`), `tools/cfire-repros/cf-112/`: `net.poll` over several connections is still `cfire/UNKNOWN-STDLIB-FN`; the runtime's `Poller` stays internal (it is what `http.Server`'s event loop waits on). Declined upstream (cfire's CF-231); `flint_tunnel.hpp` keeps its own poll.
 - **At `v0.12.7` (cfire version review, 2026-11-26):** [read] declined (cfire's CF-231) (3 tags).
 - **At `v0.12.2` (migration step 5):** [read] one `poll` per `TcpConn`; the runtime's `Poller` is internal (`net::detail`); upstream CF-231 excluded. **still missing** (4 tags).
 - **What happened (c5b1d4b, milestone 22):** a tunnel's worker must wait on its listeners,
@@ -2575,6 +2595,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
 - **Ideal:** `fs.real_path(path) -> str!` and `fs.symlink(target, link) -> void!`.
 
 ### CF-137 · bug · `confirmed`: `HttpServer` has no request deadline and a fixed body cap
+- **At `v0.12.7` (milestone 78 audit, 2026-11-26):** [ran] on macOS, Docker Linux and the Windows VM (`--no-shard`), `tools/cfire-repros/cf-137/`: `ServerLimits` bounds the headers (`header_timeout_ms`, from accept) and the whole body (`body_timeout_ms`, one deadline from the end of the headers, not per read: a body dripped a byte every 250 ms got `408` at 1.5 s), answers `413` above `max_body_bytes` before reading the body, and a body cut short never reaches the handler (the loop answers `400`). **Fixed**; milestone 78 moves the server onto it. What `ServerLimits` still cannot hold is CF-209, CF-210 and CF-211.
 - **At `v0.12.7` (cfire version review, 2026-11-26):** [read] unchanged (redesign) (1 tag).
 - **At `v0.12.2` (migration step 5):** [read] `HttpServer.set_limits(ServerLimits{ header_timeout_ms, body_timeout_ms, max_body_bytes, … })`, `413` above the cap, `408` on a deadline, `req.remote_addr`. **fixed differently: the listener rewritten on `HttpServer`** (1 tag).
 - **Seen (milestone 42 spike) [ran, macOS, `c5b1d4b`]:** `read_http_request`
@@ -2596,7 +2617,8 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   max_body })`, `413` above the cap, and an error (not a short body) when the body ends
   before `Content-Length`.
 
-### CF-138 · missing · `confirmed`: no way to run work on another thread from cfire
+### CF-138 · missing · `partly resolved`: no way to run work on another thread from cfire
+- **At `v0.12.7` (milestone 78 audit, 2026-11-26):** [ran] on macOS, Docker Linux and the Windows VM (`--no-shard`), `tools/cfire-repros/cf-138/`: `http.Server` reads slow clients in an event loop and runs handlers on a worker pool (`workers`): a GET was answered in a few ms while another client dripped its body, and three handlers sleeping 600 ms ended together. User code starts threads with `async.scope` + `scope.spawn` (two tasks sleeping 500 ms took about 500 ms); they are joined when the scope ends, and a task cannot assign a capture (CF-098). There is still no `spawn` for a thread that outlives its caller's scope, and no way to share a libssh session across tasks under a lock held in a struct (CF-026). **In part:** the vault server needs nothing more (milestone 78); the native threads of `flint_ssh.hpp`, `flint_tunnel.hpp` and `flint_rdp.hpp` stay (ROADMAP §5). Seen on the way: `sync.Channel.recv()` is typed `T?`, not `T!` as `cfire doc --llm` says.
 - **Seen (milestone 42 spike) [ran, macOS, `c5b1d4b`]:** `HttpServer` serves one
   connection at a time on its single worker thread; while one client dripped its body,
   a second `GET` waited 29.6 s. cfire has channels and mutexes (`core:sync`) but no
@@ -2620,6 +2642,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
 - **Ideal:** `fn (c: TcpConn) peer_addr() -> str` and `req.remote_addr`.
 
 ### CF-140 · bug · `confirmed`: a chunked request body reaches the handler undecoded
+- **At `v0.12.7` (milestone 78 audit, 2026-11-26):** [ran] on macOS, Docker Linux and the Windows VM (`--no-shard`), `tools/cfire-repros/cf-140/`: a chunked body reaches the handler decoded (`hello world`), with `Transfer-Encoding` removed from its headers, and one over `max_body_bytes` is `413`. **Fixed**.
 - **Seen (milestone 42 spike) [ran, macOS, `c5b1d4b`]:** `curl -X PUT -H 'Transfer-Encoding:
   chunked' --data-binary @file` hands the handler the chunk framing (`req.body[0]` is the
   first hex digit of the chunk size) as if it were the body. The client side decodes
@@ -2628,6 +2651,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
 - **Ideal:** decode chunked request bodies under the same cap, or answer `411` itself.
 
 ### CF-141 · improvement · `confirmed`: `make_server` binds only `0.0.0.0`; `Router.put` undocumented
+- **At `v0.12.7` (milestone 78 audit, 2026-11-26):** [ran] on macOS, Docker Linux and the Windows VM (`--no-shard`), `tools/cfire-repros/cf-141/`: `make(http.Server, port, host: "127.0.0.1")` binds that address and a name that is not an IP literal is refused; `Router.put` and `delete_` are in the stdlib docs. **Fixed**.
 - **Seen (milestone 42 spike) [read, `c5b1d4b`]:** `make_server(port)` calls `listen_tcp`,
   which binds every interface; a bare server behind a local reverse proxy wants
   `127.0.0.1`. `Router.put` (and `handle`) exist and work but are not in the stdlib docs.
@@ -2635,6 +2659,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
 - **Ideal:** `make_server(port, host = "0.0.0.0")`; document `put`, `delete`, `handle`.
 
 ### CF-142 · bug · `confirmed`: `http.request` with headers does not compile
+- **At `v0.12.7` (milestone 78 audit, 2026-11-26):** [ran] on macOS, Docker Linux and the Windows VM (`--no-shard`), `tools/cfire-repros/cf-142/`: still `cfire/INTERNAL-BACKEND-ERROR` ("C++ backend rejected generated code for a pure .cf file that Sema accepted") for a `map[str]str` variable passed as `headers`, on all three. **Still open.**
 - **At `v0.12.7` (cfire version review, 2026-11-26):** [ran] cfire's plan lists the headers case as handled; a `map[str]str` local passed as `headers` still fails, "no viable conversion from 'cfire::Map<str, str>' to 'const std::unordered_map<str, str>'" (`r142`). **Claimed resolved, still open**; it blocks CF-146's new `max_response_bytes` and macOS headers from cfire code.
 - **Seen (milestone 42 spike) [ran, macOS, `c5b1d4b`]:** passing a `map[str]str` variable as
   `headers` to `http.request` / `http.get` fails in C++: the runtime takes
@@ -2682,7 +2707,8 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
 - **Ideal:** a literal with an embedded NUL lowers to `std::string(ptr, len)` (or a `""s`
   literal), so `len()` counts every byte.
 
-### CF-146 · missing · `confirmed`: no HTTP client usable from cfire for an API with headers and deadlines
+### CF-146 · missing · `partly resolved`: no HTTP client usable from cfire for an API with headers and deadlines
+- **At `v0.12.7` (milestone 78 audit, 2026-11-26):** [ran] on macOS, Docker Linux and the Windows VM (`--no-shard`), `tools/cfire-repros/cf-146/`: over `http://`, `http.get` returns every response header (`ETag`, `X-Flint-Vault-Id`) and ends at `timeout_ms` against a server that accepts and never answers (700 ms). Sending headers is still blocked by CF-142, so Flint's libcurl client stays; TLS through each system's stack was not run. **In part.**
 - **At `v0.12.7` (cfire version review, 2026-11-26):** [read] `max_response_bytes`, macOS `NSURLSession` with headers; [ran] blocked by CF-142 (9 tags).
 - **At `v0.12.2` (migration step 5):** [read] `http.request` takes a header map and `timeout_ms`; on macOS an `https://` URL still goes through `NSURLConnection` and returns no response headers (Flint needs `ETag` and `X-Flint-Vault-Id`); no response size cap. **in part (kept)** (5 tags).
 - **Seen (milestone 43) [read, `c5b1d4b`]:** besides CF-142 (headers do not compile),
@@ -3831,3 +3857,55 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
 - **Ideal:** pass the objects in a response file (`clang++ @objs.rsp`, which clang and lld
   read on every OS), or run the linker with `CreateProcess` (32,767 characters) and a
   response file past that.
+
+### CF-208 · bug · `confirmed`: listening on a busy port succeeds, on an in-process "virtual" port
+- **Seen (milestone 78 audit) [ran, `v0.12.7`, macOS, Docker Linux, Windows VM]:**
+  `net.listen(port, host)` and `make(http.Server, port, host:)` return a listener when
+  another socket already holds `port`: `listen_tcp_addr` (`core/net/tcp.hpp:639`) falls back
+  to `TcpListener(-1, port)`, an in-process loopback port, whenever `bind` fails, so the
+  program reports it listens and nothing outside it can connect. On Windows the socket is
+  also opened with `SO_REUSEADDR`, which there lets a second socket share a port that is in
+  use. `flint-vault-server`'s "cannot listen" error (`port_in_use`) never fired.
+- **Repro:** `tools/cfire-repros/cf-208/`: hold a port with `net.listen`, then
+  `net.listen` / `make(http.Server)` on it: both return a listener.
+- **Workaround:** `flint_server::port_free(host, port)` binds the address once with the
+  options of a plain server (`SO_EXCLUSIVEADDRUSE` on Windows) and closes it before
+  `make(http.Server)` (`src/adapters/serverfs/native/flint_server.hpp`), tagged
+  `CFIRE-UPSTREAM: CF-208`. A port taken between the two calls is not caught.
+- **Ideal:** a failed `bind` is an error (`EADDRINUSE` as an error kind); the virtual port
+  only when asked for (`net.listen_virtual`), and `SO_EXCLUSIVEADDRUSE` on Windows.
+
+### CF-209 · bug · `confirmed`: what `http.Server` answers itself reads "Error" for 408 and 413
+- **Seen (milestone 78 audit) [ran, `v0.12.7`, macOS, Docker Linux, Windows VM]:** the
+  loop's own answers go through `Response::text`, whose reason table has no 408 or 413:
+  `HTTP/1.1 408 Error`, `HTTP/1.1 413 Error` (431 and 400 have theirs).
+  `Response.text(408, …).status_text` is `"Error"`.
+- **Repro:** `tools/cfire-repros/cf-209/`.
+- **Workaround:** none needed: Flint's clients read the code. `flint-vault-server` sets the
+  phrase on its own replies (`reason_phrase`); server-e2e checks the loop's by code.
+- **Ideal:** the reason table covers every status RFC 9110 names (408, 411, 412, 413, 428,
+  429, 431 at least).
+
+### CF-210 · bug · `confirmed`: the 64 KB header cap lets a larger header section through
+- **Seen (milestone 78 audit) [ran, `v0.12.7`, macOS, Docker Linux, Windows VM]:**
+  `RequestAssembler` checks `buf_.size() > 65536` only while the header section is not
+  complete, after each read burst (up to 8 reads of 16 KB per wake-up), so a 70 KB header
+  section sent at once is served `200`; one of about 200 KB is `431`. Memory stays bounded,
+  the cap is just not the one documented.
+- **Repro:** `tools/cfire-repros/cf-210/`.
+- **Workaround:** none; `flint-vault-server` keeps the loop's cap (D-156). Its own loop
+  answered `431` above 64 KB.
+- **Ideal:** the header section's size checked against the cap when it completes too, and
+  the cap a `ServerLimits` field (`max_header_bytes`).
+
+### CF-211 · missing · `confirmed`: a request `http.Server` refuses itself is invisible to the program
+- **Seen (milestone 78 audit) [ran, `v0.12.7`, macOS, Docker Linux, Windows VM]:** what the
+  event loop answers itself (`400` bad framing or a body cut short, `408` deadlines, `413`
+  over the cap, `431`, `503` over `max_connections` / `max_pending`) reaches no handler and
+  no `Router.use` middleware, and there is no hook or counter, so a server cannot log or
+  count it.
+- **Repro:** `tools/cfire-repros/cf-211/`: a middleware counter stays 0 after a `413`.
+- **Workaround:** none; `flint-vault-server`'s log has a line for every request its handler
+  sees, and no longer for those (D-156).
+- **Ideal:** `ServerLimits{ on_refused: fn(remote_addr, status, reason) }`, or a refused
+  request handed to middleware with its status.

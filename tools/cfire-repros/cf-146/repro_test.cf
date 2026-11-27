@@ -1,0 +1,40 @@
+package main
+
+// CF-146: an HTTP client usable for an API with headers and deadlines: response
+// headers on every platform, a deadline honoured against a server that stalls.
+// Sending headers is CF-142's repro. TLS through the system's stack is read, not run.
+
+import "core:net"
+import "core:net/http"
+import "core:time"
+
+test "a response's headers reach the caller" {
+    mut srv := try make(http.Server, 0, host: "127.0.0.1")
+    srv.set_limits(http.ServerLimits{ keepalive_timeout_ms: 0 })
+    mut r := make(http.Router)
+    r.get("/v", |req: http.Request| -> http.Response {
+        mut resp := http.Response.text(200, "blob")
+        resp.headers["ETag"] = "\"7\""
+        resp.headers["X-Flint-Vault-Id"] = "00112233445566778899aabbccddeeff"
+        return resp
+    })
+    srv.serve_in_background(r)
+    resp := try http.get("http://127.0.0.1:{srv.port()}/v", timeout_ms: 3000)
+    assert_eq(resp.status, i32(200))
+    assert_eq(resp.header("etag"), "\"7\"")
+    assert_eq(resp.header("x-flint-vault-id"), "00112233445566778899aabbccddeeff")
+    srv.stop()
+}
+
+test "a request to a server that never answers ends at its deadline" {
+    mut ln := try net.listen(0, "127.0.0.1")
+    t0 := time.now_ms()
+    mut failed := false
+    _ = http.get("http://127.0.0.1:{ln.port()}/v", timeout_ms: 700) or err {
+        failed = true
+        return
+    }
+    waited := time.now_ms() - t0
+    assert(failed)
+    assert(waited < 2500)
+}

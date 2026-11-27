@@ -1,0 +1,41 @@
+package main
+
+// CF-210: a header section over 64 KB is 431. Open: the cap is checked once per
+// read burst (8 reads of 16 KB), so a header section sent at once passes up to ~128 KB.
+
+import "core:net"
+import "core:net/http"
+
+fn raw(port: u16, text: str) -> str {
+    mut c := net.connect("127.0.0.1", port) or err {
+        return "connect failed"
+    }
+    c.set_timeout_ms(3000)
+    _ = c.write_text(text) or err {
+        return "write failed"
+    }
+    mut got := ""
+    for {
+        chunk := c.read_text(65536) or err {
+            break
+        }
+        if chunk.len() == 0 {
+            break
+        }
+        got += chunk
+    }
+    return got
+}
+
+test "a 70 KB header section is 431" {
+    mut srv := try make(http.Server, 0, host: "127.0.0.1")
+    srv.set_limits(http.ServerLimits{ keepalive_timeout_ms: 0 })
+    mut r := make(http.Router)
+    r.get("/g", |req: http.Request| -> http.Response {
+        return http.Response.text(200, "served")
+    })
+    srv.serve_in_background(r)
+    got := raw(srv.port(), "GET /g HTTP/1.1\r\nHost: x\r\nX-Big: " + "a".repeat(70000) + "\r\n\r\n")
+    assert(got.starts_with("HTTP/1.1 431"))
+    srv.stop()
+}

@@ -1,0 +1,120 @@
+package main
+
+// CF-137: `http.Server` bounds a request with a header deadline and a body deadline,
+// caps the body (413) and never hands a body cut short to the handler.
+
+import "core:net"
+import "core:net/http"
+import "core:sync"
+import "core:time"
+
+fn raw(port: u16, text: str) -> str {
+    mut c := net.connect("127.0.0.1", port) or err {
+        return "connect failed"
+    }
+    c.set_timeout_ms(5000)
+    _ = c.write_text(text) or err {
+        return "write failed"
+    }
+    mut got := ""
+    for {
+        chunk := c.read_text(65536) or err {
+            break
+        }
+        if chunk.len() == 0 {
+            break
+        }
+        got += chunk
+    }
+    return got
+}
+
+fn read_all(mut c: net.TcpConn) -> str {
+    mut got := ""
+    for {
+        chunk := c.read_text(65536) or err {
+            break
+        }
+        if chunk.len() == 0 {
+            break
+        }
+        got += chunk
+    }
+    return got
+}
+
+fn start(calls: sync.Atomic[i64]) -> http.HttpServer! {
+    mut srv := try make(http.Server, 0, host: "127.0.0.1")
+    srv.set_limits(http.ServerLimits{ header_timeout_ms: 1000, body_timeout_ms: 1500, max_body_bytes: 100, keepalive_timeout_ms: 0 })
+    mut r := make(http.Router)
+    r.put("/u", |req: http.Request| -> http.Response {
+        _ = calls.add(1)
+        return http.Response.text(200, "len={req.body.len()}")
+    })
+    srv.serve_in_background(r)
+    return srv
+}
+
+test "headers that stall get 408 at the header deadline" {
+    calls := make(sync.Atomic[i64], 0)
+    mut srv := try start(calls)
+    mut c := try net.connect("127.0.0.1", srv.port())
+    c.set_timeout_ms(5000)
+    _ = try c.write_text("PUT /u HTTP/1.1\r\nHost: x\r\n")
+    t0 := time.now_ms()
+    got := read_all(mut c)
+    waited := time.now_ms() - t0
+    assert(got.starts_with("HTTP/1.1 408"))
+    assert(waited >= 800 && waited < 2500)
+    srv.stop()
+}
+
+test "a body dripped a byte at a time gets 408 at the body deadline, not per read" {
+    calls := make(sync.Atomic[i64], 0)
+    mut srv := try start(calls)
+    mut c := try net.connect("127.0.0.1", srv.port())
+    _ = try c.write_text("PUT /u HTTP/1.1\r\nHost: x\r\nContent-Length: 50\r\n\r\n")
+    t0 := time.now_ms()
+    mut answered := false
+    for i in 0..40 {
+        if c.poll(250) {
+            answered = true
+            break
+        }
+        _ = c.write_text("x") or err {
+            break
+        }
+    }
+    c.set_timeout_ms(3000)
+    got := read_all(mut c)
+    waited := time.now_ms() - t0
+    assert(answered)
+    assert(got.starts_with("HTTP/1.1 408"))
+    assert(waited >= 1300 && waited < 3000)
+    assert_eq(calls.load(), i64(0))
+    srv.stop()
+}
+
+test "a body over the cap is 413 before it is read" {
+    calls := make(sync.Atomic[i64], 0)
+    mut srv := try start(calls)
+    got := raw(srv.port(), "PUT /u HTTP/1.1\r\nHost: x\r\nContent-Length: 101\r\n\r\n")
+    assert(got.starts_with("HTTP/1.1 413"))
+    assert_eq(calls.load(), i64(0))
+    srv.stop()
+}
+
+test "a body cut short never reaches the handler" {
+    calls := make(sync.Atomic[i64], 0)
+    mut srv := try start(calls)
+    mut c := try net.connect("127.0.0.1", srv.port())
+    c.set_timeout_ms(3000)
+    _ = try c.write_text("PUT /u HTTP/1.1\r\nHost: x\r\nContent-Length: 50\r\n\r\nonly ten b")
+    c.close()
+    time.sleep_ms(300)
+    assert_eq(calls.load(), i64(0))
+    ok := raw(srv.port(), "PUT /u HTTP/1.1\r\nHost: x\r\nContent-Length: 3\r\n\r\nabc")
+    assert(ok.contains("len=3"))
+    assert_eq(calls.load(), i64(1))
+    srv.stop()
+}

@@ -1,0 +1,46 @@
+package main
+
+// CF-209: what `http.Server` answers itself carries the status's reason phrase.
+// Open: 408 and 413 read "Error" (`Response::text` has no phrase for them).
+
+import "core:net"
+import "core:net/http"
+
+fn raw(port: u16, text: str) -> str {
+    mut c := net.connect("127.0.0.1", port) or err {
+        return "connect failed"
+    }
+    c.set_timeout_ms(3000)
+    _ = c.write_text(text) or err {
+        return "write failed"
+    }
+    mut got := ""
+    for {
+        chunk := c.read_text(65536) or err {
+            break
+        }
+        if chunk.len() == 0 {
+            break
+        }
+        got += chunk
+    }
+    return got
+}
+
+test "a 413 from the loop reads Payload Too Large or Content Too Large" {
+    mut srv := try make(http.Server, 0, host: "127.0.0.1")
+    srv.set_limits(http.ServerLimits{ max_body_bytes: 10, keepalive_timeout_ms: 0 })
+    mut r := make(http.Router)
+    r.put("/u", |req: http.Request| -> http.Response {
+        return http.Response.text(200, "x")
+    })
+    srv.serve_in_background(r)
+    got := raw(srv.port(), "PUT /u HTTP/1.1\r\nHost: x\r\nContent-Length: 11\r\n\r\n")
+    assert(got.starts_with("HTTP/1.1 413 "))
+    assert(!got.starts_with("HTTP/1.1 413 Error"))
+    srv.stop()
+}
+
+test "Response.text(408) has its reason phrase" {
+    assert_eq(http.Response.text(408, "x").status_text, "Request Timeout")
+}

@@ -1,0 +1,21 @@
+package main
+
+// CF-142: `http.request` takes a `map[str]str` variable as its headers. Fixed: this
+// builds and the server sees the header. Open: the C++ does not compile.
+
+import "core:net/http"
+
+test "a header map variable reaches the server" {
+    mut srv := try make(http.Server, 0, host: "127.0.0.1")
+    srv.set_limits(http.ServerLimits{ keepalive_timeout_ms: 0 })
+    mut r := make(http.Router)
+    r.put("/u", |req: http.Request| -> http.Response {
+        return http.Response.text(200, "if-match={req.header("if-match")}")
+    })
+    srv.serve_in_background(r)
+    mut h: map[str]str = {}
+    h["If-Match"] = "\"1\""
+    resp := try http.request("PUT", "http://127.0.0.1:{srv.port()}/u", "body", "application/octet-stream", h)
+    assert(resp.body.contains("if-match=\"1\""))
+    srv.stop()
+}

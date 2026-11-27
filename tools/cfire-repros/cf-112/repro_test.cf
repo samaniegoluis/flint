@@ -1,0 +1,15 @@
+package main
+
+// CF-112: one wait over several sockets. Fixed: this builds and passes. Declined
+// upstream (cfire's CF-231): `net` has a `poll` per connection only.
+
+import "core:net"
+
+test "one poll waits on two connections" {
+    (a0, a1) := try net.socketpair()
+    (b0, b1) := try net.socketpair()
+    mut wa := move a0
+    _ = try wa.write_text("x")
+    ready := try net.poll([a1, b1], 100)
+    assert_eq(ready.len(), usize(1))
+}

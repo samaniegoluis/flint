@@ -1,0 +1,104 @@
+package main
+
+// CF-138: work runs on other threads from cfire. `http.Server` runs handlers on a
+// worker pool and reads slow clients in its event loop; `async.scope` runs its tasks
+// at once. (A thread that outlives its scope, `spawn`, has no API: see the entry.)
+
+import "core:net"
+import "core:net/http"
+import "core:sync"
+import "core:time"
+
+fn get(port: u16, path: str) -> str {
+    mut c := net.connect("127.0.0.1", port) or err {
+        return "connect failed"
+    }
+    c.set_timeout_ms(5000)
+    _ = c.write_text("GET {path} HTTP/1.1\r\nHost: x\r\n\r\n") or err {
+        return "write failed"
+    }
+    mut got := ""
+    for {
+        chunk := c.read_text(65536) or err {
+            break
+        }
+        if chunk.len() == 0 {
+            break
+        }
+        got += chunk
+    }
+    return got
+}
+
+fn start() -> http.HttpServer! {
+    mut srv := try make(http.Server, 0, host: "127.0.0.1")
+    srv.set_limits(http.ServerLimits{ header_timeout_ms: 5000, body_timeout_ms: 5000, workers: 4, keepalive_timeout_ms: 0 })
+    mut r := make(http.Router)
+    r.get("/slow", |req: http.Request| -> http.Response {
+        time.sleep_ms(600)
+        return http.Response.text(200, "slow")
+    })
+    r.get("/fast", |req: http.Request| -> http.Response {
+        return http.Response.text(200, "fast")
+    })
+    r.put("/u", |req: http.Request| -> http.Response {
+        return http.Response.text(200, "len={req.body.len()}")
+    })
+    srv.serve_in_background(r)
+    return srv
+}
+
+test "a client dripping its body does not delay another client's GET" {
+    mut srv := try start()
+    port := srv.port()
+    mut slow := try net.connect("127.0.0.1", port)
+    _ = try slow.write_text("PUT /u HTTP/1.1\r\nHost: x\r\nContent-Length: 50\r\n\r\nab")
+    time.sleep_ms(100)
+    t0 := time.now_ms()
+    got := get(port, "/fast")
+    assert(got.contains("fast"))
+    assert(time.now_ms() - t0 < 500)
+    slow.close()
+    srv.stop()
+}
+
+test "three slow handlers run at once on the worker pool" {
+    mut srv := try start()
+    port := srv.port()
+    done := make(sync.Channel[str], 3)
+    t0 := time.now_ms()
+    async.scope |scope| {
+        for i in 0..3 {
+            scope.spawn || {
+                done.send(get(port, "/slow"))
+            }
+        }
+    }
+    wall := time.now_ms() - t0
+    for i in 0..3 {
+        got := done.try_recv() or ""
+        assert(got.contains("slow"))
+    }
+    assert(wall < 1500)
+    srv.stop()
+}
+
+test "async.scope runs its tasks on threads of their own, at once" {
+    done := make(sync.Channel[i64], 2)
+    t0 := time.now_ms()
+    async.scope |scope| {
+        scope.spawn || {
+            time.sleep_ms(500)
+            done.send(1)
+        }
+        scope.spawn || {
+            time.sleep_ms(500)
+            done.send(2)
+        }
+    }
+    wall := time.now_ms() - t0
+    a := done.try_recv() or 0
+    b := done.try_recv() or 0
+    assert_eq(a + b, i64(3))
+    assert(wall < 900)
+}

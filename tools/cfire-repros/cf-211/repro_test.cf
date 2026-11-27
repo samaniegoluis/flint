@@ -1,0 +1,48 @@
+package main
+
+// CF-211: a request the loop refuses (400, 408, 413, 431, 503) is visible to the
+// program, for its log. Open: no handler, middleware or hook sees it.
+
+import "core:net"
+import "core:net/http"
+import "core:sync"
+
+fn raw(port: u16, text: str) -> str {
+    mut c := net.connect("127.0.0.1", port) or err {
+        return "connect failed"
+    }
+    c.set_timeout_ms(3000)
+    _ = c.write_text(text) or err {
+        return "write failed"
+    }
+    mut got := ""
+    for {
+        chunk := c.read_text(65536) or err {
+            break
+        }
+        if chunk.len() == 0 {
+            break
+        }
+        got += chunk
+    }
+    return got
+}
+
+test "middleware sees a request the loop answered 413" {
+    seen := make(sync.Atomic[i64], 0)
+    mut srv := try make(http.Server, 0, host: "127.0.0.1")
+    srv.set_limits(http.ServerLimits{ max_body_bytes: 10, keepalive_timeout_ms: 0 })
+    mut r := make(http.Router)
+    r.use(|mut req: http.Request| -> http.Response? {
+        _ = seen.add(1)
+        return none
+    })
+    r.put("/u", |req: http.Request| -> http.Response {
+        return http.Response.text(200, "x")
+    })
+    srv.serve_in_background(r)
+    got := raw(srv.port(), "PUT /u HTTP/1.1\r\nHost: x\r\nContent-Length: 11\r\n\r\n")
+    assert(got.starts_with("HTTP/1.1 413"))
+    assert_eq(seen.load(), i64(1))
+    srv.stop()
+}

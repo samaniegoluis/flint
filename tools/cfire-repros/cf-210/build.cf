@@ -1,0 +1,8 @@
+package build
+
+import "core:build"
+
+// A standalone workspace, so the repro links no Flint library.
+Repro := build.Executable("repro", {
+    Entry: "repro_test.cf",
+})

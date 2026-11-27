@@ -1,0 +1,44 @@
+package main
+
+// CF-140: a chunked request body reaches the handler decoded, under the server's cap.
+
+import "core:net"
+import "core:net/http"
+import "core:time"
+
+fn raw(port: u16, text: str) -> str {
+    mut c := net.connect("127.0.0.1", port) or err {
+        return "connect failed"
+    }
+    c.set_timeout_ms(3000)
+    _ = c.write_text(text) or err {
+        return "write failed"
+    }
+    mut got := ""
+    for {
+        chunk := c.read_text(65536) or err {
+            break
+        }
+        if chunk.len() == 0 {
+            break
+        }
+        got += chunk
+    }
+    return got
+}
+
+test "a chunked body is decoded before the handler" {
+    mut srv := try make(http.Server, 0, host: "127.0.0.1")
+    srv.set_limits(http.ServerLimits{ max_body_bytes: 100, keepalive_timeout_ms: 0 })
+    mut r := make(http.Router)
+    r.put("/u", |req: http.Request| -> http.Response {
+        return http.Response.text(200, "body=[{req.body}]")
+    })
+    srv.serve_in_background(r)
+    port := srv.port()
+    got := raw(port, "PUT /u HTTP/1.1\r\nHost: x\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n6\r\n world\r\n0\r\n\r\n")
+    assert(got.contains("body=[hello world]"))
+    over := raw(port, "PUT /u HTTP/1.1\r\nHost: x\r\nTransfer-Encoding: chunked\r\n\r\n65\r\n" + "x".repeat(101) + "\r\n0\r\n\r\n")
+    assert(over.starts_with("HTTP/1.1 413"))
+    srv.stop()
+}
