@@ -3927,3 +3927,27 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   while `body(port)` runs, then stops it (forever in `serve`, the test's body in tests).
 - **Ideal:** an escaping closure captures by value (`[=]`, or a move of each capture), as
   `async.scope`'s tasks do; or `cfire/ESCAPING-CAPTURE-REF` when it cannot.
+
+### CF-213 · missing · `confirmed`: `websocket.connect` sends no header of the caller's, has no deadline, and hides the refusal's status
+- **Seen (mobile milestone 11) [ran, `v0.12.7`, macOS, iOS 27 simulator]:** the relay's
+  WebSocket on `flint-vault-server` (`GET /v1/relay/ws`, the mobile branch's spec 3)
+  takes the vault token in `Authorization` at the upgrade, as every vault route does, and
+  refuses with 401 before the 101. `websocket.connect(url, verify_peer)` writes only
+  `Host`, `Upgrade`, `Connection`, `Sec-WebSocket-Key` and `Sec-WebSocket-Version`: no
+  way to add `Authorization` (or `Sec-WebSocket-Protocol`, `User-Agent`). The desktop's
+  relay client cannot authenticate the way the server does. Also, `connect` calls
+  `connect_tcp` with no timeout and reads the handshake with none, so a server that
+  accepts and stays silent holds the caller for good. And a refusal comes back as "server
+  did not return 101 Switching Protocols", with no status: a client cannot tell 401
+  (its token) from 429 (wait), 503 (busy) or a proxy's 502.
+- **Repro:** `scripts/mobile/repros/router-ws/` on the `mobile` branch: a `Router.ws`
+  route behind a middleware that wants `Authorization`. `websocket.connect` to it fails
+  with that message, and no argument makes it send the header. In short:
+  `websocket.connect("ws://127.0.0.1:<port>/ws")` against a server answering
+  `HTTP/1.1 401` gives `Err("websocket handshake failed: server did not return 101 …")`.
+- **Workaround:** none in the core yet. The branch's scripted checks write the upgrade by
+  hand (`scripts/mobile/ws-client.py`, `relay_ws_test.cf`). The desktop's client
+  (mobile milestone 14) needs a header, a shim, or a token sent in the first frame.
+- **Ideal:** `websocket.connect(url, headers: map[str]str = {}, verify_peer: bool = true,
+  timeout_ms: i64 = 30000)`, as `http.request` takes them, and an error that carries the
+  status line, or a `websocket.HandshakeError{status, headers, body}`.
