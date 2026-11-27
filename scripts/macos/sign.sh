@@ -39,7 +39,12 @@ kc=()
 [[ -z "${FLINT_MACOS_KEYCHAIN:-}" ]] || kc=(--keychain "$FLINT_MACOS_KEYCHAIN")
 
 sign() {
-  codesign --force --timestamp --options runtime ${kc[@]+"${kc[@]}"} -s "$identity" "$@"
+  codesign --force --timestamp --options runtime ${kc[@]+"${kc[@]}"} -s "$identity" "$@" && return 0
+  # Say what codesign could see (names only, no secret), so a failure explains itself.
+  echo "sign: the code-signing identities codesign can see:" >&2
+  security find-identity -v -p codesigning ${FLINT_MACOS_KEYCHAIN:+"$FLINT_MACOS_KEYCHAIN"} >&2 || true
+  security list-keychains -d user >&2 || true
+  return 1
 }
 
 echo "sign: $identity"
