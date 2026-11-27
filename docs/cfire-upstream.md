@@ -3951,3 +3951,18 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
 - **Ideal:** `websocket.connect(url, headers: map[str]str = {}, verify_peer: bool = true,
   timeout_ms: i64 = 30000)`, as `http.request` takes them, and an error that carries the
   status line, or a `websocket.HandshakeError{status, headers, body}`.
+
+### CF-214 · bug · `confirmed`: a double-quoted string that spans lines passes Sema, then the backend rejects it
+- **Seen (milestone 77) [ran, `v0.12.7`, macOS]:** `flint agent-guide` prints a few pages
+  of Markdown, full of backticks. A raw string (`` `…` ``) cannot hold a backtick, and a
+  double-quoted string with a newline inside is accepted by the checker and then fails
+  with `internal compiler error: C++ backend rejected generated code for a pure .cf file
+  that Sema accepted (cfire/INTERNAL-BACKEND-ERROR)` (the backend: `expected expression`).
+- **Repro:** `tools/cfire-repros/cf-214/`: `s := "a` + newline + `b"`, then
+  `assert_eq(s.len(), usize(3))`.
+- **Workaround:** the guide's hand-written text is an array of one-line double-quoted
+  strings joined with `\n` (`md_lines` in `src/drivers/clicmd/agent_guide.cf`). No native
+  code.
+- **Ideal:** either a double-quoted string may span lines (lowered to a C++ string with
+  `\n`), or Sema rejects it with its own code; and a raw string form that can hold a
+  backtick (a longer fence, as Markdown's ``` `` ``` or Rust's `r#"…"#`).

@@ -1,0 +1,10 @@
+package main
+
+// CF-214: a double-quoted string that spans lines passes Sema, then the C++ backend
+// rejects it (cfire/INTERNAL-BACKEND-ERROR). Fixed when this builds and passes.
+
+test "a double-quoted string spans two lines" {
+    s := "a
+b"
+    assert_eq(s.len(), usize(3))
+}
