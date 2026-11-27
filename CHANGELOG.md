@@ -4,6 +4,19 @@ What changed in each version of Flint, newest first. Versions follow
 [SemVer](https://semver.org): a release with a new feature bumps the minor version, one
 with only fixes the patch. Written by `scripts/release.sh` from the commit history.
 
+## 0.37.0 — 2026-11-27
+
+The vault server now handles several machines at once: a slow or stalled connection no longer holds up anyone else's sync. Chunked uploads are accepted under the size cap, and a port already in use is reported again at start. The server's Docker image builds again.
+
+### Added
+
+- **vault-server:** Serve on cfire's HTTP server, requests at once
+
+### Fixed
+
+- **server-image:** Build with cfire 0.12.7
+
+
 ## 0.36.1 — 2026-11-27
 
 Flint is now built with cfire 0.12.7, the language it is written in. Nothing changes in how Flint works, in your vaults or in its files: this release moves the build to a newer toolchain that fixes several of its bugs, checked on macOS, Linux and Windows.
