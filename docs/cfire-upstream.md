@@ -4092,3 +4092,21 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   copy (`mv` into a new folder, deepest first; mtimes kept, CF-218).
 - **Ideal:** sort a package's files (and anything else read from a directory listing) before
   generating code, so the output depends on the code only.
+
+### CF-221 · gap · `confirmed`: `cfire test --no-cache` also turns off the binary cache, so a test can't be re-run without compiling it again
+- **Seen (milestone 83) [ran, `v0.12.7`, macOS and the Windows VM]:** `--no-cache` is
+  documented as bypassing the content-hashed test cache (`(cached) PASS`), but it also sets
+  `g_no_binary_cache` (`src/cli/common_args.hpp:149`), so the suite's binary is linked again
+  every time. With sharding the per-unit objects still help, so only the link is paid. Under
+  `--no-shard` with `--release` (Windows, CF-207) no object is kept at all
+  (`use_persistent_obj` needs DevDebug, `src/buildsys.hpp:1860`), and the binary cache is
+  all there is. On the VM, `scripts/check-times.sh`'s warm suites therefore took 50-330 s
+  each, the same as cold, against 1-3 s on the Mac, Docker and Zorin.
+- **Repro [ran, macOS]:** a one-file test (`import "core:json"`, one struct, one test), with
+  `CFIRE_CACHE_DIR` set to an empty folder: `cfire test --release --no-shard x_test.cf`
+  5.7 s, then `(cached) PASS` 0.0 s, then with `--no-cache` 1.7 s and 1.9 s (compiled
+  again), then with only `<cache>/test` removed 0.1 s (the binary restored).
+- **Workaround:** none in Flint yet. To time a suite's run without paying its build, remove
+  the test cache's entry instead of passing `--no-cache` (milestone 84 measures that way).
+- **Ideal:** `--no-cache` skips only the test-result cache, as its help says, and a separate
+  flag (`--no-binary-cache`) turns off the binary's.
