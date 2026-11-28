@@ -1,0 +1,10 @@
+package main
+
+import "./core"
+
+test "uses every file" {
+    a := core.Alpha{ v: 1 }
+    m := core.Mid{ v: 2 }
+    z := core.Zulu{ v: 3 }
+    assert_eq(a.v + m.v + z.v, i64(6))
+}

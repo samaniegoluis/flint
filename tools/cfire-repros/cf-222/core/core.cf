@@ -1,0 +1,8 @@
+package core
+
+// LIMIT is not `pub`; twice is.
+LIMIT: i64 = 3
+
+pub fn twice(v: i64) -> i64 {
+    return v * 2
+}

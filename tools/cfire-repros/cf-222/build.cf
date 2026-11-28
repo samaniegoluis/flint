@@ -1,0 +1,8 @@
+package build
+
+import "core:build"
+
+// CF-222: another package's private names, used bare, pass the `pub` check.
+X := build.Executable("x", {
+    Entry: "repro_test.cf",
+})

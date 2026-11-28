@@ -31,6 +31,23 @@ as is.
 - Each entry gives: what Flint needed, a minimal repro or source pointer, the workaround and
   where it lives, and what an ideal API would look like.
 
+## Status at cfire `v0.13.1` (`17d0b33`, 2026-11-28): milestone 86's move
+
+Every entry with a repro in `tools/cfire-repros/` rerun on `v0.13.1` (`run.sh`, macOS; Docker
+Linux and the Windows VM below each entry when they differ). **Resolved:** CF-215 (one
+object per unit for the whole workspace, in its `.cfire/obj`, so every suite and binary
+shares `domain`'s objects). **Still open:** 098 and 137-141, 146 as before (fixed), 112, 142,
+208-212, 214, 216, 217 (its repro now uses `struct Point {`: `pub` is cfire from `v0.13.0`),
+218, 220, 221; CF-219 by reading the source (`src/buildsys.hpp`, the prune still matches
+`u_{id}_` as a prefix, now keeping 8). **New:** CF-222 (another package's names used bare
+pass `pub` and count as unused), CF-223 (an `import cpp` called a duplicate unused import
+that the package needs), CF-224 (`pub` required on a `main` type, then called redundant), CF-225 (`cfire fix` renames
+a write-only variable's declaration and not its writes).
+What the move took in Flint: `pub` on 1,095 declarations (`cfire fix --only
+cfire/PRIVATE-SYMBOL`, read line by line), 1,573 bare globals and 2,428 bare calls of other
+packages qualified (CF-222), and every unused-symbol warning answered (milestone 86 in
+`docs/build-log.md`).
+
 ## Status at cfire `v0.12.7`: milestone 78's audit (threads, sockets, HTTP)
 
 Every `confirmed` entry about threads, sockets, HTTP or WebSocket, rerun with a repro kept
@@ -3968,6 +3985,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   backtick (a longer fence, as Markdown's ``` `` ``` or Rust's `r#"…"#`).
 
 ### CF-216 · bug · `confirmed`: `core:build` documents `build.Library`, and the manifest rejects it
+- **At `v0.13.1` [ran, macOS]:** open: the same `unknown build manifest builder 'build.Library'`. No longer needed for CF-215.
 - **Seen (milestone 83) [ran, `v0.12.7`, macOS]:** looking for a way to compile Flint's
   `domain` once for every suite (CF-215), `cfire_stdlib_lookup core:build` lists
   `build.Library` ("a static or shared C/C++/cfire library target with `Sources`, …") and
@@ -3982,6 +4000,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   the documentation drops it until it does.
 
 ### CF-217 · bug · `confirmed`: a test file that does not parse is skipped, and `cfire test` passes
+- **At `v0.13.1` [ran, macOS]:** open. The repro's `pub fn` is valid from `v0.13.0`, so it now uses `struct Point {`: still `✓ No test suites found in .` and exit 0.
 - **Seen (milestone 83) [ran, `v0.12.7`, macOS]:** a scratch suite written with `pub fn`
   and `struct Point {` (not cfire) printed `✓ No test suites found in .` and exited 0.
   Suite discovery (`src/cli/build_commands.cpp`, `parse_source`) drops a file whose parse
@@ -3996,6 +4015,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   `cfire test repro_test.cf` does.
 
 ### CF-218 · bug · `confirmed`: the runtime's and local headers' fingerprints are their mtimes, so a reinstall or a fresh checkout recompiles everything
+- **At `v0.13.1` [ran, macOS]:** open. `tools/cfire-repros/cf-218/` (new): a copy of the runtime, a build, every header touched, a build again: `RECOMPILED`. `runtime_headers_fingerprint` still hashes mtimes. The workarounds stay.
 - **Seen (milestone 83) [ran, `v0.12.7`, GitHub's ubuntu-24.04 runners]:** the release's
   Linux jobs kept their build between runs (`actions/cache`, the same `/cache/work` path,
   the same image). The second run restored 300 MB and still compiled every unit: the `.rpm`
@@ -4021,7 +4041,8 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
 - **Ideal:** fingerprint the runtime and the compiler by content (a hash of the headers,
   or of the release's version and build id) rather than by mtime, as the units already are.
 
-### CF-215 · gap · `confirmed`: every suite compiles its own copy of a package it imports
+### CF-215 · gap · `resolved ✓`: every suite compiles its own copy of a package it imports
+- **At `v0.13.1` [ran, macOS]:** resolved. Objects live in the workspace's `.cfire/obj`, named by the unit alone (`u_core__core_<hash>.o`); the repro prints `SHARED: core compiled once`. Flint's 20 suites and four binaries share one folder; times in `docs/check-times.md` (milestone 86).
 - **Seen (milestone 83) [ran, `v0.12.7`, macOS]:** `scripts/test.sh` runs 20 suites, one
   per package folder with tests; each compiles `domain` (and `ports`, `application` where
   imported) again into its own `.cfire/obj`, named with the suite's prefix
@@ -4048,6 +4069,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   package the suites link.
 
 ### CF-219 · bug · `confirmed`: pruning a unit's old objects deletes another unit's live object
+- **At `v0.13.1` [read]:** open. The prune keeps 8 stale objects now, matched by `u_{id}_` as a prefix (`src/buildsys.hpp`), so `u_domain__update_` still matches `update_5fapply`. Not reproduced locally: a build renews the mtime of every object it reuses, so the live one is never the oldest; the CI failure needed a restored cache. `scripts/package.sh`'s one-object-per-unit prune stays (the names lost the target prefix; the key, the name less its hash, still separates units).
 - **Seen (milestone 83) [ran, `v0.12.7`, GitHub's ubuntu-24.04 runner, Fedora 43 image]:**
   with the release's build cache kept (CF-218 worked around), a build that compiled a few
   units again failed to link:
@@ -4073,6 +4095,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   `.o`), or keep a manifest of the live objects per target and prune against it.
 
 ### CF-220 · bug · `confirmed`: a package's generated header follows the folder's listing order, so the same code recompiles everything
+- **At `v0.13.1` [read; ran on Linux below]:** open. `package_loader.hpp` still lists a package's files with an unsorted `directory_iterator`. `tools/cfire-repros/cf-220/` (new) copies one package in name order and in reverse and compares the generated C++; on macOS it says `SKIP` (APFS lists by name). The workaround stays.
 - **Seen (milestone 83) [ran, `v0.12.7`, GitHub's ubuntu-24.04 runners and Docker]:**
   with CF-218 and CF-219 worked around, the release's kept build cache still compiled
   every unit in one of the two Linux jobs, now one, now the other, with the compiler, the
@@ -4094,6 +4117,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   generating code, so the output depends on the code only.
 
 ### CF-221 · gap · `confirmed`: `cfire test --no-cache` also turns off the binary cache, so a test can't be re-run without compiling it again
+- **At `v0.13.1` [ran, macOS]:** open. `tools/cfire-repros/cf-221/` (new): a second `cfire test --release --no-cache` writes the build again (`RELINKED`).
 - **Seen (milestone 83) [ran, `v0.12.7`, macOS and the Windows VM]:** `--no-cache` is
   documented as bypassing the content-hashed test cache (`(cached) PASS`), but it also sets
   `g_no_binary_cache` (`src/cli/common_args.hpp:149`), so the suite's binary is linked again
@@ -4110,3 +4134,74 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   the test cache's entry instead of passing `--no-cache` (milestone 84 measures that way).
 - **Ideal:** `--no-cache` skips only the test-result cache, as its help says, and a separate
   flag (`--no-binary-cache`) turns off the binary's.
+
+### CF-222 · bug · `confirmed`: another package's names used bare pass `pub`, and count as unused
+- **Seen (milestone 86) [ran, `v0.13.1`, macOS]:** after `cfire fix --only
+  cfire/PRIVATE-SYMBOL`, `cfire check` passed every package, yet 99 `UNUSED-SYMBOL`
+  warnings named `domain` globals other packages use (`COPY_RELAY` in `application/files.cf`,
+  `RDP_EVENT_RUNNING` in `adapters/rdp`), and 89 `UNUSED-IMPORT` warnings named imports
+  those files need. Flint wrote another package's globals bare (1,573 references to 260
+  globals) and many of its functions bare too (2,428 calls to 575 functions: `coded(…)`,
+  `os_name()`): sema resolves a bare name of an imported package, and
+  - a bare **global** skips the `pub` check (a private one compiles) and does not count as
+    a use, of the global or of the import;
+  - a bare **function** is checked for `pub` (`core.twice` is private), but its call does not
+    count as a use of the import. `cfire fix --only cfire/UNUSED-IMPORT` then removed
+    imports the build needed: `undeclared identifier 'os_name'`
+    (`drivers/cli/update_apply.cf`), `'new_sodium'` (`drivers/vault-server/main.cf`).
+  Interpolations (`"{FLINT_VERSION}"`) are the same. And a bare name of an imported
+  package **wins over a local variable** of the same name: in `application/ui_state_test.cf`,
+  `digits := "0123456789abcdef"` then `digits[a..b]` reads `domain.digits` (a function):
+  `cannot slice value of non-sliceable type 'fn(str) -> i64?'`, and `UNUSED-VAR` calls the
+  local unused.
+- **Repro:** `tools/cfire-repros/cf-222/`: `core` has a private `LIMIT` and a `pub fn
+  twice`; the test calls `twice(LIMIT)` bare. It passes, with `unused import './core'` and
+  `unused private global 'LIMIT'` from `cfire check`.
+- **Workaround:** every such name qualified (`domain.COPY_RELAY`, `process.os_name()`), by
+  the review's `qualify-globals.py` and `qualify-functions.py`, then `pub` where the check
+  then asked. Nothing is tagged: the qualified form is the right one.
+- **Ideal:** a bare name of another package is an error (the guide: workspace imports are
+  namespaced), or at least checked for `pub` and counted as a use of the declaration and
+  of the import.
+
+### CF-223 · bug · `confirmed`: an `import cpp` called a "duplicate unused import" that the package needs
+- **Seen (milestone 86) [ran, `v0.13.1`, macOS]:** five warnings, `duplicate unused import
+  'flint_db.hpp'` (`adapters/vault/sqlcipher.cf:10`), `'sqlite3.h'` (`adapters/vault/rekey.cf`),
+  `'mutex'` and `'flint_ssh.hpp'` (`adapters/ssh/libssh.cf`), `'flint_sftp.hpp'`
+  (`adapters/ssh/sftp.cf`). `sqlcipher.cf` is the only file that imports `flint_db.hpp`, and
+  uses it (`cpp.flint_db::Db` fields). `cfire fix --only cfire/UNUSED-IMPORT` removes the
+  five, and the build fails: `pkg_vault.hpp:149: use of undeclared identifier 'flint_db'`.
+- **Repro:** in Flint at milestone 86, delete `import cpp "flint_db.hpp"` from
+  `src/adapters/vault/sqlcipher.cf` and run `cfire build FlintCli`. (A minimal one needs a
+  header on a pkg-config include path, as Flint's are.)
+- **Workaround:** the five imports stay, with their warnings.
+- **Ideal:** an `import cpp` whose names a file uses (types included) is never unused;
+  "duplicate" only when the same file imports the same header twice.
+
+### CF-224 · bug · `confirmed`: `pub` is required on a `main` type, then called redundant
+- **Seen (milestone 86) [ran, `v0.13.1`, macOS]:** `drivers/gui` (`package main`) passes its
+  `RdpTabSink` and `GuiStatsSink` to generic use cases in `application`
+  (`application/rdp.cf:274`, `application/stats.cf:89`). Without `pub`: `struct
+  'main.RdpTabSink' is private to package 'main'; mark it 'pub' to export it`. With it:
+  `'pub' on struct 'RdpTabSink' has no effect in package 'main' because 'main' cannot be
+  imported (cfire/REDUNDANT-PUB)`.
+- **Repro:** a `package main` type passed to a generic `fn run[S: Sink](mut s: S)` of an
+  imported package.
+- **Workaround:** the `pub` stays, with its warning.
+- **Ideal:** a type instantiating another package's generic needs no `pub` (it is the
+  caller's own), or `REDUNDANT-PUB` is not raised when it does.
+
+### CF-225 · bug · `confirmed`: `cfire fix` renames a write-only variable's declaration, not its writes
+- **Seen (milestone 86) [ran, `v0.13.1`, macOS]:** `application/tunnels_test.cf` had
+  `mut why := ""` and `… or err { why = err.message() }`, the variable never read.
+  `cfire fix --only cfire/UNUSED-VAR` made the declaration `mut _why := ""` and left the
+  assignment `why = …`; sema accepted it and the backend failed:
+  `tunnels_test.cf:419: error: internal compiler error: C++ backend rejected generated code
+  for a pure .cf file that Sema accepted (cfire/INTERNAL-BACKEND-ERROR)`. Two faults: the
+  fix renames one occurrence, and sema accepts an assignment to an undeclared `why`.
+- **Repro:** `mut why := ""` then `f() or err { why = err.message() }` in a test, with
+  `fn f() -> void!`; `cfire fix --only cfire/UNUSED-VAR .`, then `cfire test .`.
+- **Workaround:** the write-only variable removed by hand (`f() or {}`).
+- **Ideal:** the fix renames every occurrence (or removes a write-only variable with its
+  writes), and an assignment to an undeclared name is a sema error.
+

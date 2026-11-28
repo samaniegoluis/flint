@@ -1,0 +1,8 @@
+package build
+
+import "core:build"
+
+// CF-220: a package's generated header follows the folder's listing order.
+X := build.Executable("x", {
+    Entry: "repro_test.cf",
+})

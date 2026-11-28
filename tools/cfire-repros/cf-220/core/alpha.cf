@@ -1,0 +1,5 @@
+package core
+
+pub type Alpha struct {
+    v: i64
+}

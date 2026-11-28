@@ -1,10 +1,10 @@
 package core
 
-type Point struct {
+pub type Point struct {
     x: i64 `json:"x"`
     y: i64 `json:"y"`
 }
 
-fn add(a: i64, b: i64) -> i64 {
+pub fn add(a: i64, b: i64) -> i64 {
     return a + b
 }

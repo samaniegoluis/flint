@@ -1,0 +1,7 @@
+package main
+
+import "./core"
+
+test "add" {
+    assert_eq(core.add(2, 2), i64(4))
+}

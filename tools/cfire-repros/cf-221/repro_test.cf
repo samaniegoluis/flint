@@ -1,0 +1,12 @@
+package main
+
+import "core:json"
+
+type Item struct {
+    name: str `json:"name"`
+}
+
+test "round trip" {
+    s := json.stringify(Item{ name: "x" })
+    assert(s.len() > 0)
+}

@@ -1,0 +1,8 @@
+package build
+
+import "core:build"
+
+// CF-218: the runtime's headers are fingerprinted by mtime.
+X := build.Executable("x", {
+    Entry: "repro_test.cf",
+})

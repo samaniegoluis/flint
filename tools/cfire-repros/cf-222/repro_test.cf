@@ -1,0 +1,10 @@
+package main
+
+// CF-222: core's private global and its pub function, used bare (unqualified) from
+// another package. Fixed when the bare private global is rejected as `core.LIMIT` is
+// (PRIVATE-SYMBOL), or a bare name of another package is refused.
+import "./core"
+
+test "bare names of another package" {
+    assert_eq(twice(LIMIT), i64(6))
+}

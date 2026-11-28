@@ -1,0 +1,8 @@
+package build
+
+import "core:build"
+
+// CF-221: --no-cache also turns off the binary cache.
+X := build.Executable("x", {
+    Entry: "repro_test.cf",
+})
