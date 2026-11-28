@@ -28,6 +28,7 @@ is `docs/build-log.md` plus `git log`.
 | [`ROADMAP.md`](ROADMAP.md) | Everything beyond the current spec. The backlog |
 | [`docs/build-log.md`](docs/build-log.md) | One line per finished milestone. The only state |
 | [`docs/decisions.md`](docs/decisions.md) | One-line decision log |
+| [`docs/checks.md`](docs/checks.md) | Every check, its cost and overlaps; how `scripts/checks-for-diff.sh` picks them; its misses |
 | [`docs/cfire-upstream.md`](docs/cfire-upstream.md) | Gaps in cfire, handed to its author |
 | [`docs/windows-port-guide.md`](docs/windows-port-guide.md) | Building, checking and packaging on Windows (stock cfire, MSYS2 CLANG64) |
 | [`docs/design-prompt.md`](docs/design-prompt.md) | Brief used to generate the UI in Claude Design |
@@ -92,22 +93,19 @@ is `docs/build-log.md` plus `git log`.
     It commits `CHANGELOG.md` and tags `vX.Y.Z`; it never pushes, so the tag goes up with
     the branch (`git push origin main vX.Y.Z`) and the merge stays a fast-forward. A
     milestone with no `feat` or `fix` makes no release.
-11. **Run the checks the diff can reach; name what was skipped** (owner, 2026-11-27, D-159).
-    Pick them from `git diff main...HEAD --stat`, per area:
-
-    | The diff touches | Run |
-    |---|---|
-    | Only docs, `site/`, ROADMAP, comments | The site build and its tests |
-    | `src/domain`, `src/application`, `src/ports` | Their `cfire test` suites, and a build of every binary |
-    | An adapter | Its suite on each OS whose code changed (a Linux or Windows branch: Docker or the VM) |
-    | A driver, `ui/`, a page string | The e2e run that drives it (`FLINT_E2E_ONLY=<run>`); vitest and tsc for `ui/` |
-    | Keys, the vault format, the socket, the window, a migration | The whole set on all three systems |
-    | Packaging, the workflow, `scripts/` | That script on its system (`package.sh`, `release-test.sh`) |
-
-    The whole set (`scripts/test.sh`, every gui-e2e run, Docker with every step, the VM)
-    runs only when a row asks for it or a change spans several areas. Docker defaults to
-    `FLINT_LINUX_STEPS=tests` unless the diff has Linux code an e2e step reaches. Every
-    check left out goes into the build-log line with its reason; rule 3 still holds.
+11. **Run the checks `scripts/checks-for-diff.sh` names; name what was skipped** (owner,
+    2026-11-27 and 2026-11-28, D-159, D-163). Before closing, run
+    `scripts/checks-for-diff.sh` (against `main`: the branch and the working tree) and run
+    what it prints, per system; how it decides is in [`docs/checks.md`](docs/checks.md).
+    - More than it asks is fine; less needs a reason in the build-log line (rule 3 still
+      holds).
+    - A check it did not ask for that then fails is a miss of the script: a line in
+      `docs/checks.md` (*Misses*) and a case in its `--self-test`, in the same milestone.
+    - **Trial** (milestones 85-88, until the owner calls it settled): the build-log line
+      names what the script asked for and what was run.
+    - The whole set (`scripts/test.sh`, every e2e and gui-e2e run, `scripts/linux-check.sh`,
+      the VM's battery and desktop runs) also runs at each spec's close (`lean-spec`'s
+      next-spec run) and before a cfire upgrade, whatever the diff.
 
 ## Language
 
