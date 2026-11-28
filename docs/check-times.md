@@ -115,6 +115,101 @@ Darwin arm64, 11 cores. Total 262.9 s.
 | e2e | `gui-e2e update` | 7.5 | pass |  |  |  |
 | e2e | `gui-e2e selfupdate` | 41.3 | pass |  |  |  |
 
+### Docker (OrbStack), cold (2026-11-28, cbed95cf, cfire 0.12.7)
+
+Linux aarch64, 11 cores. Total 3214.0 s.
+
+| Kind | Check | Seconds | Result | Own tests | `[auto]` | Objects |
+|---|---|--:|---|--:|--:|--:|
+| suite | `src/adapters/clilink` | 50.3 | pass | 6 | 47 | 34 |
+| suite | `src/adapters/config` | 54.5 | pass | 8 | 53 | 39 |
+| suite | `src/adapters/crypto` | 49.3 | pass | 15 | 47 | 34 |
+| suite | `src/adapters/fonts` | 46.8 | pass | 4 | 47 | 34 |
+| suite | `src/adapters/ipc` | 58.5 | pass | 12 | 52 | 37 |
+| suite | `src/adapters/keychain` | 50.8 | pass | 6 | 47 | 34 |
+| suite | `src/adapters/process` | 55.4 | pass | 20 | 47 | 39 |
+| suite | `src/adapters/rdp` | 82.5 | pass | 33 | 47 | 34 |
+| suite | `src/adapters/rootupdate` | 47.2 | pass | 7 | 47 | 34 |
+| suite | `src/adapters/serverfs` | 52.3 | pass | 17 | 48 | 35 |
+| suite | `src/adapters/ssh` | 86.1 | pass | 48 | 47 | 46 |
+| suite | `src/adapters/uievents` | 133.2 | pass | 19 | 56 | 48 |
+| suite | `src/adapters/vault` | 73.4 | pass | 58 | 47 | 44 |
+| suite | `src/adapters/vaultremote` | 61.1 | pass | 10 | 50 | 38 |
+| suite | `src/application` | 440.2 | pass | 271 | 132 | 75 |
+| suite | `src/application/vaultserver` | 0.9 | pass | 22 | 51 | 34 |
+| suite | `src/domain` | 184.0 | pass | 229 | 47 | 44 |
+| suite | `src/drivers/cli` | 178.6 | pass | 4 | 115 | 100 |
+| suite | `src/drivers/clicmd` | 180.9 | pass | 32 | 114 | 100 |
+| suite | `src/drivers/vault-server` | 65.6 | pass | 16 | 53 | 39 |
+| build | `cfire build` | 623.1 | pass |  |  |  |
+| build | `scripts/build-gui.sh` | 14.6 | pass |  |  |  |
+| e2e | `cli-e2e` | 127.2 | pass |  |  |  |
+| e2e | `serve-e2e` | 118.0 | pass |  |  |  |
+| e2e | `server-e2e` | 13.3 | pass |  |  |  |
+| e2e | `sync-e2e` | 195.1 | pass |  |  |  |
+| e2e | `gui-e2e terminal` | 25.3 | pass |  |  |  |
+| e2e | `gui-e2e broadcast` | 11.0 | pass |  |  |  |
+| e2e | `gui-e2e vault` | 36.9 | pass |  |  |  |
+| e2e | `gui-e2e tunnels` | 8.8 | pass |  |  |  |
+| e2e | `gui-e2e paste` | 6.8 | pass |  |  |  |
+| e2e | `gui-e2e rdp` | 25.0 | pass |  |  |  |
+| e2e | `gui-e2e webgl` | 16.8 | pass |  |  |  |
+| e2e | `gui-e2e fullscreen` | 10.7 | pass |  |  |  |
+| e2e | `gui-e2e vim` | 5.0 | pass |  |  |  |
+| e2e | `gui-e2e clilink` | 3.0 | pass |  |  |  |
+| e2e | `gui-e2e update` | 7.0 | pass |  |  |  |
+| e2e | `gui-e2e selfupdate` | 0.6 | pass |  |  |  |
+| suites | **all 20** | 1951.6 | | 837 | 1194 | 922 |
+
+### Docker (OrbStack), warm (2026-11-28, cbed95cf, cfire 0.12.7)
+
+Linux aarch64, 11 cores. Total 731.3 s.
+
+| Kind | Check | Seconds | Result | Own tests | `[auto]` | Objects |
+|---|---|--:|---|--:|--:|--:|
+| suite | `src/adapters/clilink` | 0.9 | pass | 6 | 47 | 34 |
+| suite | `src/adapters/config` | 1.0 | pass | 8 | 53 | 39 |
+| suite | `src/adapters/crypto` | 1.3 | pass | 15 | 47 | 34 |
+| suite | `src/adapters/fonts` | 1.0 | pass | 4 | 47 | 34 |
+| suite | `src/adapters/ipc` | 1.2 | pass | 12 | 52 | 37 |
+| suite | `src/adapters/keychain` | 1.0 | pass | 6 | 47 | 34 |
+| suite | `src/adapters/process` | 1.2 | pass | 20 | 47 | 39 |
+| suite | `src/adapters/rdp` | 16.7 | pass | 33 | 47 | 34 |
+| suite | `src/adapters/rootupdate` | 1.0 | pass | 7 | 47 | 34 |
+| suite | `src/adapters/serverfs` | 1.2 | pass | 17 | 48 | 35 |
+| suite | `src/adapters/ssh` | 9.8 | pass | 48 | 47 | 46 |
+| suite | `src/adapters/uievents` | 15.1 | pass | 19 | 56 | 48 |
+| suite | `src/adapters/vault` | 4.0 | pass | 58 | 47 | 44 |
+| suite | `src/adapters/vaultremote` | 4.3 | pass | 10 | 50 | 38 |
+| suite | `src/application` | 3.1 | pass | 271 | 132 | 75 |
+| suite | `src/application/vaultserver` | 0.9 | pass | 22 | 51 | 34 |
+| suite | `src/domain` | 1.3 | pass | 229 | 47 | 44 |
+| suite | `src/drivers/cli` | 2.3 | pass | 4 | 115 | 200 |
+| suite | `src/drivers/clicmd` | 2.3 | pass | 32 | 114 | 100 |
+| suite | `src/drivers/vault-server` | 9.0 | pass | 16 | 53 | 39 |
+| build | `cfire build` | 16.0 | pass |  |  |  |
+| build | `scripts/build-gui.sh` | 14.2 | pass |  |  |  |
+| e2e | `cli-e2e` | 126.3 | pass |  |  |  |
+| e2e | `serve-e2e` | 117.3 | pass |  |  |  |
+| e2e | `server-e2e` | 13.3 | pass |  |  |  |
+| e2e | `sync-e2e` | 195.0 | pass |  |  |  |
+| e2e | `gui-e2e terminal` | 24.4 | pass |  |  |  |
+| e2e | `gui-e2e broadcast` | 11.0 | pass |  |  |  |
+| e2e | `gui-e2e vault` | 36.9 | pass |  |  |  |
+| e2e | `gui-e2e tunnels` | 8.8 | pass |  |  |  |
+| e2e | `gui-e2e paste` | 6.8 | pass |  |  |  |
+| e2e | `gui-e2e rdp` | 25.0 | pass |  |  |  |
+| e2e | `gui-e2e webgl` | 16.8 | pass |  |  |  |
+| e2e | `gui-e2e fullscreen` | 10.8 | pass |  |  |  |
+| e2e | `gui-e2e vim` | 5.0 | pass |  |  |  |
+| e2e | `gui-e2e clilink` | 3.0 | pass |  |  |  |
+| e2e | `gui-e2e update` | 7.0 | pass |  |  |  |
+| e2e | `gui-e2e selfupdate` | 0.6 | pass |  |  |  |
+| suites | **all 20** | 78.6 | | 837 | 1194 | 1022 |
+
+In the container `gui-e2e selfupdate` skips itself (no package for Linux on arm64; cli-e2e
+runs the update's apply step), so its 0.6 s is a skip.
+
 ## The release's Linux packages
 
 ## Notes for milestones 84 and 85
