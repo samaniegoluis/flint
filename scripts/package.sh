@@ -118,8 +118,18 @@ if [[ "$system" == linux ]]; then
         objs() { find /cache/work -path "*/.cfire/obj/*.o" "$@" | sed "s#/\.cfire/obj/.*##; s#^/cache/work/##" | sort | uniq -c | tr "\n" " "; }
         echo "package: cache before: $(objs) ($(du -sh /cache | cut -f1))"
         echo "package: $(clang --version | head -1); cfire runtime $(ls -d "$(dirname "$(command -v cfire)")"/../share/cfire* 2>/dev/null | head -1)"
+        # One object per unit, the newest, before and after the build: cfire prunes a unit'"'"'s
+        # old objects by a name prefix that also matches longer units (domain/update'"'"'s
+        # matches update_apply'"'"'s), and with more than three it deleted an object the link
+        # still needed (CF-219). The exact unit is the name less its 16-hex hash.
+        prune_objs() {
+          find /cache/work -path "*/.cfire/obj/*.o" -printf "%T@ %p\n" | sort -rn \
+            | awk "{ k = \$2; sub(/_[0-9a-f]{16}\\.o\$/, \"\", k); if (seen[k]++) print \$2 }" | xargs -r rm -f
+        }
+        prune_objs
         touch /tmp/build-start
         /cache/work/scripts/linux/package-inside.sh '"$f"' /cache/work /tmp/out
+        prune_objs
         echo "package: compiled: $(objs -newer /tmp/build-start)"
         echo "package: reused: $(objs ! -newer /tmp/build-start)"
         # What cfire hashes into every object, kept in the cache and compared with the run

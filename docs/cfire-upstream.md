@@ -4046,3 +4046,28 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   in the generated C++ made relative to the workspace (`src/domain/access.cf`) so the same
   package lowers to the same units in every suite; or `build.Library` (CF-216) for a
   package the suites link.
+
+### CF-219 · bug · `confirmed`: pruning a unit's old objects deletes another unit's live object
+- **Seen (milestone 83) [ran, `v0.12.7`, GitHub's ubuntu-24.04 runner, Fedora 43 image]:**
+  with the release's build cache kept (CF-218 worked around), a build that compiled a few
+  units again failed to link:
+  `clang++: error: no such file or directory: '/cache/work/src/drivers/gui/.cfire/obj/main__u_domain__update_5fapply_035f58cad47d3931.o'`.
+  After compiling the dirty units, `src/buildsys.hpp` prunes each unit's stale objects by
+  the prefix `{stem}__u_{id}_`, keeping the three newest by mtime and never the unit's own
+  live object. Unit ids escape `_` as `_5f`, so `domain/update.cf`'s prefix
+  `main__u_domain__update_` also matches `update_5fapply_…` and `update_5fpackage_…`: their
+  live objects count as `update`'s stale ones, and once more than three gather, the oldest
+  is deleted, while the link still lists it. It needs a kept cache (old versions pile up)
+  and a partial rebuild, so a cold build never hits it; the build after it compiles the
+  missing unit and passes. Any package with `x.cf` beside `x_y.cf` qualifies (Flint:
+  `domain/update`, `update_apply`, `update_package`; `rdp`, `rdp_type`; and in a test build
+  every `x.cf` beside `x_test.cf`).
+- **Repro:** a package with `update.cf` and `update_apply.cf`; build; change
+  `update_apply.cf` four times, building each time (four stale objects under `update`'s
+  prefix); then change only `update.cf` and build: `update_apply`'s live object is deleted
+  and the link fails.
+- **Workaround:** `scripts/package.sh` keeps one object per unit (the newest, matched by the
+  name less its 16-hex hash) before and after the build, so no prefix ever counts more
+  than three.
+- **Ideal:** match a unit's objects exactly (`{stem}__u_{id}_` followed by 16 hex digits and
+  `.o`), or keep a manifest of the live objects per target and prune against it.
