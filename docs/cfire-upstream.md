@@ -4013,3 +4013,29 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   `scripts/install-cfire.sh`).
 - **Ideal:** fingerprint the runtime and the compiler by content (a hash of the headers,
   or of the release's version and build id) rather than by mtime, as the units already are.
+
+### CF-215 · gap · `confirmed`: every suite compiles its own copy of a package it imports
+- **Seen (milestone 83) [ran, `v0.12.7`, macOS]:** `scripts/test.sh` runs 20 suites, one
+  per package folder with tests; each compiles `domain` (and `ports`, `application` where
+  imported) again into its own `.cfire/obj`, named with the suite's prefix
+  (`fonts_test_test__u_domain__access_….o`). Between the `fonts` and `keychain` suites all
+  32 shared units are byte-identical once the source paths are normalised: the generated
+  C++ embeds paths relative to the suite (`src/adapters/fonts/./../../domain/access.cf`, in
+  `#line` and in `cfire::index_at(…)`), the object folder is the entry's own
+  (`cf_parent / ".cfire" / "obj"`, `src/buildsys.hpp`), and each unit's hash includes its own
+  path (`feed("unit_path", …)`). So nothing is shared.
+- **Cost (Mac, 11 cores, `docs/check-times.md`):** the 20 suites take 1293 s cold and
+  106 s warm. The smallest adapter suites (`clilink` 6 tests, `fonts` 4, `keychain` 6) take
+  ~32 s cold each, almost all of it the shared base; across the 17 suites other than
+  `domain`, `application` and `drivers/*` that is ~8-9 min of the 21.5 min. Docker: 3.8 GB
+  of `.cfire` across 34 folders, domain's copies more than half the objects. A change in
+  `domain` compiles it again in every suite. (Zorin, the VM and Docker numbers in
+  `docs/check-times.md`.)
+- **Repro:** `tools/cfire-repros/cf-215/`: two suites (`a`, `b`) import one package (`core`);
+  `check.sh` prints `COPIES: core compiled 2 times`, `SHARED` when fixed.
+- **Workaround:** none in Flint without merging suites (which would lose a suite per
+  package); milestones 84 and 85 cut what runs instead.
+- **Ideal:** a workspace-level object cache keyed by the unit's content, with source paths
+  in the generated C++ made relative to the workspace (`src/domain/access.cf`) so the same
+  package lowers to the same units in every suite; or `build.Library` (CF-216) for a
+  package the suites link.

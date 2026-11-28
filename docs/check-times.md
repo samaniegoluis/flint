@@ -22,6 +22,80 @@ it is pasted here by hand.
 
 ## Baseline (cfire `v0.12.7`, 2026-11-27)
 
+How to read it: `cfire test <folder>` walks sub-folders, so `src/application`'s row
+includes `application/vaultserver`'s suite (and its tests), which then runs warm in its own
+row. `drivers/cli` and `drivers/vault-server` compile again warm because the branch moved
+between the two passes: their `version.cf` (the version from git) changed. A gui-e2e
+section follows.
+
+### Mac, cold (2026-11-28, 45861984, cfire 0.12.7)
+
+Darwin arm64, 11 cores. Total 1858.9 s.
+
+| Kind | Check | Seconds | Result | Own tests | `[auto]` | Objects |
+|---|---|--:|---|--:|--:|--:|
+| suite | `src/adapters/clilink` | 32.4 | pass | 6 | 47 | 34 |
+| suite | `src/adapters/config` | 35.0 | pass | 8 | 53 | 39 |
+| suite | `src/adapters/crypto` | 32.3 | pass | 15 | 47 | 34 |
+| suite | `src/adapters/fonts` | 32.7 | pass | 4 | 47 | 34 |
+| suite | `src/adapters/ipc` | 38.6 | pass | 12 | 52 | 37 |
+| suite | `src/adapters/keychain` | 33.3 | pass | 6 | 47 | 34 |
+| suite | `src/adapters/process` | 40.0 | pass | 20 | 47 | 39 |
+| suite | `src/adapters/rdp` | 58.3 | pass | 33 | 47 | 34 |
+| suite | `src/adapters/rootupdate` | 31.8 | pass | 7 | 47 | 34 |
+| suite | `src/adapters/serverfs` | 35.2 | pass | 17 | 48 | 35 |
+| suite | `src/adapters/ssh` | 63.8 | pass | 48 | 47 | 46 |
+| suite | `src/adapters/uievents` | 55.5 | pass | 19 | 56 | 0 |
+| suite | `src/adapters/vault` | 49.1 | pass | 58 | 47 | 44 |
+| suite | `src/adapters/vaultremote` | 42.7 | pass | 10 | 50 | 38 |
+| suite | `src/application` | 287.9 | pass | 271 | 132 | 75 |
+| suite | `src/application/vaultserver` | 1.0 | pass | 22 | 51 | 34 |
+| suite | `src/domain` | 130.0 | pass | 229 | 47 | 44 |
+| suite | `src/drivers/cli` | 122.0 | pass | 4 | 115 | 100 |
+| suite | `src/drivers/clicmd` | 124.4 | pass | 32 | 114 | 100 |
+| suite | `src/drivers/vault-server` | 46.9 | pass | 16 | 53 | 39 |
+| build | `cfire build` | 242.0 | pass |  |  |  |
+| build | `scripts/build-gui.sh` | 8.0 | pass |  |  |  |
+| e2e | `cli-e2e` | 102.0 | pass |  |  |  |
+| e2e | `serve-e2e` | 97.5 | pass |  |  |  |
+| e2e | `server-e2e` | 15.1 | pass |  |  |  |
+| e2e | `sync-e2e` | 100.9 | pass |  |  |  |
+| suites | **all 20** | 1292.9 | | 837 | 1194 | 874 |
+
+### Mac, warm (2026-11-28, 45861984, cfire 0.12.7)
+
+Darwin arm64, 11 cores. Total 432.1 s.
+
+| Kind | Check | Seconds | Result | Own tests | `[auto]` | Objects |
+|---|---|--:|---|--:|--:|--:|
+| suite | `src/adapters/clilink` | 1.1 | pass | 6 | 47 | 34 |
+| suite | `src/adapters/config` | 1.1 | pass | 8 | 53 | 39 |
+| suite | `src/adapters/crypto` | 1.3 | pass | 15 | 47 | 34 |
+| suite | `src/adapters/fonts` | 1.1 | pass | 4 | 47 | 34 |
+| suite | `src/adapters/ipc` | 1.3 | pass | 12 | 52 | 37 |
+| suite | `src/adapters/keychain` | 1.1 | pass | 6 | 47 | 34 |
+| suite | `src/adapters/process` | 1.3 | pass | 20 | 47 | 39 |
+| suite | `src/adapters/rdp` | 11.4 | pass | 33 | 47 | 34 |
+| suite | `src/adapters/rootupdate` | 1.2 | pass | 7 | 47 | 34 |
+| suite | `src/adapters/serverfs` | 1.6 | pass | 17 | 48 | 35 |
+| suite | `src/adapters/ssh` | 10.9 | pass | 48 | 47 | 46 |
+| suite | `src/adapters/uievents` | 22.9 | pass | 19 | 56 | 0 |
+| suite | `src/adapters/vault` | 1.7 | pass | 58 | 47 | 44 |
+| suite | `src/adapters/vaultremote` | 4.4 | pass | 10 | 50 | 38 |
+| suite | `src/application` | 2.8 | pass | 271 | 132 | 75 |
+| suite | `src/application/vaultserver` | 1.1 | pass | 22 | 51 | 34 |
+| suite | `src/domain` | 1.2 | pass | 229 | 47 | 44 |
+| suite | `src/drivers/cli` | 28.0 | pass | 4 | 115 | 202 |
+| suite | `src/drivers/clicmd` | 1.8 | pass | 32 | 114 | 100 |
+| suite | `src/drivers/vault-server` | 9.1 | pass | 16 | 53 | 77 |
+| build | `cfire build` | 4.0 | pass |  |  |  |
+| build | `scripts/build-gui.sh` | 7.4 | pass |  |  |  |
+| e2e | `cli-e2e` | 101.5 | pass |  |  |  |
+| e2e | `serve-e2e` | 96.5 | pass |  |  |  |
+| e2e | `server-e2e` | 15.1 | pass |  |  |  |
+| e2e | `sync-e2e` | 100.6 | pass |  |  |  |
+| suites | **all 20** | 106.4 | | 837 | 1194 | 1014 |
+
 ## The release's Linux packages
 
 ## Notes for milestones 84 and 85
