@@ -331,7 +331,13 @@ test "a port another socket holds cannot be listened on (CF-208)" {
     assert_eq(busy, "the port is in use")
     // The listener is gone with the function: the port is free again.
     assert_eq(listen_refusal("127.0.0.1", port), "")
-    (every, _) := try refusal_while_held("0.0.0.0", "0.0.0.0")
-    assert_eq(every, "the port is in use")
+    // Not on Windows: a new binary listening on every interface opens Windows Firewall's
+    // prompt in the desktop session, which stays on top and takes the focus from every
+    // gui-e2e window after it (milestone 83). The wildcard branch is tested on macOS and
+    // Linux only; on Windows it differs by SO_EXCLUSIVEADDRUSE alone.
+    if os.name() != "windows" {
+        (every, _) := try refusal_while_held("0.0.0.0", "0.0.0.0")
+        assert_eq(every, "the port is in use")
+    }
     assert_eq(listen_refusal("not-an-address", 9), "not an address")
 }
