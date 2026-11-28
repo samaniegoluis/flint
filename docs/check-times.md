@@ -53,3 +53,14 @@ Found while building 83 (2026-11-27), to start from:
 - **The release build** compiles the app (18 min), the CLI (7 min) and the update helper
   (3 min) one after another in each format's container on a 4-core runner (the v0.39.0
   run); the image itself takes about a minute, so it is not cached.
+- **What each package imports** (85's `checks-for-diff.sh` starts here; relative imports in
+  `src/`, 2026-11-27). `domain` and `drivers/version` import nothing; `ports` ← domain;
+  every adapter ← domain, and most ← ports too (crypto ← ports only); `application` and
+  `application/vaultserver` ← domain, ports. Drivers:
+  `drivers/cli` ← crypto, process, ssh, vault, application, clicmd, version;
+  `drivers/clicmd` ← config, crypto, ipc, keychain, process, ssh, vault, vaultremote,
+  application, ports; `drivers/gui` ← every adapter but rootupdate and serverfs, application,
+  clicmd, version; `drivers/update-root` ← crypto, rootupdate, application, version;
+  `drivers/vault-server` ← crypto, serverfs, application/vaultserver, ports, version. So a
+  change in one adapter reaches its suite, the drivers that import it and their e2e runs;
+  a change in `domain` or `ports` reaches everything.
