@@ -131,7 +131,9 @@ if want gui; then
   [[ $no_gui == 1 ]] && gui_skip=1 || gui_skip=0
   # gui-e2e's runs, from its own list (`runs=(...)` and the `known` extras it skips).
   if [[ $gui_skip == 0 ]]; then
-  [[ -x build/gui/Flint || -d build/gui/Flint.app || -f build/gui/Flint.exe ]] || scripts/build-gui.sh >/dev/null
+  # Built here every time, not only when missing: an app older than HEAD carries an older
+  # version than the one the vault, update and selfupdate runs read from git.
+  scripts/build-gui.sh >/dev/null
   gui_runs="$(FLINT_E2E_ONLY=__list__ FLINT_E2E_NOBUILD=1 scripts/gui-e2e.sh 2>&1 | sed -n 's/.*FLINT_E2E_ONLY takes \(.*\), not.*/\1/p' | tr ' ' '\n' | grep -v -e '^multimon$' -e '^rdpbench$' || true)"
   for r in $gui_runs; do
     echo "check-times: gui-e2e $r" >&2
