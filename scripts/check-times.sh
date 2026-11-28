@@ -34,8 +34,13 @@ while [[ $# -gt 0 ]]; do
 done
 want() { [[ ",$only," == *",$1,"* ]]; }
 
-now() { perl -MTime::HiRes=time -e 'printf "%.1f", time'; }
-since() { perl -e 'printf "%.1f", $ARGV[1] - $ARGV[0]' "$1" "$(now)"; }
+# Seconds with a tenth: GNU date (Linux, MSYS2) has %N, the Mac's has not (perl there).
+now() {
+  local t
+  t="$(date +%s.%N 2>/dev/null || true)"
+  case "$t" in *N*|'') perl -MTime::HiRes=time -e 'printf "%.1f", time' ;; *) printf '%s' "${t:0:14}" ;; esac
+}
+since() { awk -v a="$1" -v b="$(now)" 'BEGIN { printf "%.1f", b - a }'; }
 
 # The servers of scripts/test.sh, once for the whole timing: re-run inside it.
 if [[ -z "${FLINT_TEST_SSH_PORT:-}" ]]; then
