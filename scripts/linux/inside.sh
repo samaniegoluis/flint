@@ -3,7 +3,8 @@
 # container: build, tests, CLI end-to-end and the desktop app under Xvfb.
 #
 # FLINT_LINUX_STEPS picks the steps after the build (comma-separated: tests, cli, gui,
-# serve, server, sync; default all; `repros` runs tools/cfire-repros/run.sh, only when named). FLINT_LINUX_SUITES narrows `tests` to some suites (space-separated
+# serve, server, sync; default all; `repros` runs tools/cfire-repros/run.sh, only when named;
+# `times` alone runs scripts/check-times.sh cold and warm instead of the build). FLINT_LINUX_SUITES narrows `tests` to some suites (space-separated
 # paths, default src). FLINT_LINUX_REPEAT="<run> <N>" makes the `gui` step run one
 # gui-e2e run N times with scripts/repeat.sh instead (CLAUDE.md rule 9).
 set -euo pipefail
@@ -31,6 +32,14 @@ if want repros; then
 echo "== cfire repros"
 tools/cfire-repros/run.sh
 [[ "$steps" == ",repros," ]] && exit 0
+fi
+# Check times (milestone 83, D-161): scripts/check-times.sh cold then warm, when named
+# alone (FLINT_LINUX_STEPS=times); it builds what it times. The sections are printed and
+# kept in the volume (~/cache/work/build/check-times).
+if [[ "$steps" == ",times," ]]; then
+echo "== check times, cold then warm"
+dbus-run-session -- bash -c "printf flint-test | gnome-keyring-daemon --unlock --components=secrets >/dev/null && export PATH=\$PATH:/usr/sbin FLINT_TEST_PRIVATE_DBUS=1 && scripts/check-times.sh --cold --label docker; scripts/check-times.sh --label docker"
+exit 0
 fi
 echo "== build flint"
 cfire build

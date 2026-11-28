@@ -96,6 +96,25 @@ Darwin arm64, 11 cores. Total 432.1 s.
 | e2e | `sync-e2e` | 100.6 | pass |  |  |  |
 | suites | **all 20** | 106.4 | | 837 | 1194 | 1014 |
 
+### Mac, gui-e2e (warm) (2026-11-28, 35cde907, cfire 0.12.7)
+
+Darwin arm64, 11 cores. Total 262.9 s.
+
+| Kind | Check | Seconds | Result | Own tests | `[auto]` | Objects |
+|---|---|--:|---|--:|--:|--:|
+| e2e | `gui-e2e terminal` | 26.8 | pass |  |  |  |
+| e2e | `gui-e2e broadcast` | 13.1 | pass |  |  |  |
+| e2e | `gui-e2e vault` | 39.0 | pass |  |  |  |
+| e2e | `gui-e2e tunnels` | 9.5 | pass |  |  |  |
+| e2e | `gui-e2e paste` | 8.9 | pass |  |  |  |
+| e2e | `gui-e2e rdp` | 27.7 | pass |  |  |  |
+| e2e | `gui-e2e webgl` | 17.1 | pass |  |  |  |
+| e2e | `gui-e2e fullscreen` | 11.1 | pass |  |  |  |
+| e2e | `gui-e2e vim` | 7.0 | pass |  |  |  |
+| e2e | `gui-e2e clilink` | 3.5 | pass |  |  |  |
+| e2e | `gui-e2e update` | 7.5 | pass |  |  |  |
+| e2e | `gui-e2e selfupdate` | 41.3 | pass |  |  |  |
+
 ## The release's Linux packages
 
 ## Notes for milestones 84 and 85
