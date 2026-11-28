@@ -3994,3 +3994,22 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   tests, so a suite that vanishes shows as a row with none.
 - **Ideal:** discovery reports the parse error with its location and the run fails, as
   `cfire test repro_test.cf` does.
+
+### CF-218 · bug · `confirmed`: the runtime's fingerprint is its headers' mtimes, so a reinstall of the same cfire recompiles everything
+- **Seen (milestone 83) [ran, `v0.12.7`, GitHub's ubuntu-24.04 runners]:** the release's
+  Linux jobs kept their build between runs (`actions/cache`, the same `/cache/work` path,
+  the same image). The second run restored 300 MB and still compiled every unit: the `.rpm`
+  took 23 min against 18 cold, the `.deb` 32 against 31.5. `runtime_headers_fingerprint`
+  (`src/build/pch.hpp`) hashes each runtime header's path, **mtime** and size, and that
+  fingerprint is fed into every object's hash (`rt` in `src/buildsys.hpp`, `shard-obj-v2`)
+  and every PCH key. The image installs the runtime with `cp -R`, which dates each header
+  at the image's build, and the image is built in every run: a new fingerprint each time,
+  every object renamed. `compiler_binary_fingerprint` is the same (`file_fingerprint_string`:
+  path, mtime, size).
+- **Repro:** install cfire's runtime, build a workspace, `touch` every header under the
+  runtime (same content), build again: every unit compiles again.
+- **Workaround:** every install copies the runtime with `cp -Rp`, keeping the release
+  archive's mtimes (`scripts/linux/package-tools.sh`, `scripts/linux/Dockerfile`,
+  `scripts/install-cfire.sh`).
+- **Ideal:** fingerprint the runtime and the compiler by content (a hash of the headers,
+  or of the release's version and build id) rather than by mtime, as the units already are.

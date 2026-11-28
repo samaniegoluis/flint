@@ -16,7 +16,10 @@ echo "${cfire_sum}  ${name}.tar.gz" | sha256sum -c -
 tar xzf "${name}.tar.gz"
 install -D -m 755 "${name}/cfire" /usr/local/bin/cfire
 mkdir -p /usr/local/share/cfire
-cp -R "${name}/runtime" /usr/local/share/cfire/runtime
+# -p keeps the archive's mtimes: cfire fingerprints its runtime headers by mtime and puts
+# that in every object's hash (CF-218), so a copy dated at the image's build would make a
+# kept build cache useless (milestone 83).
+cp -Rp "${name}/runtime" /usr/local/share/cfire/runtime
 cfire --version
 
 nfpm="nfpm_${nfpm_version}_Linux_x86_64.tar.gz"

@@ -59,7 +59,7 @@ RUN case "${TARGETARCH:-$(dpkg --print-architecture)}" in \
     && tar xzf "${name}.tar.gz" \
     && install -D -m 755 "${name}/cfire" /usr/local/bin/cfire \
     && mkdir -p /usr/local/share/cfire \
-    && cp -R "${name}/runtime" /usr/local/share/cfire/runtime \
+    && cp -Rp "${name}/runtime" /usr/local/share/cfire/runtime \
     && cd / && rm -rf /tmp/cfire \
     && cfire --version
 

@@ -50,7 +50,7 @@ exe=cfire; [[ "$target" == windows-* ]] && exe=cfire.exe
   || { echo "install-cfire: $name.$ext does not hold $exe and runtime/" >&2; exit 1; }
 mkdir -p "$prefix/bin" "$prefix/share/cfire"
 rm -rf "$prefix/share/cfire/runtime"
-cp -R "$tmp/$name/runtime" "$prefix/share/cfire/runtime"
+cp -Rp "$tmp/$name/runtime" "$prefix/share/cfire/runtime"
 # A new file, not one written over: macOS kills a signed binary copied over the old one
 # (its code-signature cache still holds the old pages).
 rm -f "$prefix/bin/$exe"
