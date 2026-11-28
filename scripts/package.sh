@@ -110,7 +110,15 @@ if [[ "$system" == linux ]]; then
         [[ $rc == 0 || $rc == 24 ]] || exit "$rc"
         export CFIRE_CACHE_DIR=/cache/cfire
         mkdir -p /tmp/out
+        # What the cache held and what the build compiled again, per folder: an object is
+        # named by a hash of its inputs, so a new file is a unit compiled (milestone 83).
+        objs() { find /cache/work -path "*/.cfire/obj/*.o" "$@" | sed "s#/\.cfire/obj/.*##; s#^/cache/work/##" | sort | uniq -c | tr "\n" " "; }
+        echo "package: cache before: $(objs) ($(du -sh /cache | cut -f1))"
+        echo "package: $(clang --version | head -1); cfire runtime $(ls -d "$(dirname "$(command -v cfire)")"/../share/cfire* 2>/dev/null | head -1)"
+        touch /tmp/build-start
         /cache/work/scripts/linux/package-inside.sh '"$f"' /cache/work /tmp/out
+        echo "package: compiled: $(objs -newer /tmp/build-start)"
+        echo "package: reused: $(objs ! -newer /tmp/build-start)"
         for p in /tmp/out/*; do install -m 644 "$p" /out/; chown "$OWNER" "/out/$(basename "$p")"; done
         # A folder of the host'"'"'s: its owner can read and keep it (actions/cache).
         if [[ $CHOWN_CACHE == 1 ]]; then chown -R "$OWNER" /cache; fi'
