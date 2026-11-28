@@ -140,11 +140,15 @@ if [[ "$system" == linux ]]; then
         { echo "compiler $cc $(stat -c "%Y %s" "$cc")"
           echo "runtime $(find /usr/local/share/cfire/runtime -name "*.h*" -printf "%P %T@ %s\n" | sort | sha256sum | cut -c1-16)"
           find /cache/work/src -name "*.hpp" -printf "header %P %T@ %s\n" | sort
+          # The system: its packages (a newer -devel brings headers with new mtimes) and
+          # the -I folders pkg-config gives, whose headers cfire also fingerprints.
+          if command -v rpm >/dev/null; then rpm -qa --qf "pkg %{NAME} %{VERSION}-%{RELEASE}\n"; else dpkg-query -W -f "pkg \${Package} \${Version}\n"; fi | sort
+          (cd /cache/work && . scripts/env.sh && pkg-config --cflags $(grep -E "^\s*PkgConfig:" build.cf | grep -oE "\"[^\"]+\"" | tr -d "\"" | sort -u)) | tr " " "\n" | sed -n "s/^-I/cflags -I/p" | sort -u
           find /cache/work/src -path "*/.cfire/gen/*" -type f -exec sha256sum {} + | awk "{print \"gen\", \$2, substr(\$1,1,16)}" | sort
         } > /cache/diag/now.txt || true
         if [[ -f /cache/diag/before.txt ]]; then
           echo "package: inputs changed since the cached run: $(diff /cache/diag/before.txt /cache/diag/now.txt | grep -c "^>") lines"
-          diff /cache/diag/before.txt /cache/diag/now.txt | grep "^[<>] \(compiler\|runtime\|header\)" | head -20 | sed "s/^/package:   /" || true
+          diff /cache/diag/before.txt /cache/diag/now.txt | grep "^[<>] \(compiler\|runtime\|header\|pkg\|cflags\)" | head -30 | sed "s/^/package:   /" || true
           diff /cache/diag/before.txt /cache/diag/now.txt | grep "^> gen" | awk "{print \$3}" | sed "s#/\.cfire/gen/.*##" | sort | uniq -c | sed "s/^/package:   gen changed /" || true
           diff /cache/diag/before.txt /cache/diag/now.txt | grep "^> gen" | head -8 | sed "s/^/package:   /" || true
         fi
