@@ -71,7 +71,7 @@ ends).
 After 77 the owner put the checks first (2026-11-27, D-161): 83 (checks measured, domain
 once, the Linux release in parallel), 84 (suites in parallel, caches kept), 85 (the checks a
 diff needs), all in v19's `docs/spec.md`; then 80, 81 and 82. Reordered the same day (D-162):
-83, 85, 86 (the move to cfire `v0.13.1`), 84, then 80, 81 and 82.
+83, 85, 86 (the move to cfire `v0.13.1`), 84, then 80, 81 and 82. After 85 the owner put cli-e2e and sync-e2e in named sections (§5) ahead of 84 (2026-11-28, D-163), its own milestone when it starts.
 
 ### Later · Signing and an installer on Windows (tentative)
 
