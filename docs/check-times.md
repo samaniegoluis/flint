@@ -23,3 +23,33 @@ it is pasted here by hand.
 ## Baseline (cfire `v0.12.7`, 2026-11-27)
 
 ## The release's Linux packages
+
+## Notes for milestones 84 and 85
+
+Found while building 83 (2026-11-27), to start from:
+
+- **cfire's object cache is by content, not by time** (`src/buildsys.hpp` at `v0.12.7`:
+  each unit's object is named by a SHA-256 of the compiler, flags, runtime, headers, the
+  unit's C++ and the unit's own path). A fresh checkout's new mtimes do not rebuild
+  anything; a different folder does (the path is hashed), so a cache only helps at the same
+  path (Docker's `/cache/work`, a fixed folder per branch on Zorin and the VM).
+- **Why domain is compiled ~20 times** (CF-215): the object folder is the suite's own
+  `.cfire/obj`, and the generated C++ embeds source paths relative to the suite
+  (`src/adapters/fonts/./../../domain/access.cf`). Between the fonts and keychain suites,
+  all 32 shared units are byte-identical once those paths are normalised.
+- **A suite already compiles in parallel:** its shards go to `hardware_concurrency()`
+  workers. What runs on one core is the rest (parsing, Sema, code generation, the link, the
+  tests). Suites in parallel (84) mostly gain those phases; N suites × all cores
+  oversubscribes, so `-j` should be small and measured. **On Windows** the
+  `--no-shard` shim (CF-207) compiles each suite as one unit on one core: there `-j`
+  gains the most.
+- **Suites that share something and stay serial at first** (84): `ssh` (the test sshds,
+  sleeps), `rdp` (FreeRDP's sample server, sleeps), `vaultremote` (the one test vault
+  server and its data folder), `drivers/vault-server` (real listeners and deadlines),
+  `keychain` (the OS keychain), `uievents` (sleeps). The others found no shared port, fixed
+  folder or real clock in their tests (the `/tmp/…` and `127.0.0.1:…` strings in
+  `ipc`, `domain` and `application` are data, not listeners); each still has to pass
+  in parallel before it leaves the serial list.
+- **The release build** compiles the app (18 min), the CLI (7 min) and the update helper
+  (3 min) one after another in each format's container on a 4-core runner (the v0.39.0
+  run); the image itself takes about a minute, so it is not cached.
