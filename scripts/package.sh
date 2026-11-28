@@ -7,6 +7,8 @@
 #   scripts/package.sh windows    # → dist/Flint-<version>-windows-x86_64.zip (windows/package.sh, MSYS2 CLANG64)
 #   scripts/package.sh linux      # → dist/flint_<version>_amd64.deb, dist/flint-<version>.x86_64.rpm
 #   scripts/package.sh linux deb  # one of the two
+#   FLINT_PACKAGE_CACHE=~/.cache/flint-package scripts/package.sh linux deb
+#                                 # its build cache in <folder>/deb, not a named volume
 #   FLINT_BUILD_TEST_FEED=http://127.0.0.1:8123/manifest.json FLINT_BUILD_TEST_KEY=<hex> \
 #     scripts/package.sh linux deb --test-feed   # → dist/flint-testfeed_<version>_amd64.deb
 #
@@ -82,13 +84,23 @@ if [[ "$system" == linux ]]; then
     # cache otherwise, and the run below would not find it.
     docker build --load --platform linux/amd64 --target "$f" -t "$image" \
       -f scripts/linux/package.Dockerfile scripts/linux
-    # The tree is copied into a cache volume of its own (with cfire's cache), so a
-    # second build compiles only what changed and the checkout never gets Linux's
-    # .cfire/ or build/ folders; the version comes from the host's git.
+    # The tree is copied into a cache of its own (with cfire's cache), so a second
+    # build compiles only what changed and the checkout never gets Linux's .cfire/ or
+    # build/ folders; the version comes from the host's git. The cache is a named
+    # volume, or with FLINT_PACKAGE_CACHE a folder per format under it, which the
+    # release workflow keeps between runs (milestone 83, D-161).
+    cache="flint-package-$f-cache" chown_cache=0
+    if [[ -n "${FLINT_PACKAGE_CACHE:-}" ]]; then
+      FLINT_PACKAGE_CACHE="${FLINT_PACKAGE_CACHE/#\~/$HOME}"
+      mkdir -p "$FLINT_PACKAGE_CACHE/$f"
+      cache="$(cd "$FLINT_PACKAGE_CACHE/$f" && pwd)"
+      echo "package: $f's build cache in $cache ($(du -sh "$cache" | cut -f1))"
+      chown_cache=1
+    fi
     docker run --rm --platform linux/amd64 -e FLINT_VERSION="$version" \
       -e FLINT_BUILD_TEST_FEED="${FLINT_BUILD_TEST_FEED:-}" -e FLINT_BUILD_TEST_KEY="${FLINT_BUILD_TEST_KEY:-}" \
-      -e OWNER="$(id -u):$(id -g)" \
-      -v "$root:/src:ro" -v "flint-package-$f-cache:/cache" -v "$root/dist:/out" \
+      -e OWNER="$(id -u):$(id -g)" -e CHOWN_CACHE="$chown_cache" \
+      -v "$root:/src:ro" -v "$cache:/cache" -v "$root/dist:/out" \
       "$image" bash -c '
         set -euo pipefail
         mkdir -p /cache/work /cache/cfire
@@ -99,7 +111,9 @@ if [[ "$system" == linux ]]; then
         export CFIRE_CACHE_DIR=/cache/cfire
         mkdir -p /tmp/out
         /cache/work/scripts/linux/package-inside.sh '"$f"' /cache/work /tmp/out
-        for p in /tmp/out/*; do install -m 644 "$p" /out/; chown "$OWNER" "/out/$(basename "$p")"; done'
+        for p in /tmp/out/*; do install -m 644 "$p" /out/; chown "$OWNER" "/out/$(basename "$p")"; done
+        # A folder of the host'"'"'s: its owner can read and keep it (actions/cache).
+        if [[ $CHOWN_CACHE == 1 ]]; then chown -R "$OWNER" /cache; fi'
   done
   for f in $formats; do
     name=flint

@@ -2,6 +2,8 @@
 # that draft and publishes it (milestone 51, D-107, D-113, D-147). Run by hand only:
 #
 #   gh workflow run release.yml -f tag=v0.16.0      (or Actions → Release → Run workflow)
+#   gh workflow run release.yml --ref <branch> -f tag=v0.16.0 -f run=linux-packages
+#                                    # the Linux packages of <branch>'s commit only, no release
 #
 # The workflow holds no logic of its own (Principle 16): each step calls a script a
 # person runs the same way on the Mac, Zorin or the Windows VM. guard checks the tag's
@@ -18,6 +20,12 @@ on:
         description: "The release tag to build, vX.Y.Z or vX.Y.Z-rc.N (on main)"
         required: true
         type: string
+      run:
+        description: "release: every package, drafted and published. linux-packages: the .deb and the .rpm of the run's own commit (--ref) built and tested, nothing released (milestone 83: timing the build and its cache)"
+        required: false
+        type: choice
+        options: [release, linux-packages]
+        default: release
 
 permissions:
   contents: read
@@ -42,6 +50,7 @@ jobs:
 
   macos:
     needs: guard
+    if: inputs.run == 'release'
     runs-on: macos-26
     timeout-minutes: 90
     # The Developer ID certificate and the notary key live here (milestone 79, D-158 (2));
@@ -84,31 +93,50 @@ jobs:
           path: dist/*.zip
           if-no-files-found: error
 
+  # One job per format (milestone 83, D-161): each its own log, retried alone, and the
+  # two built at once. Each keeps its build between runs: scripts/package.sh puts the
+  # tree and cfire's caches in FLINT_PACKAGE_CACHE/<format>, restored here from the last
+  # run with the same image (its Dockerfile pins cfire and the system), so a release
+  # compiles only what changed since the one before.
   linux:
     needs: guard
     runs-on: ubuntu-24.04
     timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        format: [deb, rpm]
+    name: linux-${{ matrix.format }}
+    env:
+      FLINT_PACKAGE_CACHE: ~/flint-package-cache
     steps:
+      # linux-packages builds the commit the run was started from (`--ref`), so a change
+      # to the build can be timed before it is tagged; a release builds the tag.
       - uses: actions/checkout@v7
         with:
-          ref: refs/tags/${{ inputs.tag }}
+          ref: ${{ inputs.run == 'release' && format('refs/tags/{0}', inputs.tag) || github.sha }}
           fetch-depth: 0
+      - name: The build cache of the last run with this image
+        uses: actions/cache@v6
+        with:
+          path: ~/flint-package-cache/${{ matrix.format }}
+          key: linux-${{ matrix.format }}-${{ hashFiles('scripts/linux/package.Dockerfile', 'scripts/linux/package-tools.sh') }}-${{ github.run_id }}
+          restore-keys: linux-${{ matrix.format }}-${{ hashFiles('scripts/linux/package.Dockerfile', 'scripts/linux/package-tools.sh') }}-
       # Each format builds in its own image (Ubuntu 24.04, Fedora 43; D-120), so the
       # runner needs only Docker and Node, both already there.
       - name: Package
-        run: scripts/package.sh linux
+        run: scripts/package.sh linux ${{ matrix.format }}
       - name: Installed, run and removed in clean containers
-        run: scripts/linux/package-test.sh
+        run: scripts/linux/package-test.sh dist/*.${{ matrix.format }}
       - uses: actions/upload-artifact@v7
         with:
-          name: linux
-          path: |
-            dist/*.deb
-            dist/*.rpm
+          name: linux-${{ matrix.format }}
+          path: dist/*.${{ matrix.format }}
           if-no-files-found: error
 
   windows:
     needs: guard
+    if: inputs.run == 'release'
     runs-on: windows-2025
     timeout-minutes: 120
     defaults:
@@ -147,6 +175,7 @@ jobs:
 
   draft:
     needs: [macos, linux, windows]
+    if: inputs.run == 'release'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     # The update manifest's signing key lives here and nowhere else in GitHub

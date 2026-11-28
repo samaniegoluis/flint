@@ -341,7 +341,10 @@ and the CLI link that system's libraries, and the package depends on them by nam
 your machine); the images install cfire's and nfpm's pinned releases, checked against
 their SHA-256 (`scripts/linux/package.Dockerfile`). `scripts/package.sh linux deb` builds
 one of the two. On a Mac the containers run under emulation: the first build takes a
-while.
+while. Each format keeps its build in a Docker volume of its own, so the next build
+compiles only what changed; with `FLINT_PACKAGE_CACHE=<folder>` it keeps it in
+`<folder>/deb` and `<folder>/rpm` instead, which is how the release workflow carries it
+from one release to the next.
 
 ```sh
 scripts/linux/package-test.sh     # install, run and remove them in clean containers
@@ -361,7 +364,11 @@ a tag that is already pushed:
 
 ```sh
 gh workflow run release.yml -f tag=v0.16.0       # or Actions → Release → Run workflow
+gh workflow run release.yml --ref <branch> -f tag=v0.16.0 -f run=linux-packages
 ```
+
+`run=linux-packages` builds and tests the two Linux packages of the branch's own commit
+and releases nothing: a way to time a change to their build, and its cache, before a tag.
 
 The workflow holds no logic of its own: each step is a script you can run the same way.
 
@@ -369,8 +376,8 @@ The workflow holds no logic of its own: each step is a script you can run the sa
 |---|---|---|
 | guard | `scripts/release-draft.sh guard <tag>` | Fails unless the tag is `vX.Y.Z` or `vX.Y.Z-rc.N` and its commit is on `main` |
 | macos | `scripts/install-cfire.sh`, `scripts/package.sh macos` | Installs cfire's pinned release (its SHA-256 is kept in the script) and builds the macOS zip on an Apple silicon runner. The built libraries are cached while `scripts/deps-macos.sh` stays the same |
-| linux | `scripts/package.sh linux`, `scripts/linux/package-test.sh` | Builds the `.deb` and the `.rpm` in their containers on an x86_64 runner, then installs, runs and removes each in clean ones |
-| draft | `scripts/release-draft.sh draft <tag> <dir>` | Writes `SHA256SUMS` and the signed update manifest, and makes a **draft** release with every package; a `-rc` tag makes a pre-release |
+| linux-deb, linux-rpm | `scripts/package.sh linux <format>`, `scripts/linux/package-test.sh` | Two jobs at once, one per format, each with its own log and retried alone: builds the `.deb` or the `.rpm` in its container on an x86_64 runner, then installs, runs and removes it in clean ones. Each restores its build from the last run with the same image (`FLINT_PACKAGE_CACHE`), so only what changed is compiled |
+| draft | `scripts/release-draft.sh draft <tag> <dir>` | Waits for the four package jobs. Writes `SHA256SUMS` and the signed update manifest, and makes a **draft** release with every package; a `-rc` tag makes a pre-release |
 | publish | `scripts/release-draft.sh publish <tag>` | Downloads the draft from GitHub, checks every file against `SHA256SUMS`, and for a release the manifest's signature against the public key in the repository and each package's size and SHA-256; then publishes it as the latest release. Any failure leaves it a draft and fails the run |
 
 The notes are the version's section of `CHANGELOG.md` (`scripts/release-draft.sh notes
