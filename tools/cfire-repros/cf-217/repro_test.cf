@@ -1,0 +1,12 @@
+package main
+
+// CF-217: a test file that does not parse (`pub` is not cfire) is skipped by suite
+// discovery: `cfire test .` prints "No test suites found" and exits 0. Fixed when the
+// parse error is reported (its location below) and the run fails.
+pub fn f() -> i64 {
+    return 1
+}
+
+test "f" {
+    assert_eq(f(), i64(1))
+}

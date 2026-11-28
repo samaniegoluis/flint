@@ -15,7 +15,8 @@
 # cache (CFIRE_CACHE_DIR, ~/.cache) is kept unless --cold-user. Warm is the run after.
 # Each suite runs as `cfire test --release --no-cache --json <suite>` (test.sh's flags,
 # its test-result cache bypassed so the run is timed, not a cached pass), against the
-# servers scripts/test.sh starts. Tests are counted from the JSON: own, and cfire's
+# servers scripts/test.sh starts (each row also in build/check-times/<label>-<mode>.rows as it
+# ends, kept if the run is stopped). Tests are counted from the JSON: own, and cfire's
 # generated `[auto]` json round-trips. A failure is a row with its result, not a stop.
 # gui-e2e runs each run alone (FLINT_E2E_ONLY), after one build of the app.
 set -euo pipefail
@@ -80,7 +81,9 @@ if [[ $cold == 1 ]]; then
   if [[ $cold_user == 1 && -n "${CFIRE_CACHE_DIR:-}" ]]; then rm -rf "$CFIRE_CACHE_DIR"; mkdir -p "$CFIRE_CACHE_DIR"; fi
 fi
 
-rows="$work/rows"
+# The rows are written as each check ends, so a run stopped halfway keeps what it timed.
+mkdir -p "$outdir"
+rows="$outdir/$label-$mode.rows"
 : >"$rows"
 total_start="$(now)"
 
@@ -131,7 +134,6 @@ if want e2e; then
 fi
 
 total="$(since "$total_start")"
-mkdir -p "$outdir"
 section="$outdir/$label-$mode.md"
 {
   echo "### $label, $mode ($(date -u +%Y-%m-%d), $(git rev-parse --short HEAD), $(cfire --version 2>&1 | head -1 | awk '{print $1, $2}'))"

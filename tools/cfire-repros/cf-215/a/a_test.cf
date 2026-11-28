@@ -1,0 +1,11 @@
+package a
+
+import "../core"
+
+fn twice(v: i64) -> i64 {
+    return core.add(v, v)
+}
+
+test "a twice" {
+    assert_eq(twice(2), i64(4))
+}

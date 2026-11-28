@@ -16,11 +16,12 @@ dirs=("$@")
 echo "cfire: $(cfire --version 2>&1 | head -1)  os: $(uname -s)"
 for d in "${dirs[@]}"; do
   d="${d%/}"
-  out="$(cd "$d" && cfire test . 2>&1)"
+  # A folder with its own check.sh (CF-215: what the build leaves on disk) runs that.
+  if [[ -x "$d/check.sh" ]]; then out="$("$d/check.sh" 2>&1)"; else out="$(cd "$d" && cfire test . 2>&1)"; fi
   want="$(cat "$d/fixed-when")"
   id="$(echo "$d" | tr a-z A-Z)"
   if grep -qF -- "$want" <<<"$out"; then verdict=fixed; else verdict=open; fi
-  why="$(grep -E -- '--- FAIL|PASS \(|FAIL \(|cfire/[A-Z-]+|error:' <<<"$out" | head -1)"
+  why="$(grep -E -- '--- FAIL|PASS \(|FAIL \(|cfire/[A-Z-]+|error:|SHARED|COPIES|No test suites' <<<"$out" | head -1)"
   printf '%-7s %-6s %s\n' "$id" "$verdict" "${why:0:150}"
   [[ -n "${REPRO_VERBOSE:-}" ]] && echo "$out"
 done

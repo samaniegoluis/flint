@@ -1,0 +1,7 @@
+package main
+
+import "./core"
+
+test "a library's function" {
+    assert_eq(core.add(1, 2), i64(3))
+}

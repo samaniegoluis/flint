@@ -1,0 +1,8 @@
+package build
+
+import "core:build"
+
+// CF-215: two suites (a, b) import one package (core); each compiles its own copy.
+X := build.Executable("x", {
+    Entry: "a/a_test.cf",
+})

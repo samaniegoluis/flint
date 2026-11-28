@@ -3966,3 +3966,31 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
 - **Ideal:** either a double-quoted string may span lines (lowered to a C++ string with
   `\n`), or Sema rejects it with its own code; and a raw string form that can hold a
   backtick (a longer fence, as Markdown's ``` `` ``` or Rust's `r#"…"#`).
+
+### CF-216 · bug · `confirmed`: `core:build` documents `build.Library`, and the manifest rejects it
+- **Seen (milestone 83) [ran, `v0.12.7`, macOS]:** looking for a way to compile Flint's
+  `domain` once for every suite (CF-215), `cfire_stdlib_lookup core:build` lists
+  `build.Library` ("a static or shared C/C++/cfire library target with `Sources`, …") and
+  `build.Target` as what it returns. A `build.cf` that declares one fails:
+  `build.cf:6: unknown build manifest builder 'build.Library' (cfire/INVALID-BUILD-VALUE)`,
+  for `cfire build` and for every suite of `cfire test .`.
+- **Repro:** `tools/cfire-repros/cf-216/`: `build.Library("core", { Sources: ["core/core.cf"] })`
+  and one test calling `core.add`.
+- **Workaround:** none; nothing in Flint depends on it.
+- **Ideal:** `build.Library` works as documented, and a suite whose package is in a
+  declared library links its object instead of compiling the package again (CF-215); or
+  the documentation drops it until it does.
+
+### CF-217 · bug · `confirmed`: a test file that does not parse is skipped, and `cfire test` passes
+- **Seen (milestone 83) [ran, `v0.12.7`, macOS]:** a scratch suite written with `pub fn`
+  and `struct Point {` (not cfire) printed `✓ No test suites found in .` and exited 0.
+  Suite discovery (`src/cli/build_commands.cpp`, `parse_source`) drops a file whose parse
+  fails (`if (!ast) continue;`) before any diagnostic is printed. A suite whose only test
+  file has a syntax error disappears from `cfire test src`, and a CI run stays green.
+  (When another file of the package still parses, the build reports the error, so
+  Flint's suites have not hit it.)
+- **Repro:** `tools/cfire-repros/cf-217/`: `repro_test.cf` with `pub fn f()`.
+- **Workaround:** none needed in Flint today; `scripts/check-times.sh` counts each suite's
+  tests, so a suite that vanishes shows as a row with none.
+- **Ideal:** discovery reports the parse error with its location and the run fails, as
+  `cfire test repro_test.cf` does.
