@@ -139,7 +139,7 @@ suites are 106 s. So what the script saves is mostly e2e runs, Docker and the VM
 
 ## Proposal
 
-For the owner's yes, one by one; nothing here is applied yet, and no test is dropped.
+The owner's answer (2026-11-28), each now a ROADMAP §5 row: **1 and 2 next** (1 before 84), **3 and 4 ideas**, decided with the trial's data. No test is dropped.
 
 1. **cli-e2e and sync-e2e in named sections**, as gui-e2e has runs: `FLINT_E2E_ONLY=ssh,files
    scripts/cli-e2e.sh` (sections exist already, `echo "== …"`), each section's time in
