@@ -122,6 +122,23 @@ if [[ "$system" == linux ]]; then
         /cache/work/scripts/linux/package-inside.sh '"$f"' /cache/work /tmp/out
         echo "package: compiled: $(objs -newer /tmp/build-start)"
         echo "package: reused: $(objs ! -newer /tmp/build-start)"
+        # What cfire hashes into every object, kept in the cache and compared with the run
+        # before: the compiler, the runtime and the local headers (by mtime, CF-218), and
+        # every generated C++ file (milestone 83: why a kept cache still compiled all).
+        mkdir -p /cache/diag
+        cc="$(readlink -f "$(command -v clang++)")"
+        { echo "compiler $cc $(stat -c "%Y %s" "$cc")"
+          echo "runtime $(find /usr/local/share/cfire/runtime -name "*.h*" -printf "%P %T@ %s\n" | sort | sha256sum | cut -c1-16)"
+          find /cache/work/src -name "*.hpp" -printf "header %P %T@ %s\n" | sort
+          find /cache/work/src -path "*/.cfire/gen/*" -type f -exec sha256sum {} + | awk "{print \"gen\", \$2, substr(\$1,1,16)}" | sort
+        } > /cache/diag/now.txt || true
+        if [[ -f /cache/diag/before.txt ]]; then
+          echo "package: inputs changed since the cached run: $(diff /cache/diag/before.txt /cache/diag/now.txt | grep -c "^>") lines"
+          diff /cache/diag/before.txt /cache/diag/now.txt | grep "^[<>] \(compiler\|runtime\|header\)" | head -20 | sed "s/^/package:   /" || true
+          diff /cache/diag/before.txt /cache/diag/now.txt | grep "^> gen" | awk "{print \$3}" | sed "s#/\.cfire/gen/.*##" | sort | uniq -c | sed "s/^/package:   gen changed /" || true
+          diff /cache/diag/before.txt /cache/diag/now.txt | grep "^> gen" | head -8 | sed "s/^/package:   /" || true
+        fi
+        mv /cache/diag/now.txt /cache/diag/before.txt
         for p in /tmp/out/*; do install -m 644 "$p" /out/; chown "$OWNER" "/out/$(basename "$p")"; done
         # A folder of the host'"'"'s: its owner can read and keep it (actions/cache).
         if [[ $CHOWN_CACHE == 1 ]]; then chown -R "$OWNER" /cache; fi'
