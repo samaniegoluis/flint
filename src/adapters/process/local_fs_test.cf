@@ -11,7 +11,7 @@ fn test_tmp() -> str {
     return (os.getenv("FLINT_TEST_TMP") or "/tmp")
 }
 
-fn accepts_local_files[L: ports.LocalFiles](l: L) -> bool {
+fn accepts_local_files[L: ports.LocalFiles](_l: L) -> bool {
     return true
 }
 
@@ -30,14 +30,14 @@ test "local files: write, stat, list, read, rename, remove, with stable codes" {
     try l.local_mkdir(dir)
     defer fs.remove(dir) or {}
     got_code = "ok"
-    l.local_mkdir(dir) or err { got_code = error_code_of("{err.message()}") }
+    l.local_mkdir(dir) or err { got_code = domain.error_code_of("{err.message()}") }
     assert_eq(got_code, "exists")
     path := dir + "/a.bin"
     try l.local_file_open(path, true, true)
     try l.local_file_write("hello\tworld")
     try l.local_file_close()
     got_code = "ok"
-    l.local_file_open(path, true, true) or err { got_code = error_code_of("{err.message()}") }
+    l.local_file_open(path, true, true) or err { got_code = domain.error_code_of("{err.message()}") }
     assert_eq(got_code, "exists")
     st := try l.local_stat(path)
     assert(st.is_file())
@@ -51,13 +51,13 @@ test "local files: write, stat, list, read, rename, remove, with stable codes" {
     list := try l.local_list(dir)
     assert_eq(list.len(), 2)
     got_code = "ok"
-    l.local_list(path) or err { got_code = error_code_of("{err.message()}") }
+    l.local_list(path) or err { got_code = domain.error_code_of("{err.message()}") }
     assert_eq(got_code, "not_a_directory")
     got_code = "ok"
-    l.local_stat(dir + "/nope") or err { got_code = error_code_of("{err.message()}") }
+    l.local_stat(dir + "/nope") or err { got_code = domain.error_code_of("{err.message()}") }
     assert_eq(got_code, "not_found")
     got_code = "ok"
-    l.local_file_open(dir, false, false) or err { got_code = error_code_of("{err.message()}") }
+    l.local_file_open(dir, false, false) or err { got_code = domain.error_code_of("{err.message()}") }
     assert_eq(got_code, "invalid")
     try l.local_rename(path, dir + "/sub/b.bin")
     assert((try l.local_stat(dir + "/sub/b.bin")).is_file())

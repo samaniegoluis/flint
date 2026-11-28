@@ -14,7 +14,7 @@ import "../ports"
 // Where the manifest is, and the key its signature must verify against. The app
 // passes UPDATE_FEED_URL and UPDATE_PUBLIC_KEY_HEX's bytes; only a build from source
 // may point elsewhere, for its tests (drivers/gui/update.cf).
-type UpdateSource struct {
+pub type UpdateSource struct {
     manifest_url: str
     public_key:   []byte
 }
@@ -28,7 +28,7 @@ fn update_signature_url(manifest_url: str) -> str {
 }
 
 fn not_verified() -> str {
-    return coded(ERR_INVALID, "the update information did not pass verification and was ignored")
+    return domain.coded(domain.ERR_INVALID, "the update information did not pass verification and was ignored")
 }
 
 // The manifest, verified and checked. `manifest.json.sig` holds the Ed25519 signature
@@ -51,7 +51,7 @@ type SignedManifest struct {
 // and only then read and checked (Principle 15; root's check, Principle 17).
 fn verify_signed_manifest[V: ports.UpdateVerifier](verifier: V, body: []byte, sig_text: str, public_key: []byte, download_prefix: str) -> domain.UpdateManifest! {
     if public_key.len() != ED25519_PUBLIC_KEY_LEN {
-        return error(coded(ERR_INTERNAL, "this build of Flint has no key to verify updates with"))
+        return error(domain.coded(domain.ERR_INTERNAL, "this build of Flint has no key to verify updates with"))
     }
     sig := base64.decode(sig_text.trim()) or {
         return error(not_verified())
@@ -61,38 +61,38 @@ fn verify_signed_manifest[V: ports.UpdateVerifier](verifier: V, body: []byte, si
     }
     // Read only once verified.
     m := json.parse[domain.UpdateManifest](payload: str(body)) or {
-        return error(coded(ERR_INVALID, "the update information could not be read"))
+        return error(domain.coded(domain.ERR_INVALID, "the update information could not be read"))
     }
-    try check_update_manifest_from(m, download_prefix)
+    try domain.check_update_manifest_from(m, download_prefix)
     return m
 }
 
 fn fetch_signed_manifest[F: ports.UpdateFeed, V: ports.UpdateVerifier](feed: F, verifier: V, src: UpdateSource) -> SignedManifest! {
     if src.public_key.len() != ED25519_PUBLIC_KEY_LEN {
-        return error(coded(ERR_INTERNAL, "this build of Flint has no key to verify updates with"))
+        return error(domain.coded(domain.ERR_INTERNAL, "this build of Flint has no key to verify updates with"))
     }
-    body := try feed.update_get(src.manifest_url, UPDATE_MANIFEST_MAX_BYTES)
+    body := try feed.update_get(src.manifest_url, domain.UPDATE_MANIFEST_MAX_BYTES)
     sig_file := try feed.update_get(update_signature_url(src.manifest_url), UPDATE_SIGNATURE_MAX_BYTES)
     sig_text := "{str(sig_file).trim()}"
-    m := try verify_signed_manifest(verifier, body, sig_text, src.public_key, update_download_prefix(src.manifest_url))
+    m := try verify_signed_manifest(verifier, body, sig_text, src.public_key, domain.update_download_prefix(src.manifest_url))
     return SignedManifest{ body: body, signature: sig_text, manifest: m }
 }
 
 // One check: its outcome for the page, never an error. A newer version found for the
 // first time asks for the toast and records that it was shown (D-116: once per
 // version; the status bar keeps saying it).
-fn check_for_update[F: ports.UpdateFeed, V: ports.UpdateVerifier, S: ports.SettingsStore](feed: F, verifier: V, mut settings: S, src: UpdateSource, here: domain.UpdateHere, now_ms: i64) -> domain.UpdateStatus {
-    stored := load_settings(settings) or default_settings()
+pub fn check_for_update[F: ports.UpdateFeed, V: ports.UpdateVerifier, S: ports.SettingsStore](feed: F, verifier: V, mut settings: S, src: UpdateSource, here: domain.UpdateHere, now_ms: i64) -> domain.UpdateStatus {
+    stored := load_settings(settings) or domain.default_settings()
     m := fetch_update_manifest(feed, verifier, src) or err {
         msg := "{err.message()}"
-        mut failed := update_status_idle(here.version, stored.update_check, now_ms)
-        failed.state = UPDATE_FAILED
-        failed.code = error_code_of(msg)
+        mut failed := domain.update_status_idle(here.version, stored.update_check, now_ms)
+        failed.state = domain.UPDATE_FAILED
+        failed.code = domain.error_code_of(msg)
         failed.message = msg
         return failed
     }
-    mut s := update_offer(m, here, stored.update_check, now_ms)
-    if s.state == UPDATE_AVAILABLE && stored.update_toast_version != s.version {
+    mut s := domain.update_offer(m, here, stored.update_check, now_ms)
+    if s.state == domain.UPDATE_AVAILABLE && stored.update_toast_version != s.version {
         s.toast = true
         mut next := stored
         next.update_toast_version = s.version
@@ -104,10 +104,10 @@ fn check_for_update[F: ports.UpdateFeed, V: ports.UpdateVerifier, S: ports.Setti
 // What's new once per version (D-106 (7)): at launch, the versions since the one What's
 // new last showed for, newest first, and this version recorded as seen. Nothing on
 // the first launch on this machine (it is only recorded) or with no changelog.
-fn whats_new_at_launch[S: ports.SettingsStore](mut settings: S, changelog: str, current: str) -> []domain.ChangeVersion! {
+pub fn whats_new_at_launch[S: ports.SettingsStore](mut settings: S, changelog: str, current: str) -> []domain.ChangeVersion! {
     mut s := try load_settings(settings)
-    shown := whats_new_since(parse_changelog(changelog), s.last_seen_version, current)
-    if s.last_seen_version.len() == 0 || version_is_newer(current, s.last_seen_version) {
+    shown := domain.whats_new_since(domain.parse_changelog(changelog), s.last_seen_version, current)
+    if s.last_seen_version.len() == 0 || domain.version_is_newer(current, s.last_seen_version) {
         s.last_seen_version = current
         try settings.settings_save(s)
     }
@@ -116,10 +116,10 @@ fn whats_new_at_launch[S: ports.SettingsStore](mut settings: S, changelog: str, 
 
 // What's new in this version, asked for (About, the palette, the status bar): the
 // newest version in the changelog that is not newer than this one.
-fn whats_new_here(changelog: str, current: str) -> []domain.ChangeVersion {
+pub fn whats_new_here(changelog: str, current: str) -> []domain.ChangeVersion {
     mut out: []domain.ChangeVersion = []
-    for c in parse_changelog(changelog) {
-        if !version_is_newer(c.version, current) {
+    for c in domain.parse_changelog(changelog) {
+        if !domain.version_is_newer(c.version, current) {
             out.push(c)
             return out
         }

@@ -20,7 +20,7 @@ ROOT_STAGE_BASE: str = "/var/tmp"
 // The tail of apt's or dnf's output an error carries.
 INSTALL_OUTPUT_TAIL: usize = 400
 
-type OsRootStage struct {
+pub type OsRootStage struct {
     // The caller's home ("": from the system's user database, by uid). A test's own.
     home: str
     // Root's folder, made at the first copy ("" until then).
@@ -28,7 +28,7 @@ type OsRootStage struct {
     base: str
 }
 
-fn new_os_root_stage() -> OsRootStage {
+pub fn new_os_root_stage() -> OsRootStage {
     return OsRootStage{ home: "", dir: "", base: ROOT_STAGE_BASE }
 }
 
@@ -47,7 +47,7 @@ fn (mut self: OsRootStage) stage_copy(uid: i64, name: str, max_bytes: i64) -> st
             ok = flint_root::make_root_dir(std::string(self.base), made, why);
         }
         if !ok {
-            return error(coded(ERR_IO, "cannot make a folder for the update: {why}"))
+            return error(domain.coded(domain.ERR_IO, "cannot make a folder for the update: {why}"))
         }
         self.dir = made
     }
@@ -59,7 +59,7 @@ fn (mut self: OsRootStage) stage_copy(uid: i64, name: str, max_bytes: i64) -> st
             ok = flint_root::home_of(uid, home, why);
         }
         if !ok {
-            return error(coded(ERR_INVALID, why))
+            return error(domain.coded(domain.ERR_INVALID, why))
         }
     }
     dest := self.dir + "/" + name
@@ -69,13 +69,13 @@ fn (mut self: OsRootStage) stage_copy(uid: i64, name: str, max_bytes: i64) -> st
         rc = flint_root::copy_staged(uid, std::string(home), std::string(name), max_bytes, std::string(dest), why);
     }
     if rc == 1 {
-        return error(coded(ERR_NOT_FOUND, why))
+        return error(domain.coded(domain.ERR_NOT_FOUND, why))
     }
     if rc == 2 {
-        return error(coded(ERR_INVALID, why))
+        return error(domain.coded(domain.ERR_INVALID, why))
     }
     if rc != 0 {
-        return error(coded(ERR_IO, why))
+        return error(domain.coded(domain.ERR_IO, why))
     }
     return dest
 }
@@ -83,10 +83,10 @@ fn (mut self: OsRootStage) stage_copy(uid: i64, name: str, max_bytes: i64) -> st
 fn (self: OsRootStage) stage_read(path: str, max_bytes: i64) -> []byte! {
     size := try self.stage_size(path)
     if size > max_bytes {
-        return error(coded(ERR_INVALID, "{fs.basename(path)} is too large"))
+        return error(domain.coded(domain.ERR_INVALID, "{fs.basename(path)} is too large"))
     }
     return fs.read_bytes(path) or err {
-        return error(coded(ERR_IO, "cannot read {path}: {err.message()}"))
+        return error(domain.coded(domain.ERR_IO, "cannot read {path}: {err.message()}"))
     }
 }
 
@@ -98,7 +98,7 @@ fn (self: OsRootStage) stage_size(path: str) -> i64! {
         n = flint_root::file_size(std::string(path), why);
     }
     if n < 0 {
-        return error(coded(ERR_IO, why))
+        return error(domain.coded(domain.ERR_IO, why))
     }
     return n
 }
@@ -115,7 +115,7 @@ fn (mut self: OsRootStage) stage_done() {
 }
 
 // The caller pkexec names (PKEXEC_UID), -1 when there is none; whether this is root.
-fn pkexec_caller() -> i64 {
+pub fn pkexec_caller() -> i64 {
     mut uid: i64 = -1
     // CFIRE-UPSTREAM: CF-180
     cpp {
@@ -124,7 +124,7 @@ fn pkexec_caller() -> i64 {
     return uid
 }
 
-fn running_as_root() -> bool {
+pub fn running_as_root() -> bool {
     mut on := false
     // CFIRE-UPSTREAM: CF-180
     cpp {
@@ -144,12 +144,12 @@ fn current_uid() -> i64 {
 
 // The package manager. `tool` is the command run for a format (absolute paths: pkexec
 // gives root a minimal PATH); a test gives its own.
-type OsPackageInstaller struct {
+pub type OsPackageInstaller struct {
     apt: str
     dnf: str
 }
 
-fn new_os_package_installer() -> OsPackageInstaller {
+pub fn new_os_package_installer() -> OsPackageInstaller {
     return OsPackageInstaller{ apt: "/usr/bin/apt-get", dnf: "/usr/bin/dnf" }
 }
 
@@ -168,7 +168,7 @@ fn output_tail(text: str) -> str {
 fn (mut self: OsPackageInstaller) pkg_install(format: str, path: str) -> void! {
     mut args: []str = []
     mut tool := "apt-get"
-    if format == PACKAGE_RPM {
+    if format == domain.PACKAGE_RPM {
         tool = "dnf"
         args = ["/usr/bin/timeout", PACKAGE_INSTALL_TIMEOUT_S, self.dnf, "install", "-y", "-q", path]
     } else {
@@ -176,12 +176,12 @@ fn (mut self: OsPackageInstaller) pkg_install(format: str, path: str) -> void! {
         args = ["DEBIAN_FRONTEND=noninteractive", "/usr/bin/timeout", PACKAGE_INSTALL_TIMEOUT_S, self.apt, "install", "-y", "-q", path]
     }
     res := os.command("/usr/bin/env", args) or err {
-        return error(coded(ERR_IO, "{tool} could not be started: {err.message()}"))
+        return error(domain.coded(domain.ERR_IO, "{tool} could not be started: {err.message()}"))
     }
     if res.exit_code == 124 {
-        return error(coded(ERR_TIMEOUT, "{tool} did not finish within {PACKAGE_INSTALL_TIMEOUT_S} s"))
+        return error(domain.coded(domain.ERR_TIMEOUT, "{tool} did not finish within {PACKAGE_INSTALL_TIMEOUT_S} s"))
     }
     if res.exit_code != 0 {
-        return error(coded(ERR_IO, "{tool} could not install it: {output_tail(res.stderr + "\n" + res.stdout)}"))
+        return error(domain.coded(domain.ERR_IO, "{tool} could not install it: {output_tail(res.stderr + "\n" + res.stdout)}"))
     }
 }

@@ -6,8 +6,12 @@
   - **Toolchain & Hybrid Native WebUI Packages**: Use `import "core:tako"` along with `build.Tako()` in `build.cf` for Tako GUI integration, or `import "ext:webui"` (`cfire init --webui` / `cfire new <dir> --webui`) for Wails/Tauri-style hybrid native WebView + Two-Way Typed RPC & Event applications across macOS, Windows, iOS, and Linux. `pkg:*` imports are retired (`cfire/RETIRED-API`).
   - **Native libraries (cfire 0.12)**: `@pkg(...)` and `@define` on `import cpp` are retired. Each executable lists its pkg-config packages in `build.cf` (`build.Executable(..., { PkgConfig: [...] })`); Flint's own per-OS `.pc` files live in `src/adapters/pkgconfig/<os>/`, put on `PKG_CONFIG_PATH` by `scripts/env.sh`.
 - **Language changes in 0.12 that bite**: `byte` is `u8`; `str` parameters are views by default (store or return an owned copy); integer narrowing is explicit; each module has one canonical import path (`cfire fix` rewrites them).
-- **Pinned to cfire `v0.12.7` (D-154). What bites since `v0.12.2`**:
-  - **Qualify every type from a sibling package**: `domain.Settings`, `ports.SshTransport`, never a bare `Settings` (CF-195). Call another package's functions qualified too (`domain.is_absolute_path(...)`): a bare call no longer finds them.
+- **Pinned to cfire `v0.13.1` (D-164). What bites since `v0.12.7`**:
+  - **`pub` on every top-level type, function and global another package uses** (`pub fn`, `pub type`, `pub NAME: str = …`); methods and fields take their type's. `cfire fix --only cfire/PRIVATE-SYMBOL` adds them: read its diff. `package main` takes no `pub`, except a type passed to another package's generic (CF-224: `REDUNDANT-PUB` is then a false warning).
+  - **Qualify every name from another package: types, functions and globals** (`domain.Settings`, `domain.coded(…)`, `domain.ERR_IO`, inside `"{…}"` too). A bare one still resolves, but skips the `pub` check and counts as unused, so `cfire fix` deletes imports the build needs (CF-222).
+  - Unused warnings (`UNUSED-IMPORT`, `-VAR`, `-PARAM`, `-SYMBOL`) on every build: `or { … }` rather than an unread `or err`, `_name` for a parameter an interface needs, `for _ in`; a helper only tests use lives in a `_test.cf`. Never remove an `import cpp` it calls a "duplicate unused import" (CF-223). `cfire fix --only cfire/UNUSED-VAR,cfire/UNUSED-PARAM` is fine; `cfire/UNUSED-IMPORT` only after every name is qualified.
+- **What bites since `v0.12.2`** (still so):
+  - **Qualify every type from a sibling package**: `domain.Settings`, `ports.SshTransport`, never a bare `Settings` (CF-195).
   - A Flint package named like a stdlib module is imported `as flint_<name>` (`keychain`, `ipc`, `ssh`); `adapters/crypto` is `package flint_crypto` (CF-197).
   - **`try` on every forwarded fallible return**: `return try f()`; in a `void!` function, `try g()` then `return` (CF-198).
   - `os.getenv(k)` is `str?`: write `(os.getenv(k) or "")`.

@@ -27,11 +27,11 @@ fn signed_like_installed[S: ports.UpdateSigner](signer: S, p: domain.UpdatePaths
 // Downloads, checks and unpacks the package `s` offers (a status whose action is
 // Download, from a verified manifest). The staging folder is made anew; on any failure
 // it is removed, so nothing unverified stays on disk.
-fn download_update[D: ports.UpdateDownloader, H: ports.UpdateHasher, S: ports.UpdateSigner, F: ports.UpdateFiles](mut dl: D, hasher: H, signer: S, mut files: F, s: domain.UpdateStatus, installed: str, os: str) -> void! {
-    if s.action != UPDATE_ACTION_DOWNLOAD || s.asset_url.len() == 0 || s.asset_size <= 0 || !is_hex64(s.asset_sha256) {
-        return error(coded(ERR_INVALID, "there is no package to download for this copy of Flint"))
+pub fn download_update[D: ports.UpdateDownloader, H: ports.UpdateHasher, S: ports.UpdateSigner, F: ports.UpdateFiles](mut dl: D, hasher: H, signer: S, mut files: F, s: domain.UpdateStatus, installed: str, os: str) -> void! {
+    if s.action != domain.UPDATE_ACTION_DOWNLOAD || s.asset_url.len() == 0 || s.asset_size <= 0 || !domain.is_hex64(s.asset_sha256) {
+        return error(domain.coded(domain.ERR_INVALID, "there is no package to download for this copy of Flint"))
     }
-    p := update_paths(installed, os)
+    p := domain.update_paths(installed, os)
     discard_staging(mut files, p)
     try files.upd_mkdir(p.staging)
     dl.update_download(s.asset_url, p.zip, s.asset_size) or err {
@@ -42,22 +42,22 @@ fn download_update[D: ports.UpdateDownloader, H: ports.UpdateHasher, S: ports.Up
         discard_staging(mut files, p)
         return error(err)
     }
-    if !sha256_matches(s.asset_sha256, got) {
+    if !domain.sha256_matches(s.asset_sha256, got) {
         discard_staging(mut files, p)
-        return error(coded(ERR_INVALID, "the download did not match the release's SHA-256 and was discarded"))
+        return error(domain.coded(domain.ERR_INVALID, "the download did not match the release's SHA-256 and was discarded"))
     }
     files.upd_unzip(p.zip, p.new_dir) or err {
         discard_staging(mut files, p)
         return error(err)
     }
     files.upd_remove(p.zip) or {}
-    if !files.upd_exists(update_app_exe(p.new_root, os)) || !files.upd_exists(update_cli_exe(p.new_root, os)) {
+    if !files.upd_exists(domain.update_app_exe(p.new_root, os)) || !files.upd_exists(domain.update_cli_exe(p.new_root, os)) {
         discard_staging(mut files, p)
-        return error(coded(ERR_INVALID, "the download did not hold Flint and was discarded"))
+        return error(domain.coded(domain.ERR_INVALID, "the download did not hold Flint and was discarded"))
     }
     if !signed_like_installed(signer, p) {
         discard_staging(mut files, p)
-        return error(coded(ERR_INVALID, SIGNATURE_REFUSED))
+        return error(domain.coded(domain.ERR_INVALID, SIGNATURE_REFUSED))
     }
     files.upd_write(p.ready, s.version) or err {
         discard_staging(mut files, p)
@@ -69,45 +69,33 @@ fn download_update[D: ports.UpdateDownloader, H: ports.UpdateHasher, S: ports.Up
 // not newer than this one (left by an update that applied, or by an older download)
 // is removed, unless a swap is under way (its old folder still set aside).
 fn staged_update[F: ports.UpdateFiles](mut files: F, installed: str, os: str, current: str) -> str {
-    return staged_update_at(mut files, update_paths(installed, os), current)
+    return staged_update_at(mut files, domain.update_paths(installed, os), current)
 }
 
 // The same, for any staging (a Linux package's in the person's cache, milestone 54:
 // the package file itself is what is staged, nothing is unpacked or set aside).
-fn staged_update_at[F: ports.UpdateFiles](mut files: F, p: domain.UpdatePaths, current: str) -> str {
+pub fn staged_update_at[F: ports.UpdateFiles](mut files: F, p: domain.UpdatePaths, current: str) -> str {
     if !files.upd_exists(p.ready) {
         return ""
     }
     v := "{(files.upd_read(p.ready) or "").trim()}"
     staged := if p.new_root.len() > 0 { p.new_root } else { p.zip }
-    if version_is_newer(v, current) && files.upd_exists(staged) {
+    if domain.version_is_newer(v, current) && files.upd_exists(staged) {
         return v
     }
-    if p.old_root.len() == 0 || !files.upd_exists(update_parent(p.old_root)) {
+    if p.old_root.len() == 0 || !files.upd_exists(domain.update_parent(p.old_root)) {
         discard_staging(mut files, p)
     }
     return ""
 }
 
-// The app says it started (the new app, at launch, once its page is up): update-apply
-// waits for this before it removes the old folder.
-fn mark_update_started[F: ports.UpdateFiles](mut files: F, installed: str, os: str) {
-    mark_update_started_at(mut files, update_paths(installed, os))
-}
-
-fn mark_update_started_at[F: ports.UpdateFiles](mut files: F, p: domain.UpdatePaths) {
+pub fn mark_update_started_at[F: ports.UpdateFiles](mut files: F, p: domain.UpdatePaths) {
     if files.upd_exists(p.staging) {
         files.upd_write(p.started, "started") or {}
     }
 }
 
-// What update-apply left when it could not apply, once: read, then cleared (the whole
-// staging folder unless the package was kept for another Relaunch).
-fn take_apply_outcome[F: ports.UpdateFiles](mut files: F, installed: str, os: str) -> domain.ApplyOutcome? {
-    return take_apply_outcome_at(mut files, update_paths(installed, os))
-}
-
-fn take_apply_outcome_at[F: ports.UpdateFiles](mut files: F, p: domain.UpdatePaths) -> domain.ApplyOutcome? {
+pub fn take_apply_outcome_at[F: ports.UpdateFiles](mut files: F, p: domain.UpdatePaths) -> domain.ApplyOutcome? {
     if !files.upd_exists(p.outcome) {
         return none
     }
@@ -124,16 +112,16 @@ fn take_apply_outcome_at[F: ports.UpdateFiles](mut files: F, p: domain.UpdatePat
 
 // Relaunch: the new CLI copied to `temp_dir` and started as update-apply for this
 // process (`pid`); the caller quits right after. Its log goes to `temp_dir`.
-fn relaunch_update[F: ports.UpdateFiles, P: ports.UpdateProcesses, S: ports.UpdateSigner](mut files: F, mut procs: P, signer: S, installed: str, os: str, current: str, temp_dir: str, pid: i64) -> void! {
-    p := update_paths(installed, os)
+pub fn relaunch_update[F: ports.UpdateFiles, P: ports.UpdateProcesses, S: ports.UpdateSigner](mut files: F, mut procs: P, signer: S, installed: str, os: str, current: str, temp_dir: str, pid: i64) -> void! {
+    p := domain.update_paths(installed, os)
     if staged_update(mut files, installed, os, current).len() == 0 {
-        return error(coded(ERR_NOT_FOUND, "no update is ready to apply"))
+        return error(domain.coded(domain.ERR_NOT_FOUND, "no update is ready to apply"))
     }
     // The staged bundle again, right before it runs: a package changed on disk since
     // Download is discarded, never applied.
     if !signed_like_installed(signer, p) {
         discard_staging(mut files, p)
-        return error(coded(ERR_INVALID, SIGNATURE_REFUSED))
+        return error(domain.coded(domain.ERR_INVALID, SIGNATURE_REFUSED))
     }
     files.upd_remove(p.started) or {}
     files.upd_remove(p.outcome) or {}
@@ -142,7 +130,7 @@ fn relaunch_update[F: ports.UpdateFiles, P: ports.UpdateProcesses, S: ports.Upda
         cli = cli + ".exe"
     }
     try files.upd_mkdir(temp_dir)
-    try files.upd_copy_exe(update_cli_exe(p.new_root, os), cli)
+    try files.upd_copy_exe(domain.update_cli_exe(p.new_root, os), cli)
     args: []str = ["update-apply", "--wait", "{pid}", "--from", p.new_root, "--to", p.installed]
     _ = try procs.proc_spawn(cli, args, temp_dir + "/update-apply.log")
 }
@@ -154,48 +142,48 @@ fn relaunch_update[F: ports.UpdateFiles, P: ports.UpdateProcesses, S: ports.Upda
 // When it cannot apply it leaves the outcome for the app it starts again (inline at
 // each step: a generic helper taking `mut files, mut procs, p` lowers its arguments to
 // `str(...)` with the adapters' types, CF-177).
-fn apply_update[F: ports.UpdateFiles, P: ports.UpdateProcesses](mut files: F, mut procs: P, r: domain.ApplyRequest) -> domain.ApplyOutcome {
-    check_apply_request(r) or err {
+pub fn apply_update[F: ports.UpdateFiles, P: ports.UpdateProcesses](mut files: F, mut procs: P, r: domain.ApplyRequest) -> domain.ApplyOutcome {
+    domain.check_apply_request(r) or err {
         msg := "{err.message()}"
-        return apply_failed(APPLY_STEP_ARGS, error_code_of(msg), msg, true)
+        return domain.apply_failed(domain.APPLY_STEP_ARGS, domain.error_code_of(msg), msg, true)
     }
-    p := update_paths(r.to, r.os)
+    p := domain.update_paths(r.to, r.os)
     if !files.upd_exists(p.new_root) || !files.upd_exists(p.installed) {
-        return apply_failed(APPLY_STEP_ARGS, ERR_NOT_FOUND, "the update or the installed folder is missing", false)
+        return domain.apply_failed(domain.APPLY_STEP_ARGS, domain.ERR_NOT_FOUND, "the update or the installed folder is missing", false)
     }
     pid := r.wait_pid
     if pid > 0 {
-        deadline := procs.proc_now_ms() + UPDATE_WAIT_QUIT_MS
+        deadline := procs.proc_now_ms() + domain.UPDATE_WAIT_QUIT_MS
         for procs.proc_alive(pid) {
             if procs.proc_now_ms() >= deadline {
                 // Said at the next launch, with the package kept for another Relaunch.
-                o := apply_failed(APPLY_STEP_QUIT, ERR_TIMEOUT, "Flint did not quit within {UPDATE_WAIT_QUIT_MS / 60000} minutes, so nothing was changed", true)
+                o := domain.apply_failed(domain.APPLY_STEP_QUIT, domain.ERR_TIMEOUT, "Flint did not quit within {domain.UPDATE_WAIT_QUIT_MS / 60000} minutes, so nothing was changed", true)
                 files.upd_write(p.outcome, json.stringify(o)) or {}
                 return o
             }
-            procs.proc_sleep(UPDATE_POLL_MS)
+            procs.proc_sleep(domain.UPDATE_POLL_MS)
         }
     }
     mut held := procs.proc_running_under(p.installed)
-    cli_deadline := procs.proc_now_ms() + UPDATE_WAIT_CLI_MS
+    cli_deadline := procs.proc_now_ms() + domain.UPDATE_WAIT_CLI_MS
     for held.len() > 0 && procs.proc_now_ms() < cli_deadline {
-        procs.proc_sleep(UPDATE_POLL_MS)
+        procs.proc_sleep(domain.UPDATE_POLL_MS)
         held = procs.proc_running_under(p.installed)
     }
     if held.len() > 0 {
-        o := apply_failed(APPLY_STEP_CLI, ERR_CONFLICT, "flint is still running from {path_base(p.installed)} (process {held[0]})", true)
+        o := domain.apply_failed(domain.APPLY_STEP_CLI, domain.ERR_CONFLICT, "flint is still running from {path_base(p.installed)} (process {held[0]})", true)
         files.upd_write(p.outcome, json.stringify(o)) or {}
-        _ = procs.proc_spawn(update_app_exe(p.installed, r.os), [], r.app_log) or 0
+        _ = procs.proc_spawn(domain.update_app_exe(p.installed, r.os), [], r.app_log) or 0
         return o
     }
     // The swap: two renames on one volume.
     files.upd_remove(p.started) or {}
-    files.upd_remove(update_parent(p.old_root)) or {}
-    files.upd_mkdir(update_parent(p.old_root)) or {}
+    files.upd_remove(domain.update_parent(p.old_root)) or {}
+    files.upd_mkdir(domain.update_parent(p.old_root)) or {}
     // Each rename is tried again for UPDATE_RENAME_RETRY_MS (inline, CF-177): on
     // Windows a file in the folder held open for a moment refuses it.
     mut swap_err := ""
-    rename_deadline := procs.proc_now_ms() + UPDATE_RENAME_RETRY_MS
+    rename_deadline := procs.proc_now_ms() + domain.UPDATE_RENAME_RETRY_MS
     for {
         files.upd_rename(p.installed, p.old_root) or err {
             swap_err = "{err.message()}"
@@ -204,12 +192,12 @@ fn apply_update[F: ports.UpdateFiles, P: ports.UpdateProcesses](mut files: F, mu
             break
         }
         swap_err = ""
-        procs.proc_sleep(UPDATE_POLL_MS)
+        procs.proc_sleep(domain.UPDATE_POLL_MS)
     }
     if swap_err.len() > 0 {
-        o := apply_failed(APPLY_STEP_SWAP, ERR_IO, held_message(swap_err, p.installed, procs.proc_holders(p.installed)), true)
+        o := domain.apply_failed(domain.APPLY_STEP_SWAP, domain.ERR_IO, domain.held_message(swap_err, p.installed, procs.proc_holders(p.installed)), true)
         files.upd_write(p.outcome, json.stringify(o)) or {}
-        _ = procs.proc_spawn(update_app_exe(p.installed, r.os), [], r.app_log) or 0
+        _ = procs.proc_spawn(domain.update_app_exe(p.installed, r.os), [], r.app_log) or 0
         return o
     }
     for {
@@ -220,28 +208,28 @@ fn apply_update[F: ports.UpdateFiles, P: ports.UpdateProcesses](mut files: F, mu
             break
         }
         swap_err = ""
-        procs.proc_sleep(UPDATE_POLL_MS)
+        procs.proc_sleep(domain.UPDATE_POLL_MS)
     }
     if swap_err.len() > 0 {
         files.upd_rename(p.old_root, p.installed) or {}
-        o := apply_failed(APPLY_STEP_SWAP, ERR_IO, held_message(swap_err, path_base(p.new_root), procs.proc_holders(p.new_root)), true)
+        o := domain.apply_failed(domain.APPLY_STEP_SWAP, domain.ERR_IO, domain.held_message(swap_err, domain.path_base(p.new_root), procs.proc_holders(p.new_root)), true)
         files.upd_write(p.outcome, json.stringify(o)) or {}
-        _ = procs.proc_spawn(update_app_exe(p.installed, r.os), [], r.app_log) or 0
+        _ = procs.proc_spawn(domain.update_app_exe(p.installed, r.os), [], r.app_log) or 0
         return o
     }
     mut started := false
-    child := procs.proc_spawn(update_app_exe(p.installed, r.os), [], r.app_log) or 0
+    child := procs.proc_spawn(domain.update_app_exe(p.installed, r.os), [], r.app_log) or 0
     if child > 0 {
-        start_deadline := procs.proc_now_ms() + UPDATE_WAIT_START_MS
+        start_deadline := procs.proc_now_ms() + domain.UPDATE_WAIT_START_MS
         for !started && procs.proc_alive(child) && procs.proc_now_ms() < start_deadline {
-            procs.proc_sleep(UPDATE_POLL_MS)
+            procs.proc_sleep(domain.UPDATE_POLL_MS)
             started = files.upd_exists(p.started)
         }
         started = started || files.upd_exists(p.started)
     }
     if started {
         discard_staging(mut files, p)
-        return apply_ok()
+        return domain.apply_ok()
     }
     // Put the old folder back.
     quit_early := child > 0 && !procs.proc_alive(child)
@@ -255,15 +243,15 @@ fn apply_update[F: ports.UpdateFiles, P: ports.UpdateProcesses](mut files: F, mu
     files.upd_remove(failed_dir) or {}
     files.upd_remove(p.new_dir) or {}
     files.upd_remove(p.ready) or {}
-    files.upd_remove(update_parent(p.old_root)) or {}
-    mut why := "It did not say it started within {UPDATE_WAIT_START_MS / 1000} s."
+    files.upd_remove(domain.update_parent(p.old_root)) or {}
+    mut why := "It did not say it started within {domain.UPDATE_WAIT_START_MS / 1000} s."
     if child == 0 {
         why = "It could not be started."
     } else if quit_early {
         why = "It quit as soon as it started."
     }
-    o := apply_failed(APPLY_STEP_START, ERR_TIMEOUT, why, false)
+    o := domain.apply_failed(domain.APPLY_STEP_START, domain.ERR_TIMEOUT, why, false)
     files.upd_write(p.outcome, json.stringify(o)) or {}
-    _ = procs.proc_spawn(update_app_exe(p.installed, r.os), [], r.app_log) or 0
+    _ = procs.proc_spawn(domain.update_app_exe(p.installed, r.os), [], r.app_log) or 0
     return o
 }

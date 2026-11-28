@@ -18,7 +18,7 @@ type TerminalClosed struct {
     reason:  str `json:"reason"`
 }
 
-type WebuiEventSink struct {
+pub type WebuiEventSink struct {
     app: webui.App
 }
 
@@ -31,7 +31,7 @@ fn new_webui_event_sink(app: webui.App) -> WebuiEventSink {
 // keys themselves. `labels` are its texts in the window's language, in the order
 // flint_gui::install_app_menu names (D-144); like the tray's, they are set at start.
 // Named apart from that function: cfire calls a namesake with its types (CF-193).
-fn install_menu_bar(app_name: str, labels: []str) {
+pub fn install_menu_bar(app_name: str, labels: []str) {
     // CFIRE-UPSTREAM: CF-073
     cpp {
         std::vector<std::string> texts(labels.begin(), labels.end());

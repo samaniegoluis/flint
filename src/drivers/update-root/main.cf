@@ -28,11 +28,11 @@ fn finish(o: domain.RootOutcome) {
         eprintln("flint-update-root: nothing installed ({o.code}): {o.message}")
     }
     println(json.stringify(o))
-    os.exit(root_exit_code(o))
+    os.exit(domain.root_exit_code(o))
 }
 
 fn usage(message: str) -> domain.RootOutcome {
-    return domain.RootOutcome{ installed: false, version: "", code: ERR_USAGE, message: message, discard: false }
+    return domain.RootOutcome{ installed: false, version: "", code: domain.ERR_USAGE, message: message, discard: false }
 }
 
 fn main() {
@@ -40,32 +40,32 @@ fn main() {
         finish(usage("flint-update-root takes no arguments: Flint runs it through pkexec"))
         return
     }
-    if !running_as_root() {
+    if !rootupdate.running_as_root() {
         finish(usage("flint-update-root runs as root, through pkexec"))
         return
     }
-    uid := pkexec_caller()
+    uid := rootupdate.pkexec_caller()
     if uid <= 0 {
         finish(usage("flint-update-root runs through pkexec, for the person whose Flint asked"))
         return
     }
-    kind := install_kind_of(fs.read_text(PACKAGE_LIB + "/install-kind") or "")
+    kind := domain.install_kind_of(fs.read_text(PACKAGE_LIB + "/install-kind") or "")
     // A test package (scripts/package.sh linux --test-feed) has its local feed's key
     // compiled in; a release has none and takes Flint's key alone.
-    mut key := hex.decode(UPDATE_PUBLIC_KEY_HEX) or []
+    mut key := hex.decode(domain.UPDATE_PUBLIC_KEY_HEX) or []
     // CFIRE-UPSTREAM: CF-196 (`mut x := CONST` of another package infers no type)
-    mut prefix: str = UPDATE_DOWNLOAD_PREFIX
+    mut prefix: str = domain.UPDATE_DOWNLOAD_PREFIX
     if version.UPDATE_TEST_KEY_HEX.len() > 0 {
         key = hex.decode(version.UPDATE_TEST_KEY_HEX) or []
-        prefix = update_download_prefix(version.UPDATE_TEST_FEED)
+        prefix = domain.update_download_prefix(version.UPDATE_TEST_FEED)
         eprintln("flint-update-root: a test package: the test feed's key")
     }
-    sodium := new_sodium() or {
-        finish(domain.RootOutcome{ installed: false, version: "", code: ERR_INTERNAL, message: "libsodium failed to initialise", discard: false })
+    sodium := flint_crypto.new_sodium() or {
+        finish(domain.RootOutcome{ installed: false, version: "", code: domain.ERR_INTERNAL, message: "libsodium failed to initialise", discard: false })
         return
     }
-    mut stage := new_os_root_stage()
-    mut installer := new_os_package_installer()
-    req := application.RootUpdateRequest{ uid: uid, format: package_format(kind), installed: version.FLINT_VERSION, public_key: key, download_prefix: prefix }
-    finish(root_install_update(mut stage, sodium, sodium, mut installer, req))
+    mut stage := rootupdate.new_os_root_stage()
+    mut installer := rootupdate.new_os_package_installer()
+    req := application.RootUpdateRequest{ uid: uid, format: domain.package_format(kind), installed: version.FLINT_VERSION, public_key: key, download_prefix: prefix }
+    finish(application.root_install_update(mut stage, sodium, sodium, mut installer, req))
 }

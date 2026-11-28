@@ -5,11 +5,11 @@ package clilink
 import cpp "flint_clilink.hpp"
 import "../../domain"
 
-type OsCliLinks struct {
+pub type OsCliLinks struct {
     enabled: bool
 }
 
-fn new_os_cli_links() -> OsCliLinks {
+pub fn new_os_cli_links() -> OsCliLinks {
     return OsCliLinks{ enabled: true }
 }
 
@@ -65,24 +65,24 @@ fn link_result(why: str, path: str) -> void! {
         return
     }
     if why == "cancelled" {
-        return error(coded(ERR_DENIED, "no administrator password was given; {path} was left as it was"))
+        return error(domain.coded(domain.ERR_DENIED, "no administrator password was given; {path} was left as it was"))
     }
     if why == "unsupported" {
-        return error(coded(ERR_UNSUPPORTED, "linking the flint command is for macOS"))
+        return error(domain.coded(domain.ERR_UNSUPPORTED, "linking the flint command is for macOS"))
     }
-    return error(coded(ERR_IO, why))
+    return error(domain.coded(domain.ERR_IO, why))
 }
 
 // The `CliPath` port on Windows' registry (milestone 50): `key` is the HKCU subkey,
 // "Environment" for the user's real Path; gui-e2e and the adapter test give one of
 // their own (FLINT_CLI_PATH_KEY), so a run never touches the machine's Path.
-CLI_PATH_KEY: str = "Environment"
+pub CLI_PATH_KEY: str = "Environment"
 
-type OsCliPath struct {
+pub type OsCliPath struct {
     key: str
 }
 
-fn new_os_cli_path(key: str) -> OsCliPath {
+pub fn new_os_cli_path(key: str) -> OsCliPath {
     return OsCliPath{ key: key }
 }
 
@@ -98,7 +98,7 @@ fn (self: OsCliPath) cli_path_read() -> str! {
         why = e;
     }
     if !ok {
-        return error(coded(ERR_IO, why))
+        return error(domain.coded(domain.ERR_IO, why))
     }
     return value
 }
@@ -110,10 +110,10 @@ fn (mut self: OsCliPath) cli_path_write(value: str) -> void! {
         why = flint_clilink::path_write(std::string(self.key), std::string(value));
     }
     if why == "unsupported" {
-        return error(coded(ERR_UNSUPPORTED, "the PATH is offered on Windows"))
+        return error(domain.coded(domain.ERR_UNSUPPORTED, "the PATH is offered on Windows"))
     }
     if why.len() > 0 {
-        return error(coded(ERR_IO, why))
+        return error(domain.coded(domain.ERR_IO, why))
     }
 }
 

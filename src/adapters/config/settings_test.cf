@@ -13,7 +13,7 @@ fn test_tmp() -> str {
 }
 
 fn settings_port_check[T: ports.SettingsStore](mut t: T) -> bool {
-    s := t.settings_load() or err { return false }
+    s := t.settings_load() or { return false }
     return s.theme == "system"
 }
 
@@ -21,7 +21,7 @@ test "settings round-trip through settings.json and default when missing or dama
     dir := test_tmp() + "/flint-config-" + sha256.random_hex(8)
     mut store := new_json_settings_store(dir)
     assert(settings_port_check(mut store))
-    mut s := default_settings()
+    mut s := domain.default_settings()
     s.accent = "moss"
     s.term_font = "JetBrainsMono Nerd Font"
     try store.settings_save(s)

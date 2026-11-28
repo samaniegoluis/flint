@@ -7,7 +7,7 @@ PKG_HOME: str = "/home/ana"
 LIB: str = "/usr/lib/flint"
 
 fn pkg_paths() -> domain.UpdatePaths {
-    return update_package_paths(PKG_HOME, PACKAGE_DEB, LIB)
+    return domain.update_package_paths(PKG_HOME, domain.PACKAGE_DEB, LIB)
 }
 
 fn deb_manifest_json(version: str, sha: str) -> str {
@@ -15,16 +15,16 @@ fn deb_manifest_json(version: str, sha: str) -> str {
     m := domain.UpdateManifest{
         version: version, date: "2026-11-21", summary: "New things.",
         page: "https://github.com/samaniegoluis/flint/releases/tag/v{version}",
-        assets: [domain.UpdateAsset{ key: UPDATE_ASSET_DEB, name: "flint_{version}_amd64.deb", url: base + "flint_{version}_amd64.deb", size: 5000, sha256: sha }],
+        assets: [domain.UpdateAsset{ key: domain.UPDATE_ASSET_DEB, name: "flint_{version}_amd64.deb", url: base + "flint_{version}_amd64.deb", size: 5000, sha256: sha }],
     }
     return json.stringify(m)
 }
 
 fn deb_offer(version: str) -> domain.UpdateStatus {
-    mut s := update_status_idle("0.20.0", true, 1)
-    s.state = UPDATE_AVAILABLE
+    mut s := domain.update_status_idle("0.20.0", true, 1)
+    s.state = domain.UPDATE_AVAILABLE
     s.version = version
-    s.action = UPDATE_ACTION_DOWNLOAD
+    s.action = domain.UPDATE_ACTION_DOWNLOAD
     return s
 }
 
@@ -36,16 +36,16 @@ type FakeProbe struct {
     text: str
 }
 
-fn (self: FakeProbe) package_source_text(format: str) -> str {
+fn (self: FakeProbe) package_source_text(_format: str) -> str {
     return self.text
 }
 
 test "a package's source is asked of its package manager" {
     file := FakeProbe{ text: "flint:\n Version table:\n *** 0.20.0 100\n        100 /var/lib/dpkg/status\n" }
-    assert_eq(package_source(file, "package:deb"), INSTALL_FROM_FILE)
+    assert_eq(package_source(file, "package:deb"), domain.INSTALL_FROM_FILE)
     repo := FakeProbe{ text: "From repository : flint-stable\n" }
-    assert_eq(package_source(repo, "package:rpm"), INSTALL_FROM_REPOSITORY)
-    assert_eq(package_source(repo, INSTALL_PORTABLE), "")
+    assert_eq(package_source(repo, "package:rpm"), domain.INSTALL_FROM_REPOSITORY)
+    assert_eq(package_source(repo, domain.INSTALL_PORTABLE), "")
 }
 
 test "a package download stages the package with the manifest root verifies" {
@@ -82,7 +82,7 @@ test "a package download whose SHA-256 or manifest is wrong leaves nothing" {
     assert(r.starts_with("conflict:"))
     // No .rpm in the release.
     r = ""
-    download_package_update(signed_feed(body, 7), FakeUpdateVerifier{}, mut dl, FakeHasher{ sha: "d".repeat(64) }, mut files, deb_src(), deb_offer("0.21.0"), "package:rpm", update_package_paths(PKG_HOME, PACKAGE_RPM, LIB)) or err { r = "{err.message()}" }
+    download_package_update(signed_feed(body, 7), FakeUpdateVerifier{}, mut dl, FakeHasher{ sha: "d".repeat(64) }, mut files, deb_src(), deb_offer("0.21.0"), "package:rpm", domain.update_package_paths(PKG_HOME, domain.PACKAGE_RPM, LIB)) or err { r = "{err.message()}" }
     assert(r.starts_with("not_found:"))
     assert_eq(dl.urls.len(), 1)
 }
@@ -93,10 +93,10 @@ type FakeRootRunner struct {
     runs: i64
 }
 
-fn (mut self: FakeRootRunner) run_root_helper(helper: str) -> domain.RootRun! {
+fn (mut self: FakeRootRunner) run_root_helper(_helper: str) -> domain.RootRun! {
     self.runs += 1
     if self.fail.len() > 0 {
-        return error(coded(self.fail, "pkexec is not installed"))
+        return error(domain.coded(self.fail, "pkexec is not installed"))
     }
     return self.run
 }
@@ -135,7 +135,7 @@ test "Relaunch: a dismissed password keeps the package, a failed check discards 
     assert_eq(procs.spawned.len(), 0)
     assert_eq(staged_update_at(mut files, pkg_paths(), "0.20.0"), "0.21.0")
 
-    refused := domain.RootOutcome{ installed: false, version: "0.21.0", code: ERR_INVALID, message: "the package did not match the release's SHA-256", discard: true }
+    refused := domain.RootOutcome{ installed: false, version: "0.21.0", code: domain.ERR_INVALID, message: "the package did not match the release's SHA-256", discard: true }
     runner.run = domain.RootRun{ exit_code: 3, stdout: json.stringify(refused) }
     d := relaunch_package_update(mut files, mut procs, mut runner, pkg_paths(), LIB + "/flint-update-root", "0.20.0", 42, "")
     assert(d.discard)
@@ -145,14 +145,14 @@ test "Relaunch: a dismissed password keeps the package, a failed check discards 
 
     // Nothing staged now: pkexec is not even asked.
     n := relaunch_package_update(mut files, mut procs, mut runner, pkg_paths(), LIB + "/flint-update-root", "0.20.0", 42, "")
-    assert_eq(n.code, ERR_NOT_FOUND)
+    assert_eq(n.code, domain.ERR_NOT_FOUND)
     assert_eq(runner.runs, 2)
 }
 
 test "Relaunch: apt failing keeps the package for another try" {
     mut files := staged_package()
     mut procs := fake_procs()
-    busy := domain.RootOutcome{ installed: false, version: "0.21.0", code: ERR_IO, message: "apt-get could not install it: Could not get lock /var/lib/dpkg/lock-frontend", discard: false }
+    busy := domain.RootOutcome{ installed: false, version: "0.21.0", code: domain.ERR_IO, message: "apt-get could not install it: Could not get lock /var/lib/dpkg/lock-frontend", discard: false }
     mut runner := FakeRootRunner{ run: domain.RootRun{ exit_code: 4, stdout: json.stringify(busy) }, fail: "", runs: 0 }
     r := relaunch_package_update(mut files, mut procs, mut runner, pkg_paths(), LIB + "/flint-update-root", "0.20.0", 42, "")
     assert(!r.installed && !r.discard)
@@ -181,16 +181,16 @@ test "update-apply --start says at the next launch that the new app did not star
     procs.child_dies = true
     o := apply_package_start(mut files, mut procs, start_request())
     assert(!o.applied)
-    assert_eq(o.step, APPLY_STEP_PACKAGE_START)
+    assert_eq(o.step, domain.APPLY_STEP_PACKAGE_START)
     assert(o.message.contains("quit as soon as"))
     assert(files.upd_exists(PKG_HOME + "/.cache/flint/update/outcome.json"))
-    assert(apply_outcome_text(o).contains("was installed"))
+    assert(domain.apply_outcome_text(o).contains("was installed"))
     // Nothing to put back: no rename was ever made.
     assert_eq(files.log.len(), 0)
     // --start never takes --from.
     mut bad := start_request()
     bad.from = "/tmp/x"
-    assert_eq(apply_package_start(mut files, mut procs, bad).step, APPLY_STEP_ARGS)
+    assert_eq(apply_package_start(mut files, mut procs, bad).step, domain.APPLY_STEP_ARGS)
 }
 
 // ---- flint-update-root -------------------------------------------------------------
@@ -210,15 +210,15 @@ fn root_stage(manifest: str, sig: str, pkg: str) -> FakeRootStage {
     return FakeRootStage{ staged: ["manifest.json=" + manifest, "manifest.json.sig=" + sig, "package.deb=" + pkg], copies: [], refuse: "", swap_after_copy: "", done: false }
 }
 
-fn (mut self: FakeRootStage) stage_copy(uid: i64, name: str, max_bytes: i64) -> str! {
+fn (mut self: FakeRootStage) stage_copy(_uid: i64, name: str, max_bytes: i64) -> str! {
     if name == self.refuse {
-        return error(coded(ERR_INVALID, "{name} is a link"))
+        return error(domain.coded(domain.ERR_INVALID, "{name} is a link"))
     }
     for i, x in self.staged {
         if x.starts_with(name + "=") {
             content := "{x[name.len() + 1..]}"
             if i64(content.len()) > max_bytes {
-                return error(coded(ERR_INVALID, "{name} is too large"))
+                return error(domain.coded(domain.ERR_INVALID, "{name} is too large"))
             }
             path := "/var/tmp/root/" + name
             self.copies.push(path + "=" + content)
@@ -228,7 +228,7 @@ fn (mut self: FakeRootStage) stage_copy(uid: i64, name: str, max_bytes: i64) -> 
             return path
         }
     }
-    return error(coded(ERR_NOT_FOUND, "no {name}"))
+    return error(domain.coded(domain.ERR_NOT_FOUND, "no {name}"))
 }
 
 fn (self: FakeRootStage) copy_of(path: str) -> str {
@@ -240,7 +240,7 @@ fn (self: FakeRootStage) copy_of(path: str) -> str {
     return ""
 }
 
-fn (self: FakeRootStage) stage_read(path: str, max_bytes: i64) -> []byte! {
+fn (self: FakeRootStage) stage_read(path: str, _max_bytes: i64) -> []byte! {
     mut out: []byte = []
     for b in self.copy_of(path).bytes() {
         out.push(b)
@@ -263,7 +263,7 @@ type FakeInstaller struct {
 
 fn (mut self: FakeInstaller) pkg_install(format: str, path: str) -> void! {
     if self.fail.len() > 0 {
-        return error(coded(ERR_IO, self.fail))
+        return error(domain.coded(domain.ERR_IO, self.fail))
     }
     self.installed.push(format + " " + path)
 }
@@ -273,12 +273,12 @@ type ContentHasher struct {
     good: str
 }
 
-fn (self: ContentHasher) update_file_sha256(path: str) -> str! {
+fn (self: ContentHasher) update_file_sha256(_path: str) -> str! {
     return self.good
 }
 
 fn root_req(installed: str) -> RootUpdateRequest {
-    return RootUpdateRequest{ uid: 1000, format: PACKAGE_DEB, installed: installed, public_key: update_key(7), download_prefix: UPDATE_DOWNLOAD_PREFIX }
+    return RootUpdateRequest{ uid: 1000, format: domain.PACKAGE_DEB, installed: installed, public_key: update_key(7), download_prefix: domain.UPDATE_DOWNLOAD_PREFIX }
 }
 
 fn pkg_content() -> str {
@@ -313,7 +313,7 @@ test "root refuses what fails its checks, and installs nothing" {
     // Signed by another key.
     mut s2 := root_stage(body, fake_sign(body, 9), pkg_content())
     o2 := refused_by_root(mut s2, "d".repeat(64), "0.20.0")
-    assert(o2.discard && o2.code == ERR_INVALID)
+    assert(o2.discard && o2.code == domain.ERR_INVALID)
     // A manifest changed after it was signed.
     mut s3 := root_stage(body + " ", fake_sign(body, 7), pkg_content())
     assert(refused_by_root(mut s3, "d".repeat(64), "0.20.0").discard)
@@ -348,19 +348,19 @@ test "root: nothing staged, a bad caller, apt failing" {
     mut empty := FakeRootStage{ staged: [], copies: [], refuse: "", swap_after_copy: "", done: false }
     mut inst := FakeInstaller{ installed: [], fail: "" }
     n := root_install_update(mut empty, FakeUpdateVerifier{}, ContentHasher{ good: "" }, mut inst, root_req("0.20.0"))
-    assert_eq(n.code, ERR_NOT_FOUND)
+    assert_eq(n.code, domain.ERR_NOT_FOUND)
     assert(!n.discard)
-    assert_eq(root_exit_code(n), ROOT_EXIT_NOTHING)
+    assert_eq(domain.root_exit_code(n), domain.ROOT_EXIT_NOTHING)
 
     mut nobody := root_req("0.20.0")
     nobody.uid = 0
-    assert_eq(root_install_update(mut empty, FakeUpdateVerifier{}, ContentHasher{ good: "" }, mut inst, nobody).code, ERR_USAGE)
+    assert_eq(root_install_update(mut empty, FakeUpdateVerifier{}, ContentHasher{ good: "" }, mut inst, nobody).code, domain.ERR_USAGE)
 
     body := deb_manifest_json("0.21.0", "d".repeat(64))
     mut stage := root_stage(body, fake_sign(body, 7), pkg_content())
     mut busy := FakeInstaller{ installed: [], fail: "apt-get could not install it: dpkg is locked" }
     o := root_install_update(mut stage, FakeUpdateVerifier{}, ContentHasher{ good: "d".repeat(64) }, mut busy, root_req("0.20.0"))
     assert(!o.installed && !o.discard)
-    assert_eq(root_exit_code(o), ROOT_EXIT_INSTALL)
+    assert_eq(domain.root_exit_code(o), domain.ROOT_EXIT_INSTALL)
     assert(stage.done)
 }

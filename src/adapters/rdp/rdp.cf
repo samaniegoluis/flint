@@ -13,61 +13,61 @@ import cpp "flint_rdp.hpp"
 import "../../domain"
 
 // The engine. Stateless: the tabs live in the shim's registry.
-type FreeRdpDesktop struct {
+pub type FreeRdpDesktop struct {
     unused: i64
 }
 
-fn new_freerdp_desktop() -> FreeRdpDesktop {
+pub fn new_freerdp_desktop() -> FreeRdpDesktop {
     return FreeRdpDesktop{ unused: 0 }
 }
 
 // The shim's result codes as the core's stable error codes.
 fn rdp_error(code: i64, detail: str) -> str {
     if code == 1 {
-        return core_msg(MSG_RDP_AUTH, [detail])
+        return domain.core_msg(domain.MSG_RDP_AUTH, [detail])
     }
     if code == 2 {
-        return core_msg(MSG_RDP_UNREACHABLE, [detail])
+        return domain.core_msg(domain.MSG_RDP_UNREACHABLE, [detail])
     }
     if code == 3 {
-        return core_msg(MSG_RDP_TIMEOUT, [])
+        return domain.core_msg(domain.MSG_RDP_TIMEOUT, [])
     }
     if code == 4 {
-        return core_msg(MSG_RDP_REFUSED, [detail])
+        return domain.core_msg(domain.MSG_RDP_REFUSED, [detail])
     }
     if code == 5 {
-        return core_msg(MSG_RDP_TLS_FAILED, [detail])
+        return domain.core_msg(domain.MSG_RDP_TLS_FAILED, [detail])
     }
     if code == 7 {
-        return core_msg(MSG_RDP_SESSION_CLOSED, [])
+        return domain.core_msg(domain.MSG_RDP_SESSION_CLOSED, [])
     }
     if code == 8 {
-        return core_msg(MSG_RDP_CERT_MISMATCH, [])
+        return domain.core_msg(domain.MSG_RDP_CERT_MISMATCH, [])
     }
     if code == 9 {
-        return core_msg(MSG_RDP_PORT_CLOSED, [])
+        return domain.core_msg(domain.MSG_RDP_PORT_CLOSED, [])
     }
     if code == 10 {
-        return core_msg(MSG_RDP_LOST, [detail])
+        return domain.core_msg(domain.MSG_RDP_LOST, [detail])
     }
     if code == 11 {
-        return core_msg(MSG_RDP_ENDED, [detail])
+        return domain.core_msg(domain.MSG_RDP_ENDED, [detail])
     }
     if code == 12 {
-        return coded(ERR_INVALID, "unknown key '{detail}'")
+        return domain.coded(domain.ERR_INVALID, "unknown key '{detail}'")
     }
     if code == 13 {
-        return core_msg(MSG_RDP_STANDARD_SECURITY, [])
+        return domain.core_msg(domain.MSG_RDP_STANDARD_SECURITY, [])
     }
     if code == 14 {
-        return core_msg(MSG_RDP_SETUP_CLOSED, [detail])
+        return domain.core_msg(domain.MSG_RDP_SETUP_CLOSED, [detail])
     }
-    return core_msg(MSG_RDP_FAILED, [detail])
+    return domain.core_msg(domain.MSG_RDP_FAILED, [detail])
 }
 
 fn (self: FreeRdpDesktop) rd_open(tab: str, t: domain.RdpTarget, timeout_ms: i64) -> domain.RdpDesktop! {
     if t.hostname.len() == 0 || t.user.len() == 0 {
-        return error(coded(ERR_INVALID, "an RDP host needs an address and a user"))
+        return error(domain.coded(domain.ERR_INVALID, "an RDP host needs an address and a user"))
     }
     mut rc: i32 = 0
     mut detail := ""
@@ -84,7 +84,7 @@ fn (self: FreeRdpDesktop) rd_open(tab: str, t: domain.RdpTarget, timeout_ms: i64
     rw := i32(t.width)
     rh := i32(t.height)
     layout := layout_text(t.monitors)
-    sound := rdp_audio_settings(t.audio, t.microphone)
+    sound := domain.rdp_audio_settings(t.audio, t.microphone)
     playback := sound.playback
     remote_audio := sound.remote_console
     capture := sound.capture
@@ -96,7 +96,7 @@ fn (self: FreeRdpDesktop) rd_open(tab: str, t: domain.RdpTarget, timeout_ms: i64
     }
     // From open, "closed" only ever means the tab's own close cancelled it.
     if rc == 7 {
-        return error(coded(ERR_NETWORK, RDP_CLOSED_BY_TAB))
+        return error(domain.coded(domain.ERR_NETWORK, domain.RDP_CLOSED_BY_TAB))
     }
     if rc != 0 {
         return error(rdp_error(i64(rc), detail))
@@ -168,7 +168,7 @@ fn parse_layout_text(s: str) -> []domain.RdpMonitor {
 }
 
 fn (self: FreeRdpDesktop) rd_set_layout(tab: str, monitors: []domain.RdpMonitor) -> void! {
-    try check_rdp_layout(monitors)
+    try domain.check_rdp_layout(monitors)
     mut rc: i32 = 0
     layout := layout_text(monitors)
     // CFIRE-UPSTREAM: CF-119
@@ -196,24 +196,24 @@ fn (self: FreeRdpDesktop) rd_wait(tab: str, wait_ms: i64) -> domain.RdpEvent {
         if code != 0 {
             msg = rdp_error(i64(code), detail)
         }
-        return domain.RdpEvent{ kind: RDP_EVENT_ENDED, message: msg, width: 0, height: 0 }
+        return domain.RdpEvent{ kind: domain.RDP_EVENT_ENDED, message: msg, width: 0, height: 0 }
     }
     if kind == 2 {
-        return domain.RdpEvent{ kind: RDP_EVENT_RESIZE, message: "", width: i64(w), height: i64(h), monitors: parse_layout_text(layout) }
+        return domain.RdpEvent{ kind: domain.RDP_EVENT_RESIZE, message: "", width: i64(w), height: i64(h), monitors: parse_layout_text(layout) }
     }
     if kind == 3 {
-        return domain.RdpEvent{ kind: RDP_EVENT_CLIP_TEXT, message: detail, width: 0, height: 0 }
+        return domain.RdpEvent{ kind: domain.RDP_EVENT_CLIP_TEXT, message: detail, width: 0, height: 0 }
     }
     if kind == 4 {
-        return domain.RdpEvent{ kind: RDP_EVENT_CLIP_REQUEST, message: "", width: 0, height: 0 }
+        return domain.RdpEvent{ kind: domain.RDP_EVENT_CLIP_REQUEST, message: "", width: 0, height: 0 }
     }
     if kind == 5 {
-        return domain.RdpEvent{ kind: RDP_EVENT_GRAPHICS, message: detail, width: i64(w), height: i64(h), monitors: parse_layout_text(layout) }
+        return domain.RdpEvent{ kind: domain.RDP_EVENT_GRAPHICS, message: detail, width: i64(w), height: i64(h), monitors: parse_layout_text(layout) }
     }
     if kind == 6 {
-        return domain.RdpEvent{ kind: RDP_EVENT_POINTER, message: "", width: 0, height: 0, cursor: parse_cursor(detail) }
+        return domain.RdpEvent{ kind: domain.RDP_EVENT_POINTER, message: "", width: 0, height: 0, cursor: parse_cursor(detail) }
     }
-    return domain.RdpEvent{ kind: RDP_EVENT_RUNNING, message: "", width: 0, height: 0 }
+    return domain.RdpEvent{ kind: domain.RDP_EVENT_RUNNING, message: "", width: 0, height: 0 }
 }
 
 fn (self: FreeRdpDesktop) rd_clip_announce(tab: str, has_text: bool) -> void! {
@@ -257,9 +257,9 @@ fn cursor_num(s: str) -> i64 {
 
 fn parse_cursor(line: str) -> domain.RdpCursor {
     parts := line.split(" ")
-    mut c := domain.RdpCursor{ action: RDP_CURSOR_DEFAULT, id: 0, width: 0, height: 0, hot_x: 0, hot_y: 0, rgba: "" }
+    mut c := domain.RdpCursor{ action: domain.RDP_CURSOR_DEFAULT, id: 0, width: 0, height: 0, hot_x: 0, hot_y: 0, rgba: "" }
     if parts.len() == 7 && parts[0] == "image" {
-        c.action = RDP_CURSOR_IMAGE
+        c.action = domain.RDP_CURSOR_IMAGE
         c.id = cursor_num(parts[1])
         c.width = cursor_num(parts[2])
         c.height = cursor_num(parts[3])
@@ -269,12 +269,12 @@ fn parse_cursor(line: str) -> domain.RdpCursor {
         return c
     }
     if parts.len() == 2 && parts[0] == "set" {
-        c.action = RDP_CURSOR_SET
+        c.action = domain.RDP_CURSOR_SET
         c.id = cursor_num(parts[1])
         return c
     }
     if line == "hidden" {
-        c.action = RDP_CURSOR_HIDDEN
+        c.action = domain.RDP_CURSOR_HIDDEN
     }
     return c
 }
@@ -311,9 +311,9 @@ fn (self: FreeRdpDesktop) rd_keyboard_layout(tab: str) -> i64 {
 
 fn (self: FreeRdpDesktop) rd_type_event(tab: str, e: domain.RdpKeyEvent) -> void! {
     mut kind: i32 = 0
-    if e.kind == RDP_KEY_EVENT_UNICODE {
+    if e.kind == domain.RDP_KEY_EVENT_UNICODE {
         kind = 1
-    } else if e.kind == RDP_KEY_EVENT_SYNC {
+    } else if e.kind == domain.RDP_KEY_EVENT_SYNC {
         kind = 2
     }
     code := i32(e.code)
@@ -338,7 +338,7 @@ fn (self: FreeRdpDesktop) rd_address(tab: str) -> str {
     if host.len() == 0 {
         return ""
     }
-    return rdp_cert_addr(host, port)
+    return domain.rdp_cert_addr(host, port)
 }
 
 fn pointer_kind(kind: str) -> i32 {
@@ -488,7 +488,7 @@ fn frame_view(head: str) -> i64 {
 }
 
 // Ends every tab: the app is quitting.
-fn close_all_desktops() {
+pub fn close_all_desktops() {
     // CFIRE-UPSTREAM: CF-119
     cpp {
         flint_rdp::close_all();
@@ -496,7 +496,7 @@ fn close_all_desktops() {
 }
 
 // FreeRDP's version, for Settings → About (milestone 32).
-fn freerdp_version() -> str {
+pub fn freerdp_version() -> str {
     mut v := ""
     // CFIRE-UPSTREAM: CF-119
     cpp {

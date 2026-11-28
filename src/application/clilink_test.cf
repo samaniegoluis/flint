@@ -54,7 +54,7 @@ HOME: str = "/Users/me"
 test "the command is offered once, linked on request, and the admin path used only where needed" {
     mut links := new_fake_cli_links()
     links.files[CLI_A] = true
-    mut settings := FakeSettingsStore{ saved: default_settings() }
+    mut settings := FakeSettingsStore{ saved: domain.default_settings() }
     st := try cli_link_first_launch(links, mut settings, CLI_A, CLI_SYSTEM_DIR, HOME)
     assert_eq(st.offer, "install")
     assert(settings.saved.cli_offer_shown)
@@ -74,7 +74,7 @@ test "a moved app is offered a fix, and a foreign flint is never touched" {
     mut links := new_fake_cli_links()
     links.files[CLI_B] = true
     links.links["/Users/me/.local/bin/flint"] = CLI_A   // A was moved to B: the link dangles
-    mut settings := FakeSettingsStore{ saved: default_settings() }
+    mut settings := FakeSettingsStore{ saved: domain.default_settings() }
     settings.saved.cli_offer_shown = true
     st := try cli_link_first_launch(links, mut settings, CLI_B, CLI_SYSTEM_DIR, HOME)
     assert_eq(st.spots[1].state, "broken")
@@ -92,7 +92,7 @@ test "a moved app is offered a fix, and a foreign flint is never touched" {
 
 test "a copy with no CLI inside offers nothing and links nothing" {
     mut links := new_fake_cli_links()
-    mut settings := FakeSettingsStore{ saved: default_settings() }
+    mut settings := FakeSettingsStore{ saved: domain.default_settings() }
     st := try cli_link_first_launch(links, mut settings, "", CLI_SYSTEM_DIR, HOME)
     assert(!st.available)
     assert_eq(st.offer, "")
@@ -103,9 +103,9 @@ test "a copy with no CLI inside offers nothing and links nothing" {
 }
 
 test "the page cannot set the app's own records" {
-    mut store := FakeSettingsStore{ saved: default_settings() }
+    mut store := FakeSettingsStore{ saved: domain.default_settings() }
     store.saved.cli_offer_shown = true
-    mut s := default_settings()
+    mut s := domain.default_settings()
     s.cli_offer_shown = false
     saved := try save_settings(mut store, s)
     assert(saved.cli_offer_shown)
@@ -151,7 +151,7 @@ WIN_B: str = "C:/Users/me/Downloads/Flint"
 
 test "Windows: the folder is offered once, added first on request and taken off again" {
     mut env := fake_path_with("C:\\Tools;%USERPROFILE%\\go\\bin", [WIN_A])
-    mut settings := FakeSettingsStore{ saved: default_settings() }
+    mut settings := FakeSettingsStore{ saved: domain.default_settings() }
     cli := WIN_A + "/bin/flint.exe"
     bin := WIN_A + "/bin"
     st := try cli_path_first_launch(env, mut settings, cli, bin)
@@ -174,7 +174,7 @@ test "Windows: the folder is offered once, added first on request and taken off 
 test "Windows: a moved folder is offered again and replaced, a foreign folder is never added" {
     // The Path still names the folder before it was moved (now gone) and another copy.
     mut env := fake_path_with("D:\\Old\\Flint\\bin;C:\\Tools", [WIN_A])
-    mut settings := FakeSettingsStore{ saved: default_settings() }
+    mut settings := FakeSettingsStore{ saved: domain.default_settings() }
     settings.saved.cli_offer_shown = true
     cli := WIN_A + "/bin/flint.exe"
     bin := WIN_A + "/bin"

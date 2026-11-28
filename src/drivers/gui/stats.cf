@@ -18,7 +18,7 @@ type StatsWatchReq struct {
     watch:   str `json:"watch"`
 }
 
-type GuiStatsSink struct {
+pub type GuiStatsSink struct {
     app: webui.App
 }
 
@@ -29,8 +29,8 @@ fn (mut self: GuiStatsSink) stats_emit(sample: domain.ServerSample) {
 fn stats_watch_check(params: str, st: GuiState) -> StatsWatchReq! {
     try st.require_unlocked()
     req := try parse_req[StatsWatchReq](params)
-    if req.session.len() == 0 || !valid_drop_id(req.watch) {
-        return error(coded(ERR_INVALID, "a watch needs a session and an id"))
+    if req.session.len() == 0 || !domain.valid_drop_id(req.watch) {
+        return error(domain.coded(domain.ERR_INVALID, "a watch needs a session and an id"))
     }
     return StatsWatchReq{ session: req.session, watch: req.watch }
 }
@@ -38,21 +38,21 @@ fn stats_watch_check(params: str, st: GuiState) -> StatsWatchReq! {
 // The watch itself, on a worker thread, until it ends.
 fn run_gui_stats(mut app: webui.App, req: StatsWatchReq) {
     mut sink := GuiStatsSink{ app: app }
-    mut ch := borrow_stats(req.session, req.watch) or {
+    mut ch := flint_ssh.borrow_stats(req.session, req.watch) or {
         // The tab's shell is not open (or is closing): nothing to show.
         sink.stats_emit(domain.ServerSample{ session: req.session, os: "", interfaces: [] })
         return
     }
-    mut clock := new_system_clock()
-    watch_server_stats(mut ch, mut sink, mut clock, req.session)
+    mut clock := process.new_system_clock()
+    application.watch_server_stats(mut ch, mut sink, mut clock, req.session)
     ch.stats_release()
 }
 
 fn rpc_stats_stop(params: str) -> str! {
     req := try parse_req[StatsWatchReq](params)
-    if !valid_drop_id(req.watch) {
-        return error(coded(ERR_INVALID, "a watch needs its id"))
+    if !domain.valid_drop_id(req.watch) {
+        return error(domain.coded(domain.ERR_INVALID, "a watch needs its id"))
     }
-    stats_cancel(req.watch)
+    flint_ssh.stats_cancel(req.watch)
     return ok_json()
 }

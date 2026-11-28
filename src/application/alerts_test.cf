@@ -48,11 +48,11 @@ test "an alert goes out only when on, with a topic, nobody at the window, once" 
 
 test "a publish passes only the kind, the server and the topic" {
     n := new_fake_notifier("")
-    a := publish_alert(n, on_target(), ALERT_APPROVAL, 1000)
+    a := publish_alert(n, on_target(), domain.ALERT_APPROVAL, 1000)
     assert(a.ok)
     assert_eq(a.at_ms, i64(1000))
-    assert_eq(a.kind, ALERT_APPROVAL)
-    l := publish_alert(n, on_target(), ALERT_LOCKED, 2000)
+    assert_eq(a.kind, domain.ALERT_APPROVAL)
+    l := publish_alert(n, on_target(), domain.ALERT_LOCKED, 2000)
     assert(l.ok)
     assert_eq(n.sent.all().len(), usize(2))
     assert_eq(n.sent.all()[0], "https://ntfy.sh|flint-abc|approval")
@@ -60,8 +60,8 @@ test "a publish passes only the kind, the server and the topic" {
 }
 
 test "a failed or impossible publish is a status, never sent with anything else" {
-    failing := new_fake_notifier(coded(ERR_NETWORK, "cannot reach ntfy.sh: timed out"))
-    st := publish_alert(failing, on_target(), ALERT_APPROVAL, 5)
+    failing := new_fake_notifier(domain.coded(domain.ERR_NETWORK, "cannot reach ntfy.sh: timed out"))
+    st := publish_alert(failing, on_target(), domain.ALERT_APPROVAL, 5)
     assert(!st.ok)
     assert_eq(st.error, "cannot reach ntfy.sh: timed out")
 
@@ -71,18 +71,18 @@ test "a failed or impossible publish is a status, never sent with anything else"
     assert(!bad.ok)
     mut no_topic := on_target()
     no_topic.topic = ""
-    assert(!publish_alert(n, no_topic, ALERT_TEST, 5).ok)
+    assert(!publish_alert(n, no_topic, domain.ALERT_TEST, 5).ok)
     mut bad_server := on_target()
     bad_server.server = "ntfy.sh"
-    assert(!publish_alert(n, bad_server, ALERT_TEST, 5).ok)
+    assert(!publish_alert(n, bad_server, domain.ALERT_TEST, 5).ok)
     assert_eq(n.sent.all().len(), usize(0))
 }
 
 test "the topic is made once by the app and only replaced by New topic" {
-    mut store := FakeSettingsStore{ saved: default_settings() }
+    mut store := FakeSettingsStore{ saved: domain.default_settings() }
     c := FakeCrypto{}
     first := try ensure_alert_topic(mut store, c)
-    assert(ntfy_topic_valid(first.ntfy_topic))
+    assert(domain.ntfy_topic_valid(first.ntfy_topic))
     assert(first.ntfy_topic.starts_with("flint-"))
     again := try ensure_alert_topic(mut store, c)
     assert_eq(again.ntfy_topic, first.ntfy_topic)
@@ -101,9 +101,9 @@ test "the topic is made once by the app and only replaced by New topic" {
 }
 
 test "alerts are off by default and a bad server on disk reads the default" {
-    d := default_settings()
+    d := domain.default_settings()
     assert(!d.ntfy_on)
-    assert_eq(d.ntfy_server, NTFY_SERVER_DEFAULT)
+    assert_eq(d.ntfy_server, domain.NTFY_SERVER_DEFAULT)
     assert_eq(d.ntfy_topic, "")
     mut store := FakeSettingsStore{ saved: d }
     mut edited := d
@@ -113,6 +113,6 @@ test "alerts are off by default and a bad server on disk reads the default" {
     store.saved = edited
     fixed := try load_settings(store)
     assert(fixed.ntfy_on)
-    assert_eq(fixed.ntfy_server, NTFY_SERVER_DEFAULT)
+    assert_eq(fixed.ntfy_server, domain.NTFY_SERVER_DEFAULT)
     assert_eq(fixed.ntfy_topic, "flint-ok")
 }

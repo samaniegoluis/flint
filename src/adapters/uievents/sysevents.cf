@@ -9,7 +9,7 @@ import cpp "flint_sysevents.hpp"
 
 // Subscribes to the OS's lock and sleep events. Call once on the main thread before
 // the window runs. Returns what it subscribed to ("" for nothing), for the log.
-fn system_events_start() -> str {
+pub fn system_events_start() -> str {
     mut got := ""
     // CFIRE-UPSTREAM: CF-084
     cpp {
@@ -20,7 +20,7 @@ fn system_events_start() -> str {
 
 // The next event: "screen" (the screen locked), "sleep" (the computer is going to
 // sleep) or "" for none.
-fn system_events_take() -> str {
+pub fn system_events_take() -> str {
     mut kind := ""
     // CFIRE-UPSTREAM: CF-084
     cpp {
@@ -30,7 +30,7 @@ fn system_events_take() -> str {
 }
 
 // Stands in for the OS in the headless end-to-end run.
-fn system_events_inject(kind: str) {
+pub fn system_events_inject(kind: str) {
     // CFIRE-UPSTREAM: CF-084
     cpp {
         flint_sysevents::inject(kind);
@@ -38,7 +38,7 @@ fn system_events_inject(kind: str) {
 }
 
 // Brings the window to the front, from any thread.
-fn bring_window_to_front() {
+pub fn bring_window_to_front() {
     // CFIRE-UPSTREAM: CF-084
     cpp {
         flint_sysevents::bring_to_front();

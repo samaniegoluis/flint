@@ -6,7 +6,7 @@ import "core:rand"
 import "../../ports"
 
 fn keychain_port_check[K: ports.Keychain](k: K) -> bool {
-    got := k.keychain_load("flint-test-absent-" + sha256.random_hex(8)) or err { return true }
+    got := k.keychain_load("flint-test-absent-" + sha256.random_hex(8)) or { return true }
     return got.len() == 0
 }
 

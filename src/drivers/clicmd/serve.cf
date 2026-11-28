@@ -47,7 +47,7 @@ SERVE_PROTOCOL: i64 = 7
 
 // Connecting, and sending a request or a reply (Principle 8).
 SERVE_CONNECT_MS: i32 = 1000
-SERVE_SEND_MS: i32 = 5000
+pub SERVE_SEND_MS: i32 = 5000
 // A whole command, plus the commands queued before it.
 SERVE_RUN_MS: i32 = 300000
 // A live interactive session sends a heartbeat every RELAY_HEARTBEAT_MS; this much
@@ -62,10 +62,10 @@ UNLOCK_WAIT_MS: i64 = 120000
 UNLOCK_POLL_MS: i64 = 500
 
 // States in an unlock, status or lock reply.
-APP_UNLOCKED: str = "unlocked"
-APP_ASKING: str = "asking"
-APP_LOCKED: str = "locked"
-APP_OTHER: str = "other"
+pub APP_UNLOCKED: str = "unlocked"
+pub APP_ASKING: str = "asking"
+pub APP_LOCKED: str = "locked"
+pub APP_OTHER: str = "other"
 
 type WireSecrets struct {
     password:       str  `json:"password"`
@@ -79,7 +79,7 @@ type WireSecrets struct {
     has_sudo_password: bool `json:"has_sudo_password"`
 }
 
-type ServeRequest struct {
+pub type ServeRequest struct {
     kind:    str         `json:"kind"`
     version: i64         `json:"v"`
     vault:   str         `json:"vault"`
@@ -103,7 +103,7 @@ type ServeRequest struct {
     token:   str         `json:"token"`
 }
 
-type ServeReply struct {
+pub type ServeReply struct {
     served: bool `json:"served"`
     stdout: str  `json:"stdout"`
     stderr: str  `json:"stderr"`
@@ -112,7 +112,7 @@ type ServeReply struct {
 
 // The answer to unlock, status and lock: `state` is one of APP_*, `name` the vault
 // the app holds when it is another one.
-type AppState struct {
+pub type AppState struct {
     state: str `json:"state"`
     name:  str `json:"name"`
     // Milestone 61: why the vault is locked (LOCK_REASON_*) and those words, in a
@@ -143,7 +143,7 @@ fn wire_secrets(sec: SecretInput) -> WireSecrets {
 }
 
 fn new_request(kind: str, vault: str) -> ServeRequest {
-    return ServeRequest{ kind: kind, version: SERVE_PROTOCOL, vault: vault, argv: [], cwd: "", as_json: false, secrets: no_wire_secrets(), tty: false, term: "", cols: 0, rows: 0, caller: "", command: "", need: domain.AccessNeed{ action: ACCESS_READ, host: "" }, token: "" }
+    return ServeRequest{ kind: kind, version: SERVE_PROTOCOL, vault: vault, argv: [], cwd: "", as_json: false, secrets: no_wire_secrets(), tty: false, term: "", cols: 0, rows: 0, caller: "", command: "", need: domain.AccessNeed{ action: domain.ACCESS_READ, host: "" }, token: "" }
 }
 
 // Commands the app runs for the CLI in one exchange: those that need the unlocked
@@ -170,38 +170,38 @@ fn servable(p: ParsedArgs) -> bool {
 // What a command does with the vault, for the app's grants: reading (list, show,
 // status), running on a host (connect, exec, host test) or changing
 // the vault (everything else it serves).
-fn access_need(p: ParsedArgs) -> domain.AccessNeed {
+pub fn access_need(p: ParsedArgs) -> domain.AccessNeed {
     noun := p.positional(0)
     verb := p.positional(1)
     if noun == "exec" && p.has_flag("--sudo") {
-        return domain.AccessNeed{ action: ACCESS_SUDO, host: p.positional(1) }
+        return domain.AccessNeed{ action: domain.ACCESS_SUDO, host: p.positional(1) }
     }
     if noun == "connect" || noun == "exec" {
-        return domain.AccessNeed{ action: ACCESS_EXEC, host: p.positional(1) }
+        return domain.AccessNeed{ action: domain.ACCESS_EXEC, host: p.positional(1) }
     }
     // Reading or writing a host's files has the power of a command there (D-051).
     // A copy between two hosts runs on both: a grant must reach both (milestone 18).
     if noun == "cp" {
-        return domain.AccessNeed{ action: ACCESS_EXEC, host: cp_alias(p), host2: cp_second_alias(p) }
+        return domain.AccessNeed{ action: domain.ACCESS_EXEC, host: cp_alias(p), host2: cp_second_alias(p) }
     }
     if noun == "host" && verb == "test" {
-        return domain.AccessNeed{ action: ACCESS_EXEC, host: p.positional(2) }
+        return domain.AccessNeed{ action: domain.ACCESS_EXEC, host: p.positional(2) }
     }
     // Starting or stopping a tunnel opens a host's ports to this machine: the power
     // of a command there (milestone 22, D-062).
     if noun == "tunnel" && (verb == "up" || verb == "down") {
-        return domain.AccessNeed{ action: ACCESS_EXEC, host: tunnel_ref_host(p.positional(2)) }
+        return domain.AccessNeed{ action: domain.ACCESS_EXEC, host: tunnel_ref_host(p.positional(2)) }
     }
     if noun == "tunnel" && (verb == "ls" || verb == "list") {
-        return domain.AccessNeed{ action: ACCESS_READ, host: "" }
+        return domain.AccessNeed{ action: domain.ACCESS_READ, host: "" }
     }
     if noun == "token" && verb == "create" {
-        return domain.AccessNeed{ action: ACCESS_TOKEN, host: "" }
+        return domain.AccessNeed{ action: domain.ACCESS_TOKEN, host: "" }
     }
     if verb == "list" || verb == "show" || verb == "status" || (noun == "vault" && verb == "unlock") {
-        return domain.AccessNeed{ action: ACCESS_READ, host: "" }
+        return domain.AccessNeed{ action: domain.ACCESS_READ, host: "" }
     }
-    return domain.AccessNeed{ action: ACCESS_WRITE, host: "" }
+    return domain.AccessNeed{ action: domain.ACCESS_WRITE, host: "" }
 }
 
 // The frame a run's client gets while the app waits for the owner.
@@ -214,12 +214,12 @@ type WaitNotice struct {
     deadline_ms: i64 `json:"deadline_ms" default:"0"`
 }
 
-fn wait_notice_json(message: str, deadline_ms: i64) -> str {
+pub fn wait_notice_json(message: str, deadline_ms: i64) -> str {
     return json.stringify(WaitNotice{ wait: true, message: message, deadline_ms: deadline_ms })
 }
 
 // "2 min", "30 min", or seconds below a minute (a shortened test wait).
-fn wait_text(ms: i64) -> str {
+pub fn wait_text(ms: i64) -> str {
     if ms < 60000 {
         return "{(ms + 999) / 1000} s"
     }
@@ -234,22 +234,22 @@ fn is_wait_notice(text: str) -> bool {
 // JSON error at most (Principle 7).
 fn show_wait(message: str, as_json: bool, mut shown: bool) {
     if !shown && !as_json {
-        write_stderr(message + "\n")
+        process.write_stderr(message + "\n")
         shown = true
     }
 }
 
 // A refused request, formatted as the command's own error would be.
-fn refused_reply(msg: str, req: ServeRequest) -> ServeReply {
-    capture_begin(req.cwd)
+pub fn refused_reply(msg: str, req: ServeRequest) -> ServeReply {
+    process.capture_begin(req.cwd)
     code := report_error(msg, req.as_json)
-    (o, e) := capture_end()
+    (o, e) := process.capture_end()
     return ServeReply{ served: true, stdout: o, stderr: e, exit: i64(code) }
 }
 
-fn refused_session_frame(msg: str, req: ServeRequest) -> str {
+pub fn refused_session_frame(msg: str, req: ServeRequest) -> str {
     r := refused_reply(msg, req)
-    return relay_frame(TAG_END, json.stringify(SessionEndFrame{ exit: r.exit, stdout: r.stdout, stderr: r.stderr }))
+    return flint_ipc.relay_frame(flint_ipc.TAG_END, json.stringify(SessionEndFrame{ exit: r.exit, stdout: r.stdout, stderr: r.stderr }))
 }
 
 // Commands that cannot run without the vault's key: with no terminal and no
@@ -269,7 +269,7 @@ fn needs_unlocked_vault(p: ParsedArgs) -> bool {
 
 // The host of `<host>:<name>` ("" when it has none).
 fn tunnel_ref_host(text: str) -> str {
-    (h, _) := split_tunnel_ref(text) or {
+    (h, _) := domain.split_tunnel_ref(text) or {
         return ""
     }
     return h
@@ -277,14 +277,14 @@ fn tunnel_ref_host(text: str) -> str {
 
 // The command as Flint's unlock screen and approval window name it, on one line of
 // at most 160 bytes: see caller_command.
-fn caller_summary(p: ParsedArgs) -> str {
-    return command_summary(caller_command(p))
+pub fn caller_summary(p: ParsedArgs) -> str {
+    return domain.command_summary(caller_command(p))
 }
 
 // The whole command as Flint shows and logs it (milestone 15, D-049): `flint`, the
 // words before any flag, and for `exec` the remote command, uncut. Never a flag's
 // value; secrets are never in argv anyway (D-018).
-fn caller_command(p: ParsedArgs) -> str {
+pub fn caller_command(p: ParsedArgs) -> str {
     if p.positional(0) == "cp" {
         // `-r` and `--force` take no value and change what is copied: they are shown.
         mut c := "flint cp"
@@ -353,12 +353,12 @@ fn if_host(cond: bool, a: str, b: str) -> str {
 
 // A connection to the running app, or `open` false when it is not running.
 fn dial_app() -> flint_ipc.IpcConn {
-    socket := ipc_socket_path(flint_config_dir())
+    socket := flint_ipc.ipc_socket_path(config.flint_config_dir())
     closed := flint_ipc.IpcConn{ fd: 0, open: false, peer: flint_ipc.IpcPeer{ uid: -1, pid: 0 } }
     if !fs.exists(socket) {
         return closed
     }
-    return ipc_connect(socket, SERVE_CONNECT_MS) or closed
+    return flint_ipc.ipc_connect(socket, SERVE_CONNECT_MS) or closed
 }
 
 // The client side of a `run`: the command runs in the app when it serves the
@@ -366,11 +366,11 @@ fn dial_app() -> flint_ipc.IpcConn {
 // vault or none; the caller then runs the command itself, with the prompts already
 // answered.
 fn ask_app(p: ParsedArgs, args: []str, as_json: bool, mut sec: SecretInput) -> ServeReply! {
-    recents := new_json_recent_store(flint_config_dir())
-    target := resolve_vault(recents, vault_selector(p)) or {
+    recents := config.new_json_recent_store(config.flint_config_dir())
+    target := application.resolve_vault(recents, vault_selector(p)) or {
         return not_served()
     }
-    if !fs.exists(ipc_socket_path(flint_config_dir())) {
+    if !fs.exists(flint_ipc.ipc_socket_path(config.flint_config_dir())) {
         return not_served()
     }
     try fill_prompts(p, mut sec)
@@ -381,7 +381,7 @@ fn ask_app(p: ParsedArgs, args: []str, as_json: bool, mut sec: SecretInput) -> S
     defer conn.ipc_close()
     mut req := new_request("run", target.path)
     req.argv = args
-    req.cwd = current_dir()
+    req.cwd = process.current_dir()
     req.as_json = as_json
     req.secrets = wire_secrets(sec)
     req.caller = caller_summary(p)
@@ -393,7 +393,7 @@ fn ask_app(p: ParsedArgs, args: []str, as_json: bool, mut sec: SecretInput) -> S
     mut shown := false
     for true {
         text = conn.recv(SERVE_RUN_MS) or err {
-            return error(coded(ERR_IO, "Flint stopped answering while it ran the command: {error_text_of("{err.message()}")}"))
+            return error(domain.coded(domain.ERR_IO, "Flint stopped answering while it ran the command: {error_text_of("{err.message()}")}"))
         }
         if !is_wait_notice(text) {
             break
@@ -404,7 +404,7 @@ fn ask_app(p: ParsedArgs, args: []str, as_json: bool, mut sec: SecretInput) -> S
     }
     // CFIRE-UPSTREAM: CF-164 (a labeled argument keeps libstdc++'s chrono::parse out)
     return json.parse[ServeReply](payload: text) or {
-        return error(coded(ERR_IO, "Flint sent an answer this flint cannot read"))
+        return error(domain.coded(domain.ERR_IO, "Flint sent an answer this flint cannot read"))
     }
 }
 
@@ -413,15 +413,15 @@ fn ask_app(p: ParsedArgs, args: []str, as_json: bool, mut sec: SecretInput) -> S
 // command's own limit, and a margin.
 fn session_wait_ms(p: ParsedArgs) -> i64 {
     // CFIRE-UPSTREAM: CF-196 (`mut x := CONST` of another package infers no type)
-    mut dial: i64 = SSH_CONNECT_TIMEOUT_SECS
+    mut dial: i64 = domain.SSH_CONNECT_TIMEOUT_SECS
     if p.has_flag("--timeout") {
-        dial = parse_seconds_flag("--timeout", p.flag_value("--timeout")) or SSH_CONNECT_TIMEOUT_SECS
+        dial = parse_seconds_flag("--timeout", p.flag_value("--timeout")) or domain.SSH_CONNECT_TIMEOUT_SECS
     }
     mut run: i64 = 0
     if p.positional(0) == "exec" {
-        run = SSH_EXEC_TIMEOUT_SECS
+        run = domain.SSH_EXEC_TIMEOUT_SECS
         if p.has_flag("--exec-timeout") {
-            run = parse_seconds_flag("--exec-timeout", p.flag_value("--exec-timeout")) or SSH_EXEC_TIMEOUT_SECS
+            run = parse_seconds_flag("--exec-timeout", p.flag_value("--exec-timeout")) or domain.SSH_EXEC_TIMEOUT_SECS
         }
     }
     return (dial * 8 + run + 60) * 1000
@@ -448,8 +448,8 @@ fn answer_relayed_prompt(prompter: process.TtyPrompter, payload: str) -> flint_i
 // this process relaying its terminal. Returns `served: false` when the app does not
 // hold the command's vault unlocked; nothing has run then.
 fn ask_app_session(p: ParsedArgs, args: []str, as_json: bool, sec: SecretInput) -> ServeReply! {
-    recents := new_json_recent_store(flint_config_dir())
-    target := resolve_vault(recents, vault_selector(p)) or {
+    recents := config.new_json_recent_store(config.flint_config_dir())
+    target := application.resolve_vault(recents, vault_selector(p)) or {
         return not_served()
     }
     mut conn := dial_app()
@@ -457,7 +457,7 @@ fn ask_app_session(p: ParsedArgs, args: []str, as_json: bool, sec: SecretInput) 
         return not_served()
     }
     defer conn.ipc_close()
-    mut term := new_stdio_terminal()
+    mut term := process.new_stdio_terminal()
     size := term.term_size()
     mut term_name := (os.getenv("TERM") or "")
     if term_name.len() == 0 {
@@ -465,10 +465,10 @@ fn ask_app_session(p: ParsedArgs, args: []str, as_json: bool, sec: SecretInput) 
     }
     mut req := new_request("session", target.path)
     req.argv = args
-    req.cwd = current_dir()
+    req.cwd = process.current_dir()
     req.as_json = as_json
     req.secrets = wire_secrets(sec)
-    req.tty = has_terminal()
+    req.tty = process.has_terminal()
     req.term = term_name
     req.cols = i64(size.cols)
     req.rows = i64(size.rows)
@@ -477,11 +477,11 @@ fn ask_app_session(p: ParsedArgs, args: []str, as_json: bool, sec: SecretInput) 
     conn.send(json.stringify(req), SERVE_SEND_MS) or {
         return not_served()
     }
-    prompter := new_tty_prompter()
+    prompter := process.new_tty_prompter()
     // `cp` only: the app asks this process to read and write this machine's files.
     serves_files := p.positional(0) == "cp"
-    mut local := new_local_fs()
-    mut progress := new_stderr_transfer_sink(as_json)
+    mut local := process.new_local_fs()
+    mut progress := process.new_stderr_transfer_sink(as_json)
     wait_ms := session_wait_ms(p)
     mut raw := false
     mut input_open := true
@@ -492,7 +492,7 @@ fn ask_app_session(p: ParsedArgs, args: []str, as_json: bool, sec: SecretInput) 
             relay_typed(mut term, conn, mut input_open)
             if term.term_take_resize() {
                 now := term.term_size()
-                conn.send(relay_frame(TAG_RESIZE, json.stringify(flint_ipc.RelaySize{ cols: i64(now.cols), rows: i64(now.rows) })), SERVE_SEND_MS) or {}
+                conn.send(flint_ipc.relay_frame(flint_ipc.TAG_RESIZE, json.stringify(flint_ipc.RelaySize{ cols: i64(now.cols), rows: i64(now.rows) })), SERVE_SEND_MS) or {}
             }
         }
         mut poll_ms: i32 = 250
@@ -508,7 +508,7 @@ fn ask_app_session(p: ParsedArgs, args: []str, as_json: bool, sec: SecretInput) 
                 if raw {
                     term.term_raw_leave()
                 }
-                return error(coded(ERR_TIMEOUT, "Flint stopped answering during the session"))
+                return error(domain.coded(domain.ERR_TIMEOUT, "Flint stopped answering during the session"))
             }
             continue
         }
@@ -516,47 +516,47 @@ fn ask_app_session(p: ParsedArgs, args: []str, as_json: bool, sec: SecretInput) 
             if raw {
                 term.term_raw_leave()
             }
-            return error(coded(ERR_IO, "Flint went away during the session"))
+            return error(domain.coded(domain.ERR_IO, "Flint went away during the session"))
         }
         last_heard = time.now_ms()
-        tag := relay_tag(frame)
-        body := relay_payload(frame)
-        if tag == TAG_NOT_SERVED {
+        tag := flint_ipc.relay_tag(frame)
+        body := flint_ipc.relay_payload(frame)
+        if tag == flint_ipc.TAG_NOT_SERVED {
             return not_served()
-        } else if tag == TAG_WAIT {
+        } else if tag == flint_ipc.TAG_WAIT {
             show_wait(body, as_json, mut shown)
-        } else if tag == TAG_STDOUT {
+        } else if tag == flint_ipc.TAG_STDOUT {
             term.term_output(body)
-        } else if tag == TAG_STDERR {
-            write_stderr(body)
-        } else if tag == TAG_RAW_ENTER {
+        } else if tag == flint_ipc.TAG_STDERR {
+            process.write_stderr(body)
+        } else if tag == flint_ipc.TAG_RAW_ENTER {
             try term.term_raw_enter()
             raw = true
-        } else if tag == TAG_RAW_LEAVE {
+        } else if tag == flint_ipc.TAG_RAW_LEAVE {
             term.term_raw_leave()
             raw = false
-        } else if tag == TAG_FILE_OP && serves_files {
+        } else if tag == flint_ipc.TAG_FILE_OP && serves_files {
             conn.send(serve_file_op(mut local, body), SERVE_SEND_MS) or {
-                return error(coded(ERR_IO, "Flint went away during the copy"))
+                return error(domain.coded(domain.ERR_IO, "Flint went away during the copy"))
             }
             last_heard = time.now_ms()
-        } else if tag == TAG_PROGRESS && serves_files {
+        } else if tag == flint_ipc.TAG_PROGRESS && serves_files {
             // CFIRE-UPSTREAM: CF-164 (a labeled argument keeps libstdc++'s chrono::parse out)
             pr := json.parse[domain.TransferProgress](payload: body) or {
                 continue
             }
             progress.transfer_progress(pr)
-        } else if tag == TAG_PROMPT {
+        } else if tag == flint_ipc.TAG_PROMPT {
             answer := answer_relayed_prompt(prompter, body)
-            conn.send(relay_frame(TAG_ANSWER, json.stringify(answer)), SERVE_SEND_MS) or {}
+            conn.send(flint_ipc.relay_frame(flint_ipc.TAG_ANSWER, json.stringify(answer)), SERVE_SEND_MS) or {}
             last_heard = time.now_ms()
-        } else if tag == TAG_END {
+        } else if tag == flint_ipc.TAG_END {
             if raw {
                 term.term_raw_leave()
             }
             // CFIRE-UPSTREAM: CF-164 (a labeled argument keeps libstdc++'s chrono::parse out)
             end := json.parse[SessionEndFrame](payload: body) or {
-                return error(coded(ERR_IO, "Flint sent an answer this flint cannot read"))
+                return error(domain.coded(domain.ERR_IO, "Flint sent an answer this flint cannot read"))
             }
             return ServeReply{ served: true, stdout: end.stdout, stderr: end.stderr, exit: end.exit }
         }
@@ -570,23 +570,23 @@ fn relay_typed(mut term: process.StdioTerminal, conn: flint_ipc.IpcConn, mut inp
     typed := term.term_input(10) or {
         if input_open {
             input_open = false
-            conn.send(relay_frame(TAG_INPUT_END, ""), SERVE_SEND_MS) or {}
+            conn.send(flint_ipc.relay_frame(flint_ipc.TAG_INPUT_END, ""), SERVE_SEND_MS) or {}
         }
         return
     }
     if typed.len() > 0 {
-        conn.send(relay_frame(TAG_INPUT, typed), SERVE_SEND_MS) or {}
+        conn.send(flint_ipc.relay_frame(flint_ipc.TAG_INPUT, typed), SERVE_SEND_MS) or {}
     }
 }
 
 // Runs one file request of the app on this machine's files and returns the answer
 // frame (milestone 16). An error travels back as its coded message.
 fn serve_file_op(mut local: process.LocalFs, payload: str) -> str {
-    mut reply := flint_ipc.RelayFileReply{ ok: true, err: "", entry: empty_file_entry(), entries: [] }
-    parsed := parse_file_op(payload) or err {
+    mut reply := flint_ipc.RelayFileReply{ ok: true, err: "", entry: flint_ipc.empty_file_entry(), entries: [] }
+    parsed := flint_ipc.parse_file_op(payload) or err {
         reply.ok = false
         reply.err = "{err.message()}"
-        return file_reply_frame(reply, "")
+        return flint_ipc.file_reply_frame(reply, "")
     }
     (op, data) := parsed
     mut bytes := ""
@@ -594,7 +594,7 @@ fn serve_file_op(mut local: process.LocalFs, payload: str) -> str {
         reply.ok = false
         reply.err = "{err.message()}"
     }
-    return file_reply_frame(reply, bytes)
+    return flint_ipc.file_reply_frame(reply, bytes)
 }
 
 // One file request on this machine's files, its result written into `reply` (an
@@ -619,13 +619,13 @@ fn run_file_op(mut local: process.LocalFs, op: flint_ipc.RelayFileOp, data: str,
     } else if op.op == "mkdir" {
         try local.local_mkdir(op.path)
     } else {
-        return error(coded(ERR_UNSUPPORTED, "Flint asked for a file operation this flint does not know ({op.op})"))
+        return error(domain.coded(domain.ERR_UNSUPPORTED, "Flint asked for a file operation this flint does not know ({op.op})"))
     }
 }
 
 // A second launch of the desktop app asks the Flint already running to show its
 // window, and exits when it answers (milestone 14). False when none answers.
-fn show_running_app() -> bool {
+pub fn show_running_app() -> bool {
     mut conn := dial_app()
     if !conn.open {
         return false
@@ -640,7 +640,7 @@ fn show_running_app() -> bool {
 // One exchange of kind unlock, status or lock. `open` false on the connection when
 // Flint is not running.
 fn ask_app_state(conn: flint_ipc.IpcConn, kind: str, vault: str, caller: str) -> AppState! {
-    return try ask_app_state_for(conn, kind, vault, caller, "", domain.AccessNeed{ action: ACCESS_READ, host: "" })
+    return try ask_app_state_for(conn, kind, vault, caller, "", domain.AccessNeed{ action: domain.ACCESS_READ, host: "" })
 }
 
 fn ask_app_state_for(conn: flint_ipc.IpcConn, kind: str, vault: str, caller: str, command: str, need: domain.AccessNeed) -> AppState! {
@@ -652,7 +652,7 @@ fn ask_app_state_for(conn: flint_ipc.IpcConn, kind: str, vault: str, caller: str
     text := try conn.recv(SERVE_SEND_MS)
     // CFIRE-UPSTREAM: CF-164 (a labeled argument keeps libstdc++'s chrono::parse out)
     return json.parse[AppState](payload: text) or {
-        return error(coded(ERR_IO, "Flint sent an answer this flint cannot read"))
+        return error(domain.coded(domain.ERR_IO, "Flint sent an answer this flint cannot read"))
     }
 }
 
@@ -666,10 +666,10 @@ fn app_launch_command() -> []str {
         }
         return [override]
     }
-    if os_name() == "mac" {
+    if process.os_name() == "mac" {
         // A CLI inside a Flint.app (or linked to one, milestone 48) starts that app,
         // not whichever Flint.app macOS finds first.
-        bundle := bundle_of_cli(executable_dir())
+        bundle := domain.bundle_of_cli(process.executable_dir())
         if bundle.len() > 0 {
             return ["open", "-a", bundle]
         }
@@ -680,9 +680,9 @@ fn app_launch_command() -> []str {
     // case): the package keeps the CLI in Flint\bin\ with the app one folder up
     // (milestone 50, D-121), a build tree has gui\Flint.exe, and an install.ps1 of
     // 0.19 or earlier flint-app.exe beside it.
-    mut beside: []str = [executable_dir() + "/gui/Flint", executable_dir() + "/Flint", executable_dir() + "/flint-app"]
-    if os_name() == "windows" {
-        beside = [fs.dirname(executable_dir()) + "/Flint.exe", executable_dir() + "/gui/Flint.exe", executable_dir() + "/flint-app.exe"]
+    mut beside: []str = [process.executable_dir() + "/gui/Flint", process.executable_dir() + "/Flint", process.executable_dir() + "/flint-app"]
+    if process.os_name() == "windows" {
+        beside = [fs.dirname(process.executable_dir()) + "/Flint.exe", process.executable_dir() + "/gui/Flint.exe", process.executable_dir() + "/flint-app.exe"]
     }
     for path in beside {
         if fs.exists(path) {
@@ -707,8 +707,8 @@ fn start_app() -> bool {
         return r.exit_code == 0
     }
     // Windows has no sh or setsid: CreateProcess, detached (windows-port).
-    if os_name() == "windows" {
-        return spawn_detached(cmd[0])
+    if process.os_name() == "windows" {
+        return process.spawn_detached(cmd[0])
     }
     // The program path is an argument of the shell, never part of its script.
     // Its output goes nowhere: `os.command` waits until every holder of its pipes is gone.
@@ -738,25 +738,25 @@ fn request_unlock(target: domain.RecentVault, p: ParsedArgs) -> AppState {
         }
     }
     defer conn.ipc_close()
-    return ask_app_state_for(conn, "unlock", target.path, caller_summary(p), whole_command(caller_command(p)).text, access_need(p)) or AppState{ state: APP_LOCKED, name: "" }
+    return ask_app_state_for(conn, "unlock", target.path, caller_summary(p), domain.whole_command(caller_command(p)).text, access_need(p)) or AppState{ state: APP_LOCKED, name: "" }
 }
 
 // The `locked` error for a command that found its vault locked with nobody to type
 // the master password.
 fn locked_error(target: domain.RecentVault, st: AppState) -> str {
     if st.state == APP_ASKING {
-        return coded(ERR_LOCKED, "vault '{target.name}' is locked; Flint is asking for its master password. Unlock it there and run the command again")
+        return domain.coded(domain.ERR_LOCKED, "vault '{target.name}' is locked; Flint is asking for its master password. Unlock it there and run the command again")
     }
     if st.state == APP_OTHER {
-        return coded(ERR_LOCKED, "Flint has vault '{st.name}' open, not '{target.name}'; switch to it in Flint, or pass --master-stdin")
+        return domain.coded(domain.ERR_LOCKED, "Flint has vault '{st.name}' open, not '{target.name}'; switch to it in Flint, or pass --master-stdin")
     }
-    return coded(ERR_LOCKED, "vault '{target.name}' is locked and Flint could not be started; open Flint and unlock it, or pass --master-stdin")
+    return domain.coded(domain.ERR_LOCKED, "vault '{target.name}' is locked and Flint could not be started; open Flint and unlock it, or pass --master-stdin")
 }
 
 // The `locked` error for a command that waited for an unlock nobody gave in time
 // (milestone 61), or whose unlock screen the person closed.
 fn not_unlocked_error(target: domain.RecentVault, wait_ms: i64) -> str {
-    return coded(ERR_LOCKED, "vault '{target.name}' was not unlocked in Flint within {wait_text(wait_ms)}; unlock it there (`flint vault unlock` waits for it) and run the command again")
+    return domain.coded(domain.ERR_LOCKED, "vault '{target.name}' was not unlocked in Flint within {wait_text(wait_ms)}; unlock it there (`flint vault unlock` waits for it) and run the command again")
 }
 
 // Whether the running Flint holds `target` unlocked (false when it is not running).
@@ -777,25 +777,25 @@ fn cmd_vault_unlock_app(p: ParsedArgs, as_json: bool) -> void! {
     try p.allow_flags("vault unlock", [])
     try p.expect_args("vault unlock", 0, "[--vault <name|path>]")
     if p.has_flag("--master-stdin") {
-        return error(coded(ERR_USAGE, "`flint vault unlock` asks Flint to unlock; type the master password there, or pass --master-stdin to the command that needs the vault"))
+        return error(domain.coded(domain.ERR_USAGE, "`flint vault unlock` asks Flint to unlock; type the master password there, or pass --master-stdin to the command that needs the vault"))
     }
-    recents := new_json_recent_store(flint_config_dir())
-    target := try resolve_vault(recents, vault_selector(p))
+    recents := config.new_json_recent_store(config.flint_config_dir())
+    target := try application.resolve_vault(recents, vault_selector(p))
     mut st := request_unlock(target, p)
     if st.state == APP_ASKING {
         wait_ms := unlock_wait_ms(st)
         if !as_json {
-            write_stderr("Flint is asking for the master password of '{target.name}', up to {wait_text(wait_ms)}…\n")
+            process.write_stderr("Flint is asking for the master password of '{target.name}', up to {wait_text(wait_ms)}…\n")
         }
         st = wait_for_unlock(target, wait_ms)
         if st.state == APP_ASKING {
-            return error(coded(ERR_TIMEOUT, "vault '{target.name}' was not unlocked in Flint within {wait_text(wait_ms)}"))
+            return error(domain.coded(domain.ERR_TIMEOUT, "vault '{target.name}' was not unlocked in Flint within {wait_text(wait_ms)}"))
         }
     }
     if st.state != APP_UNLOCKED {
         return error(locked_error(target, st))
     }
-    info := application.VaultInfo{ path: target.path, name: target.name, format: VAULT_FORMAT_V1, cached: false }
+    info := application.VaultInfo{ path: target.path, name: target.name, format: domain.VAULT_FORMAT_V1, cached: false }
     if as_json {
         say(json.stringify(info))
     } else {
@@ -839,7 +839,7 @@ type LockWhy struct {
 }
 
 fn app_lock_reason(target: domain.RecentVault) -> LockWhy {
-    not_running := LockWhy{ reason: LOCK_REASON_NOT_RUNNING, detail: lock_reason_text(LOCK_REASON_NOT_RUNNING, "") }
+    not_running := LockWhy{ reason: domain.LOCK_REASON_NOT_RUNNING, detail: domain.lock_reason_text(domain.LOCK_REASON_NOT_RUNNING, "") }
     mut conn := dial_app()
     if !conn.open {
         return not_running
@@ -849,7 +849,7 @@ fn app_lock_reason(target: domain.RecentVault) -> LockWhy {
         return not_running
     }
     if st.state == APP_OTHER {
-        return LockWhy{ reason: LOCK_REASON_OTHER_VAULT, detail: lock_reason_text(LOCK_REASON_OTHER_VAULT, "") }
+        return LockWhy{ reason: domain.LOCK_REASON_OTHER_VAULT, detail: domain.lock_reason_text(domain.LOCK_REASON_OTHER_VAULT, "") }
     }
     if st.reason.len() == 0 {
         // An older Flint, or the vault unlocked in the meantime.
@@ -872,13 +872,13 @@ fn lock_in_app(target: domain.RecentVault) -> bool {
 
 // ---- The app's side ------------------------------------------------------------
 
-fn parse_serve_request(text: str) -> ServeRequest! {
+pub fn parse_serve_request(text: str) -> ServeRequest! {
     // CFIRE-UPSTREAM: CF-164 (a labeled argument keeps libstdc++'s chrono::parse out)
     req := json.parse[ServeRequest](payload: text) or {
-        return error(coded(ERR_INVALID, "malformed request on the socket"))
+        return error(domain.coded(domain.ERR_INVALID, "malformed request on the socket"))
     }
     if req.version != SERVE_PROTOCOL {
-        return error(coded(ERR_UNSUPPORTED, "this Flint speaks socket protocol {SERVE_PROTOCOL}, not {req.version}"))
+        return error(domain.coded(domain.ERR_UNSUPPORTED, "this Flint speaks socket protocol {SERVE_PROTOCOL}, not {req.version}"))
     }
     return req
 }
@@ -898,21 +898,21 @@ fn served_secrets(req: ServeRequest) -> SecretInput {
 // Runs a client's command against `session`, the vault the app holds (attached to
 // `store`), capturing everything it prints. The caller holds the vault still for
 // the whole run and has checked that `req.vault` is `session`'s.
-fn run_served(req: ServeRequest, c: flint_crypto.Sodium, mut store: vault.LockedVaultStore, kc: flint_keychain.OsKeychain, recents: config.JsonRecentStore, session: application.VaultSession) -> ServedRun {
+pub fn run_served(req: ServeRequest, c: flint_crypto.Sodium, mut store: vault.LockedVaultStore, kc: flint_keychain.OsKeychain, recents: config.JsonRecentStore, session: application.VaultSession) -> ServedRun {
     p := parse_cli_args(req.argv) or {
         return ServedRun{ reply: not_served(), ended: ServedEnd{ exit: 0, error_code: "" } }
     }
     if !servable(p) || !command_checks(p) || wants_help(p) {
         return ServedRun{ reply: not_served(), ended: ServedEnd{ exit: 0, error_code: "" } }
     }
-    capture_begin(req.cwd)
+    process.capture_begin(req.cwd)
     ended := served_exit(p, req, c, mut store, kc, session, recents)
-    (o, e) := capture_end()
+    (o, e) := process.capture_end()
     return ServedRun{ reply: ServeReply{ served: true, stdout: o, stderr: e, exit: ended.exit }, ended: ended }
 }
 
 // What run_served sends the client, and how the command ended for the log.
-type ServedRun struct {
+pub type ServedRun struct {
     reply: ServeReply
     ended: ServedEnd
 }
@@ -920,7 +920,7 @@ type ServedRun struct {
 // How a command run for a client ended: its exit status, and the code of the error
 // Flint reported ("" when the command itself returned), for the activity entry
 // (milestone 56). Never sent to the client.
-type ServedEnd struct {
+pub type ServedEnd struct {
     exit:       i64
     error_code: str
 }
@@ -930,7 +930,7 @@ type ServedEnd struct {
 fn served_exit(p: ParsedArgs, req: ServeRequest, c: flint_crypto.Sodium, mut store: vault.LockedVaultStore, kc: flint_keychain.OsKeychain, session: application.VaultSession, recents: config.JsonRecentStore) -> ServedEnd {
     code := run_command(p, served_secrets(req), req.as_json, c, mut store, served_vault_source(kc, session), recents) or err {
         msg := "{err.message()}"
-        return ServedEnd{ exit: i64(report_error(msg, req.as_json)), error_code: error_code_of(msg) }
+        return ServedEnd{ exit: i64(report_error(msg, req.as_json)), error_code: domain.error_code_of(msg) }
     }
     return ServedEnd{ exit: i64(code), error_code: "" }
 }
@@ -944,7 +944,7 @@ fn command_checks(p: ParsedArgs) -> bool {
 }
 
 // Whether the app runs this one-exchange request (a checked command it serves).
-fn run_request_servable(req: ServeRequest) -> bool {
+pub fn run_request_servable(req: ServeRequest) -> bool {
     p := parse_cli_args(req.argv) or {
         return false
     }
@@ -953,8 +953,8 @@ fn run_request_servable(req: ServeRequest) -> bool {
 
 // Whether the app runs this session request (a checked `connect`, `exec` or `host
 // test`); it then owes the client the session's frames.
-fn session_servable(req: ServeRequest) -> bool {
-    parsed := parse_cli_args(req.argv) or err {
+pub fn session_servable(req: ServeRequest) -> bool {
+    parsed := parse_cli_args(req.argv) or {
         return false
     }
     p := parsed
@@ -966,27 +966,27 @@ fn session_servable(req: ServeRequest) -> bool {
 // ends with the frame carrying the exit status and what the command printed. The
 // vault is not held still meanwhile: a session can last hours, and needs the key
 // only to log in.
-fn run_served_session(conn: flint_ipc.IpcConn, req: ServeRequest, c: flint_crypto.Sodium, mut store: vault.LockedVaultStore, kc: flint_keychain.OsKeychain, recents: config.JsonRecentStore, session: application.VaultSession, sudo_typed: str) -> ServedEnd {
+pub fn run_served_session(conn: flint_ipc.IpcConn, req: ServeRequest, c: flint_crypto.Sodium, mut store: vault.LockedVaultStore, kc: flint_keychain.OsKeychain, recents: config.JsonRecentStore, session: application.VaultSession, sudo_typed: str) -> ServedEnd {
     p := parse_cli_args(req.argv) or {
-        return ServedEnd{ exit: 2, error_code: ERR_USAGE }
+        return ServedEnd{ exit: 2, error_code: domain.ERR_USAGE }
     }
-    link := new_relay_link(conn, req.tty, i32(req.cols), i32(req.rows))
-    mut term := new_socket_terminal(link)
-    mut sink := new_socket_exec_sink(link)
-    prompter := new_socket_prompter(link)
-    mut local := new_socket_local_files(link)
-    mut progress := new_socket_transfer_sink(link)
+    link := flint_ipc.new_relay_link(conn, req.tty, i32(req.cols), i32(req.rows))
+    mut term := flint_ipc.new_socket_terminal(link)
+    mut sink := flint_ipc.new_socket_exec_sink(link)
+    prompter := flint_ipc.new_socket_prompter(link)
+    mut local := flint_ipc.new_socket_local_files(link)
+    mut progress := flint_ipc.new_socket_transfer_sink(link)
     mut term_name := req.term
     if term_name.len() == 0 {
         term_name = "xterm-256color"
     }
-    capture_begin(req.cwd)
+    process.capture_begin(req.cwd)
     mut sec := served_secrets(req)
     sec.sudo_typed = sudo_typed
     ended := session_exit(p, sec, req.as_json, c, mut store, served_vault_source(kc, session), recents, mut term, prompter, mut sink, mut local, mut progress, term_name)
-    (o, e) := capture_end()
+    (o, e) := process.capture_end()
     end := SessionEndFrame{ exit: ended.exit, stdout: o, stderr: e }
-    conn.send(relay_frame(TAG_END, json.stringify(end)), SERVE_SEND_MS) or {}
+    conn.send(flint_ipc.relay_frame(flint_ipc.TAG_END, json.stringify(end)), SERVE_SEND_MS) or {}
     return ended
 }
 
@@ -995,35 +995,35 @@ fn run_served_session(conn: flint_ipc.IpcConn, req: ServeRequest, c: flint_crypt
 fn session_exit[M: ports.Terminal, P: ports.Prompter, O: ports.ExecSink, L: ports.LocalFiles, K: ports.TransferSink](p: ParsedArgs, sec: SecretInput, as_json: bool, c: flint_crypto.Sodium, mut store: vault.LockedVaultStore, src: VaultSource, recents: config.JsonRecentStore, mut term: M, prompter: P, mut sink: O, mut local: L, mut progress: K, term_name: str) -> ServedEnd {
     code := run_session_command(p, sec, as_json, c, mut store, src, recents, mut term, prompter, mut sink, mut local, mut progress, term_name) or err {
         msg := "{err.message()}"
-        return ServedEnd{ exit: i64(report_error(msg, as_json)), error_code: error_code_of(msg) }
+        return ServedEnd{ exit: i64(report_error(msg, as_json)), error_code: domain.error_code_of(msg) }
     }
     return ServedEnd{ exit: i64(code), error_code: "" }
 }
 
-fn session_not_served_frame() -> str {
-    return relay_frame(TAG_NOT_SERVED, "{}")
+pub fn session_not_served_frame() -> str {
+    return flint_ipc.relay_frame(flint_ipc.TAG_NOT_SERVED, "{}")
 }
 
-fn json_not_served() -> str {
+pub fn json_not_served() -> str {
     return json.stringify(not_served())
 }
 
-fn serve_reply_json(r: ServeReply) -> str {
+pub fn serve_reply_json(r: ServeReply) -> str {
     return json.stringify(r)
 }
 
-fn app_state_json(state: str, name: str) -> str {
+pub fn app_state_json(state: str, name: str) -> str {
     return json.stringify(AppState{ state: state, name: name })
 }
 
-fn app_state_full_json(a: AppState) -> str {
+pub fn app_state_full_json(a: AppState) -> str {
     return json.stringify(a)
 }
 
 // Whether a served command may have changed the vault, so the window reloads what it
 // shows. Reads (`list`, `show`, `status`) do not.
-fn served_changes_vault(req: ServeRequest) -> bool {
-    parsed := parse_cli_args(req.argv) or err {
+pub fn served_changes_vault(req: ServeRequest) -> bool {
+    parsed := parse_cli_args(req.argv) or {
         return false
     }
     p := parsed
@@ -1033,8 +1033,8 @@ fn served_changes_vault(req: ServeRequest) -> bool {
 
 // Whether a served command created or revoked a token, so the window's list of
 // tokens reloads.
-fn served_changes_tokens(req: ServeRequest) -> bool {
-    parsed := parse_cli_args(req.argv) or err {
+pub fn served_changes_tokens(req: ServeRequest) -> bool {
+    parsed := parse_cli_args(req.argv) or {
         return false
     }
     p := parsed
@@ -1043,13 +1043,13 @@ fn served_changes_tokens(req: ServeRequest) -> bool {
 }
 
 // The end frame of a served `connect` that opened a remote desktop tab.
-fn desktop_opened_frame(alias: str, as_json: bool) -> str {
-    return relay_frame(TAG_END, json.stringify(SessionEndFrame{ exit: 0, stdout: desktop_opened_text(alias, as_json), stderr: "" }))
+pub fn desktop_opened_frame(alias: str, as_json: bool) -> str {
+    return flint_ipc.relay_frame(flint_ipc.TAG_END, json.stringify(SessionEndFrame{ exit: 0, stdout: desktop_opened_text(alias, as_json), stderr: "" }))
 }
 
 // The RDP host a served session request opens in the app's window, "" when the request
 // is not `flint connect` on an RDP host.
-fn served_desktop_alias(req: ServeRequest, store: vault.LockedVaultStore) -> str {
+pub fn served_desktop_alias(req: ServeRequest, store: vault.LockedVaultStore) -> str {
     p := parse_cli_args(req.argv) or {
         return ""
     }
@@ -1057,7 +1057,7 @@ fn served_desktop_alias(req: ServeRequest, store: vault.LockedVaultStore) -> str
         return ""
     }
     alias := p.positional(1)
-    rdp := opens_remote_desktop(store, alias) or false
+    rdp := application.opens_remote_desktop(store, alias) or false
     if rdp {
         return alias
     }

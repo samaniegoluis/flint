@@ -19,11 +19,11 @@ fn paste_here() -> FakeLocal {
 // for 10 MiB (seen in the Windows port, 2026-11-11).
 fn mib_and_a_byte(mib: i64) -> str {
     mut one := "x"
-    for i in 0..20 {
+    for _ in 0..20 {
         one = one + one
     }
     mut big := "x"
-    for i in 0..mib {
+    for _ in 0..mib {
         big = big + one
     }
     return big
@@ -41,10 +41,10 @@ test "a paste lands in a private folder of its own and returns its path" {
     assert_eq(res.text, res.path)
     assert_eq(res.size, 7)
     assert_eq(host.tree.data_of(res.path), "PNGDATA")
-    assert_eq((try host.sftp_stat(res.path)).mode, PASTE_FILE_MODE)
-    assert_eq((try host.sftp_stat("/home/me/.cache/flint/paste/d-1")).mode, PASTE_DIR_MODE)
-    assert_eq((try host.sftp_stat("/home/me/.cache/flint/paste")).mode, PASTE_DIR_MODE)
-    assert_eq((try host.sftp_stat("/home/me/.cache/flint")).mode, PASTE_DIR_MODE)
+    assert_eq((try host.sftp_stat(res.path)).mode, domain.PASTE_FILE_MODE)
+    assert_eq((try host.sftp_stat("/home/me/.cache/flint/paste/d-1")).mode, domain.PASTE_DIR_MODE)
+    assert_eq((try host.sftp_stat("/home/me/.cache/flint/paste")).mode, domain.PASTE_DIR_MODE)
+    assert_eq((try host.sftp_stat("/home/me/.cache/flint")).mode, domain.PASTE_DIR_MODE)
     // ~/.cache is shared with other programs: created, not narrowed.
     assert_eq((try host.sftp_stat("/home/me/.cache")).mode, 493)
 }
@@ -54,9 +54,9 @@ test "a second paste reuses the folders, and a day-old one is pruned" {
     mut here := paste_here()
     host.tree.now = 1000
     first := try paste_to_remote(mut host, mut here, paste_req("d-old"))
-    host.tree.now = 1000 + PASTE_MAX_AGE - 10
+    host.tree.now = 1000 + domain.PASTE_MAX_AGE - 10
     recent := try paste_to_remote(mut host, mut here, paste_req("d-recent"))
-    host.tree.now = 1000 + PASTE_MAX_AGE + 5
+    host.tree.now = 1000 + domain.PASTE_MAX_AGE + 5
     latest := try paste_to_remote(mut host, mut here, paste_req("d-new"))
     assert(!host.tree.has(first.path))
     assert(!host.tree.has("/home/me/.cache/flint/paste/d-old"))
@@ -70,8 +70,8 @@ test "a home that cannot hold the folder falls back to /tmp/flint-<uid>" {
     mut here := paste_here()
     res := try paste_to_remote(mut host, mut here, paste_req("d-2"))
     assert_eq(res.path, "/tmp/flint-1000/d-2/Captura-de-pantalla.png")
-    assert_eq((try host.sftp_stat("/tmp/flint-1000")).mode, PASTE_DIR_MODE)
-    assert_eq((try host.sftp_stat(res.path)).mode, PASTE_FILE_MODE)
+    assert_eq((try host.sftp_stat("/tmp/flint-1000")).mode, domain.PASTE_DIR_MODE)
+    assert_eq((try host.sftp_stat(res.path)).mode, domain.PASTE_FILE_MODE)
 }
 
 test "a /tmp folder someone else made is refused" {
@@ -82,7 +82,7 @@ test "a /tmp folder someone else made is refused" {
     mut here := paste_here()
     mut msg := ""
     paste_to_remote(mut host, mut here, paste_req("d-3")) or err { msg = "{err.message()}" }
-    assert_eq(error_code_of(msg), ERR_PERMISSION)
+    assert_eq(domain.error_code_of(msg), domain.ERR_PERMISSION)
     assert(msg.contains("someone else"))
     assert(!host.tree.has("/tmp/flint-1000/d-3"))
 }
@@ -109,7 +109,7 @@ test "a failed write leaves nothing behind" {
     mut here := paste_here()
     mut msg := ""
     paste_to_remote(mut host, mut here, paste_req("d-5")) or err { msg = "{err.message()}" }
-    assert_eq(error_code_of(msg), ERR_IO)
+    assert_eq(domain.error_code_of(msg), domain.ERR_IO)
     assert(!host.tree.has("/home/me/.cache/flint/paste/d-5"))
 }
 
@@ -118,7 +118,7 @@ test "a paste needs an id, and a nameless image gets one" {
     mut here := paste_here()
     mut msg := ""
     paste_to_remote(mut host, mut here, paste_req("../x")) or err { msg = "{err.message()}" }
-    assert_eq(error_code_of(msg), ERR_INVALID)
+    assert_eq(domain.error_code_of(msg), domain.ERR_INVALID)
     mut req := paste_req("d-6")
     req.name = ""
     req.kind = "image/jpeg"
@@ -129,7 +129,7 @@ test "a paste needs an id, and a nameless image gets one" {
 test "a paste over a session takes the limit from this machine's settings" {
     mut host := paste_host()
     mut here := paste_here()
-    mut s := default_settings()
+    mut s := domain.default_settings()
     s.paste_limit_mb = 10
     store := FakeSettingsStore{ saved: s }
     big := mib_and_a_byte(10)
@@ -178,6 +178,6 @@ test "a clipboard paste needs a valid drop" {
     mut clip := FakeClipboard{ text: "x", clear_after_ms: 0, copies: 0, held: domain.ClipboardContent{ text: "", mime: "", image: "" } }
     mut stage := FakeDropStage{ appended: [], discarded: [] }
     mut code := "ok"
-    stage_clipboard(mut clip, mut stage, "../up", "clip") or err { code = error_code_of("{err.message()}") }
+    stage_clipboard(mut clip, mut stage, "../up", "clip") or err { code = domain.error_code_of("{err.message()}") }
     assert_eq(code, "invalid")
 }

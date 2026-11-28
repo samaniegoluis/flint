@@ -5,20 +5,20 @@ package ssh
 
 import "../../domain"
 
-type LibsshKeyInspector struct {
+pub type LibsshKeyInspector struct {
     ready: bool
 }
 
-fn new_libssh_key_inspector() -> LibsshKeyInspector {
+pub fn new_libssh_key_inspector() -> LibsshKeyInspector {
     return LibsshKeyInspector{ ready: true }
 }
 
 fn (self: LibsshKeyInspector) inspect_private_key(private_key: str, passphrase: str) -> domain.KeyInfo! {
     if private_key.len() == 0 {
-        return error(coded(ERR_INVALID, "the private key is empty"))
+        return error(domain.coded(domain.ERR_INVALID, "the private key is empty"))
     }
     if private_key.len() > 65536 {
-        return error(coded(ERR_INVALID, "the private key is larger than 64 KiB"))
+        return error(domain.coded(domain.ERR_INVALID, "the private key is larger than 64 KiB"))
     }
     mut rc: i32 = 0
     mut key_type := ""
@@ -60,13 +60,13 @@ fn (self: LibsshKeyInspector) inspect_private_key(private_key: str, passphrase: 
         if (key) ssh_key_free(key);
     }
     if rc == -3 {
-        return error(coded(ERR_INVALID, "that is a public key; paste or import the private key"))
+        return error(domain.coded(domain.ERR_INVALID, "that is a public key; paste or import the private key"))
     }
     if rc != 0 || fingerprint.len() == 0 {
         if passphrase.len() == 0 {
-            return error(coded(ERR_INVALID, "the private key could not be read: it is not an SSH private key, or it is encrypted and needs its passphrase"))
+            return error(domain.coded(domain.ERR_INVALID, "the private key could not be read: it is not an SSH private key, or it is encrypted and needs its passphrase"))
         }
-        return error(coded(ERR_INVALID, "the private key could not be read: wrong passphrase or not an SSH private key"))
+        return error(domain.coded(domain.ERR_INVALID, "the private key could not be read: wrong passphrase or not an SSH private key"))
     }
     return domain.KeyInfo{ key_type: key_type, public_key: public_key, fingerprint: fingerprint }
 }

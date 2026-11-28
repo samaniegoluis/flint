@@ -12,7 +12,7 @@ package ports
 import "../domain"
 
 // Key derivation and authenticated encryption (adapters/crypto, libsodium).
-type Crypto interface {
+pub type Crypto interface {
     random_bytes(n: usize) -> []byte
     derive_key(password: str, salt: []byte, ops: u64, mem_bytes: usize) -> []byte!
     derive_subkey(master: []byte, id: u64, kdf_context: str) -> []byte!
@@ -31,7 +31,7 @@ type Crypto interface {
 
 // The encrypted vault file (adapters/vault, SQLCipher). One vault is open at a time.
 // Rows go in and out as domain types; secret fields are already sealed.
-type VaultStore interface {
+pub type VaultStore interface {
     vault_file_exists(path: str) -> bool
     vault_read_salt(path: str) -> []byte!
     mut vault_create(path: str, page_key: []byte, salt: []byte) -> void!
@@ -101,7 +101,7 @@ type VaultStore interface {
 // same store as `VaultStore`. Tokens are revoked, never deleted. `activity_add` drops
 // the oldest entries beyond `keep`; `activity_page` returns the newest entries with an
 // id below `before_id` (0: from the newest). The retention is this machine's.
-type TokenStore interface {
+pub type TokenStore interface {
     tokens_all() -> []domain.Token!
     mut token_put(t: domain.Token) -> void!
     // Appends `e` and prunes to `keep` in one savepoint; the new entry's id.
@@ -125,7 +125,7 @@ type TokenStore interface {
 
 // Tunnels saved in hosts, in the open vault (adapters/vault, migration 007, milestone
 // 22). Served by the same store as `VaultStore`; removing a host removes its tunnels.
-type TunnelStore interface {
+pub type TunnelStore interface {
     tunnels_all() -> []domain.Tunnel!
     mut tunnel_put(t: domain.Tunnel) -> void!
     mut tunnel_drop(id: str) -> void!
@@ -138,7 +138,7 @@ type TunnelStore interface {
 // the person chose (Principle 13, D-103). Errors: `network` or `timeout` (not reached), `auth` (the token
 // refused, or the client locked out), `conflict` (the server holds another vault),
 // `refused` (any other refusal: rate limit, size cap, server error).
-type VaultRemote interface {
+pub type VaultRemote interface {
     // `known_version` above 0 asks for the file only if the server has another.
     remote_get(url: str, token: str, known_version: i64) -> domain.RemoteVault!
     // `base_version` 0 is the first upload (`If-None-Match: *`).
@@ -151,28 +151,28 @@ type VaultRemote interface {
 
 // What this machine remembers about each connected vault (adapters/config,
 // `remotes.json`, milestone 43).
-type RemoteLinkStore interface {
+pub type RemoteLinkStore interface {
     links_load() -> []domain.RemoteLink!
     links_save(list: []domain.RemoteLink) -> void!
 }
 
 // The OS keychain (adapters/keychain). Holds one master key per vault, by account.
 // `keychain_load` returns an empty slice when there is no entry.
-type Keychain interface {
+pub type Keychain interface {
     keychain_save(account: str, secret: []byte) -> void!
     keychain_load(account: str) -> []byte!
     keychain_forget(account: str) -> void!
 }
 
 // The local list of recent vaults (adapters/config), most recent first.
-type RecentStore interface {
+pub type RecentStore interface {
     recents_load() -> []domain.RecentVault!
     recents_save(list: []domain.RecentVault) -> void!
 }
 
 // The desktop app's per-machine settings (adapters/config). `settings_load`
 // returns the defaults when nothing has been saved yet.
-type SettingsStore interface {
+pub type SettingsStore interface {
     settings_load() -> domain.Settings!
     mut settings_save(s: domain.Settings) -> void!
 }
@@ -180,7 +180,7 @@ type SettingsStore interface {
 // The monospaced font families installed on this machine (adapters/fonts).
 // The `flint` command's link on the PATH (milestone 48, adapters/clilink). `admin`
 // asks the OS for an administrator's password when the folder is not writable.
-type CliLinks interface {
+pub type CliLinks interface {
     cli_link_probe(path: str) -> domain.LinkProbe
     cli_link_exists(path: str) -> bool
     mut cli_link_make(target: str, path: str, admin: bool) -> void!
@@ -190,31 +190,31 @@ type CliLinks interface {
 // The user's own Path on Windows (milestone 50, adapters/clilink): HKCU\Environment's
 // value as written (unexpanded), written back with the same type and announced to
 // running programs; and what one entry holds (expanded only to look).
-type CliPath interface {
+pub type CliPath interface {
     cli_path_read() -> str!
     mut cli_path_write(value: str) -> void!
     cli_path_probe(entry: str) -> domain.PathEntryProbe
     cli_path_file_exists(path: str) -> bool
 }
 
-type FontCatalog interface {
+pub type FontCatalog interface {
     mono_font_families() -> []str!
 }
 
 // Parses a private key to validate it and read its public half (adapters/ssh).
-type KeyInspector interface {
+pub type KeyInspector interface {
     inspect_private_key(private_key: str, passphrase: str) -> domain.KeyInfo!
 }
 
 // An interactive remote shell (adapters/ssh, libssh).
-type ShellSession interface {
+pub type ShellSession interface {
     write(data: str) -> void!
     mut read(timeout_ms: i32) -> str!
     resize(cols: i32, rows: i32) -> void!
 }
 
 // Out-of-band delivery of terminal bytes to a driver (webui events, stdio).
-type EventSink interface {
+pub type EventSink interface {
     mut terminal_output(session_id: str, data: str)
     mut terminal_closed(session_id: str, reason: str)
 }
@@ -227,7 +227,7 @@ type EventSink interface {
 // `preferred_host_key_algos` for the hop being dialled.
 // One channel at a time: a shell (PTY) or an exec. `link_shell_open` with a
 // `command` runs that command on the PTY instead of the login shell ("" for none).
-type SshTransport interface {
+pub type SshTransport interface {
     mut link_dial(hostname: str, port: i64, user: str, timeout_secs: i64, host_key_algos: str) -> void!
     link_server_key() -> domain.ServerKey!
     mut link_auth_key(private_key: str, passphrase: str) -> void!
@@ -259,7 +259,7 @@ type SshTransport interface {
 // `prompt_host_key` asks whether to trust a new server key; `host_key_changed` only
 // tells the person about a changed key, which the core refuses either way (D-019).
 // `prompt_password` returns "" when the person cancels.
-type Prompter interface {
+pub type Prompter interface {
     prompt_available() -> bool
     prompt_host_key(q: domain.HostKeyQuestion) -> bool!
     host_key_changed(q: domain.HostKeyQuestion)
@@ -268,7 +268,7 @@ type Prompter interface {
 
 // The local terminal of an interactive session (adapters/process): raw mode,
 // keystrokes in, remote bytes out, and window resizes.
-type Terminal interface {
+pub type Terminal interface {
     term_size() -> domain.TerminalSize
     mut term_raw_enter() -> void!
     mut term_raw_leave()
@@ -278,7 +278,7 @@ type Terminal interface {
 }
 
 // Where a streaming exec writes the remote stdout and stderr (adapters/process).
-type ExecSink interface {
+pub type ExecSink interface {
     mut exec_stdout(data: str)
     mut exec_stderr(data: str)
     // True once whoever reads the output is gone (milestone 50: the app quitting cuts
@@ -289,7 +289,7 @@ type ExecSink interface {
 // The system clipboard (adapters/uievents, the desktop app). `clipboard_copy_secret`
 // puts a secret on it, marked so clipboard managers skip it where the OS allows, and
 // clears it after `clear_after_ms` unless something else was copied since (D-029).
-type Clipboard interface {
+pub type Clipboard interface {
     mut clipboard_copy_secret(text: str, clear_after_ms: i64) -> void!
     // Plain text a remote program copied (OSC 52): not concealed, never cleared.
     mut clipboard_copy_text(text: str) -> void!
@@ -308,7 +308,7 @@ type Clipboard interface {
 // milestone 12). `presence_method` is "touchid", "device" (the Mac's password),
 // "polkit" or "password" (the window asks for the vault's master password, which the
 // core checks itself). `presence_confirm` asks the OS and blocks until answered.
-type Presence interface {
+pub type Presence interface {
     presence_method() -> str
     presence_confirm(reason: domain.PresenceReason) -> bool!
 }
@@ -319,17 +319,17 @@ type Presence interface {
 // The webview's own profile on disk (milestone 64): removes what its autofill and
 // password autosave stored, outside the vault. Returns how many files went; a
 // webview with no such store (WKWebView, WebKitGTK) removes none.
-type WebviewData interface {
+pub type WebviewData interface {
     mut webview_autofill_clear() -> i64!
 }
 
-type UiStateStore interface {
+pub type UiStateStore interface {
     ui_state_load() -> domain.UiState!
     mut ui_state_save(s: domain.UiState) -> void!
 }
 
 // Monotonic milliseconds, for timeouts and durations (adapters/process).
-type Clock interface {
+pub type Clock interface {
     mut clock_now_ms() -> i64
 }
 
@@ -338,7 +338,7 @@ type Clock interface {
 // one open file at a time. Every request is bounded by the link's dial timeout
 // (Principle 8). Errors carry `not_found`, `permission_denied`, `exists`,
 // `not_a_directory`, `io` or `network`.
-type SftpTransport interface {
+pub type SftpTransport interface {
     mut sftp_open() -> void!
     // Follows links.
     sftp_stat(path: str) -> domain.FileEntry!
@@ -368,7 +368,7 @@ type SftpTransport interface {
 // Files on this machine (adapters/process/local_fs.cf; over the socket, the CLI's own,
 // adapters/ipc/relay_files.cf). The same shape as `SftpTransport`, so a copy reads one
 // and writes the other. A relative path is the CLI's current folder's.
-type LocalFiles interface {
+pub type LocalFiles interface {
     local_stat(path: str) -> domain.FileEntry!
     local_list(path: str) -> []domain.FileEntry!
     mut local_file_open(path: str, write: bool, exclusive: bool) -> void!
@@ -385,7 +385,7 @@ type LocalFiles interface {
 // page their bytes, not their paths (CF-004), so the page sends them here in chunks
 // and the upload reads them from this machine. One folder per drop, readable only
 // by the person (adapters/process/drop_stage.cf); discarded once uploaded.
-type DropStage interface {
+pub type DropStage interface {
     // The drop's folder, absolute.
     stage_folder(drop_id: str) -> str
     // Appends `data` to `rel` (a relative path, already checked) in the drop's folder.
@@ -395,7 +395,7 @@ type DropStage interface {
 
 // Where a copy reports its progress, and how it learns it was cancelled (stderr in
 // the CLI, frames to the CLI from the app, events to the window in milestone 17).
-type TransferSink interface {
+pub type TransferSink interface {
     mut transfer_progress(p: domain.TransferProgress)
     transfer_cancelled() -> bool
 }
@@ -405,7 +405,7 @@ type TransferSink interface {
 // host's id; each tunnel is a listener on 127.0.0.1 whose every connection opens its
 // own forward channel. A lost session closes every listener of its host and stays
 // reported until released; nothing redials on its own.
-type TunnelRunner interface {
+pub type TunnelRunner interface {
     // 0: no session for the host; 1: up; 2: lost.
     tunnel_host_state(host_id: str) -> i64
     // Listens on 127.0.0.1:local_port (already listening: nothing changes) and returns
@@ -431,7 +431,7 @@ type TunnelRunner interface {
 // engine. Input arrives as Flint's own events (a key's `code` as the W3C UI Events
 // name it, "KeyA", "ControlLeft"; pointer events in desktop pixels) and frames leave
 // through the tab's local frame channel (D-071), which outlives a reconnect.
-type RemoteDesktop interface {
+pub type RemoteDesktop interface {
     // Connects the tab, replacing its connection if it has one, and logs in (NLA when
     // the server asks). Only `t.trusted_fingerprint` is accepted; any other
     // certificate fails `host_key` and is kept for `rd_presented_cert`. Bounded by
@@ -492,7 +492,7 @@ type RemoteDesktop interface {
 
 // This computer's monitors (milestone 38, D-089): native per system in the desktop app
 // (CF-126); the CLI has none.
-type Screens interface {
+pub type Screens interface {
     // "" when a desktop can span monitors on this system, else why not, in the words
     // the page shows ("Not supported on this system yet").
     screens_unsupported() -> str
@@ -502,7 +502,7 @@ type Screens interface {
 }
 
 // Where a remote desktop tells its driver that it is up (webui events in the app).
-type DesktopSink interface {
+pub type DesktopSink interface {
     mut desktop_ready(tab: str, d: domain.RdpDesktop)
     // Whether someone may act through the window now: a locked window answers no
     // clipboard request (milestone 31).
@@ -521,7 +521,7 @@ type DesktopSink interface {
 // adapter) rather than failing the whole listing (milestone 71).
 // Version 0 means the vault is not stored. Errors carry `not_found`, `io` or
 // `conflict` (a vault held by another writer).
-type BlobStore interface {
+pub type BlobStore interface {
     // Every vault kept, with its label and newest version, ordered by id.
     blob_vaults() -> []domain.ServerVault!
     blob_head(vault_id: str) -> domain.BlobVersion!
@@ -545,13 +545,13 @@ type BlobStore interface {
 // only, redirects too (GitHub sends release files from another host); plain `http://`
 // only to localhost. Errors: `network`, `timeout`, `not_found` (no such file: no
 // release has one yet), `refused` (any other answer, or more than `max_bytes`).
-type UpdateFeed interface {
+pub type UpdateFeed interface {
     update_get(url: str, max_bytes: i64) -> []byte!
 }
 
 // The manifest's signature (milestone 52, adapters/crypto, libsodium): Ed25519,
 // detached, against `public_key` (32 bytes). Never a hand-rolled check (Principle 4).
-type UpdateVerifier interface {
+pub type UpdateVerifier interface {
     update_verify(message: []byte, signature: []byte, public_key: []byte) -> bool
 }
 
@@ -560,20 +560,20 @@ type UpdateVerifier interface {
 // (Principle 8: a package may take minutes, but never sits silent). HTTPS only, as the
 // feed. The bytes received so far are readable from another thread while it runs
 // (the adapter's update_download_received). Errors as UpdateFeed's.
-type UpdateDownloader interface {
+pub type UpdateDownloader interface {
     mut update_download(url: str, path: str, max_bytes: i64) -> void!
 }
 
 // A downloaded package's SHA-256, as 64 hex characters (milestone 53, adapters/crypto:
 // libsodium's crypto_hash_sha256, Principle 4).
-type UpdateHasher interface {
+pub type UpdateHasher interface {
     update_file_sha256(path: str) -> str!
 }
 
 // A bundle's code signature (milestone 79, D-158 (3), adapters/process): macOS reads it
 // with `codesign` (the Team ID, and whether the bundle verifies); a bundle it cannot
 // read does not verify. Elsewhere every folder reads as valid and unsigned.
-type UpdateSigner interface {
+pub type UpdateSigner interface {
     upd_signer(root: str) -> domain.CodeSignature
 }
 
@@ -581,7 +581,7 @@ type UpdateSigner interface {
 // the installed one, the swap by rename, unpacking a zip with the system's own tool
 // (macOS `ditto`, keeping the bundle's links and signature; `bsdtar` / `unzip`
 // elsewhere: CF-175). `upd_remove` removes a tree and is quiet when there is none.
-type UpdateFiles interface {
+pub type UpdateFiles interface {
     upd_exists(path: str) -> bool
     upd_read(path: str) -> str!
     mut upd_mkdir(path: str) -> void!
@@ -596,7 +596,7 @@ type UpdateFiles interface {
 // The processes of an update (milestone 53, adapters/process): whether one runs, which
 // run an executable from inside a folder, starting one detached from this process
 // (its output to `log`, or nowhere), stopping one, and the clock.
-type UpdateProcesses interface {
+pub type UpdateProcesses interface {
     proc_alive(pid: i64) -> bool
     proc_running_under(dir: str) -> []i64
     // The programs holding a file open inside `dir` (milestone 65): Windows' Restart
@@ -614,7 +614,7 @@ type UpdateProcesses interface {
 // owns, at most `max_bytes`) copied into a folder only root can write, and read back
 // from there. `stage_done` removes that folder. Errors: `not_found` (nothing staged),
 // `invalid` (a link, not a regular file, someone else's, too large), `io`.
-type RootStage interface {
+pub type RootStage interface {
     mut stage_copy(uid: i64, name: str, max_bytes: i64) -> str!
     stage_read(path: str, max_bytes: i64) -> []byte!
     stage_size(path: str) -> i64!
@@ -623,19 +623,19 @@ type RootStage interface {
 
 // The package manager, as root (milestone 54): `apt-get install` or `dnf install` of
 // one package file, with a deadline. The error carries the tail of its output.
-type PackageInstaller interface {
+pub type PackageInstaller interface {
     mut pkg_install(format: str, path: str) -> void!
 }
 
 // Where the installed package came from (milestone 54): `apt-cache policy flint` or
 // `dnf info --installed flint`, as text ("" when it could not be asked).
-type PackageSourceProbe interface {
+pub type PackageSourceProbe interface {
     package_source_text(format: str) -> str
 }
 
 // The app's side of a Linux Relaunch (milestone 54): `pkexec <helper>`, waited for,
 // its exit code and what it printed. The password dialog is the person's: no deadline.
-type RootRunner interface {
+pub type RootRunner interface {
     mut run_root_helper(helper: str) -> domain.RootRun!
 }
 
@@ -646,7 +646,7 @@ type RootRunner interface {
 // session keeps answering. `stats_stopped` is true once the tab, its session or the
 // setting ended the watch. `stats_close` closes the channel (the loop on the server
 // sees its stdin close and ends), never the session.
-type ServerStats interface {
+pub type ServerStats interface {
     mut stats_open(command: str) -> void!
     mut stats_send(data: str) -> void!
     mut stats_read(timeout_ms: i64) -> domain.ExecChunk!
@@ -656,7 +656,7 @@ type ServerStats interface {
 
 // Where a tab's samples go (the page's `stats:sample`). A sample with no field
 // (`sample_has_fields` false) says the host shows nothing (design 25a6).
-type StatsSink interface {
+pub type StatsSink interface {
     mut stats_emit(sample: domain.ServerSample)
 }
 
@@ -665,6 +665,6 @@ type StatsSink interface {
 // deadline (Principle 8) and never retried. Only the kind crosses the port: the
 // adapter writes alert_text(kind), so nothing of a request can reach the phone
 // (Principle 19).
-type Notifier interface {
+pub type Notifier interface {
     alert_publish(server: str, topic: str, kind: str) -> void!
 }

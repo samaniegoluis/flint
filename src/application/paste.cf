@@ -8,7 +8,7 @@ package application
 import "../domain"
 import "../ports"
 
-type PasteRequest struct {
+pub type PasteRequest struct {
     // Unique per paste (the page's drop id): the folder the file lands in.
     id:       str
     // The staged file on this machine, and the name it had on the clipboard.
@@ -19,7 +19,7 @@ type PasteRequest struct {
     limit_mb: i64
 }
 
-type PasteResult struct {
+pub type PasteResult struct {
     // Where the file is on the server, and the same path escaped for a shell: the
     // text the page pastes.
     path: str `json:"path"`
@@ -38,11 +38,11 @@ fn paste_dir[T: ports.SftpTransport](mut sftp: T, path: str, own: bool) -> void!
             return error(msg)
         }
         if !st.is_dir() {
-            return error(coded(ERR_NOT_DIR, "{path} is not a folder"))
+            return error(domain.coded(domain.ERR_NOT_DIR, "{path} is not a folder"))
         }
     }
     if own {
-        try sftp.sftp_chmod(path, PASTE_DIR_MODE)
+        try sftp.sftp_chmod(path, domain.PASTE_DIR_MODE)
     }
 }
 
@@ -53,29 +53,29 @@ fn paste_root[T: ports.SftpTransport](mut sftp: T) -> str! {
     home := try sftp.sftp_realpath(".")
     mut failed := ""
     // CFIRE-UPSTREAM: CF-196 (a loop over another package's global slice types its element `auto`)
-    dirs: []str = PASTE_HOME_DIRS
+    dirs: []str = domain.PASTE_HOME_DIRS
     for i, rel in dirs {
         // ~/.cache is shared with other programs: created if missing, left as it is.
-        paste_dir(mut sftp, remote_join(home, rel), i > 0) or err {
+        paste_dir(mut sftp, domain.remote_join(home, rel), i > 0) or err {
             failed = "{err.message()}"
             break
         }
     }
     if failed.len() == 0 {
-        return remote_join(home, PASTE_HOME_DIRS[PASTE_HOME_DIRS.len() - 1])
+        return domain.remote_join(home, domain.PASTE_HOME_DIRS[domain.PASTE_HOME_DIRS.len() - 1])
     }
-    code := error_code_of(failed)
-    if code != ERR_PERMISSION && code != ERR_NOT_FOUND && code != ERR_NOT_DIR {
+    code := domain.error_code_of(failed)
+    if code != domain.ERR_PERMISSION && code != domain.ERR_NOT_FOUND && code != domain.ERR_NOT_DIR {
         return error(failed)
     }
     me := try sftp.sftp_stat(home)
-    tmp := paste_tmp_folder(me.uid)
+    tmp := domain.paste_tmp_folder(me.uid)
     try paste_dir(mut sftp, tmp, false)
     st := try sftp.sftp_stat(tmp)
     if st.uid != me.uid {
-        return error(coded(ERR_PERMISSION, "{tmp} belongs to someone else, and {home} cannot hold the paste folder"))
+        return error(domain.coded(domain.ERR_PERMISSION, "{tmp} belongs to someone else, and {home} cannot hold the paste folder"))
     }
-    try sftp.sftp_chmod(tmp, PASTE_DIR_MODE)
+    try sftp.sftp_chmod(tmp, domain.PASTE_DIR_MODE)
     return tmp
 }
 
@@ -86,7 +86,7 @@ fn prune_pastes[T: ports.SftpTransport](mut sftp: T, root: str, keep: str, now: 
         return
     }
     for e in entries {
-        if e.name == keep || !paste_stale(e.mtime, now) {
+        if e.name == keep || !domain.paste_stale(e.mtime, now) {
             continue
         }
         remove_remote(mut sftp, e.path) or {}
@@ -96,20 +96,20 @@ fn prune_pastes[T: ports.SftpTransport](mut sftp: T, root: str, keep: str, now: 
 // Writes `req.local` to <paste folder>/<id>/<clean name> on the host, the folder
 // 0700 and the file 0600, then prunes old pastes. A failure removes what it wrote.
 fn paste_to_remote[T: ports.SftpTransport, L: ports.LocalFiles](mut sftp: T, mut local: L, req: PasteRequest) -> PasteResult! {
-    if !valid_drop_id(req.id) {
-        return error(coded(ERR_INVALID, "a paste needs an id"))
+    if !domain.valid_drop_id(req.id) {
+        return error(domain.coded(domain.ERR_INVALID, "a paste needs an id"))
     }
-    name := paste_file_name(req.name, req.kind)
+    name := domain.paste_file_name(req.name, req.kind)
     src := try local.local_stat(req.local)
     if !src.is_file() {
-        return error(coded(ERR_INVALID, "only a file can be pasted"))
+        return error(domain.coded(domain.ERR_INVALID, "only a file can be pasted"))
     }
-    try check_paste_size(name, src.size, req.limit_mb)
+    try domain.check_paste_size(name, src.size, req.limit_mb)
 
     root := try paste_root(mut sftp)
-    folder := remote_join(root, req.id)
+    folder := domain.remote_join(root, req.id)
     try sftp.sftp_mkdir(folder)
-    target := remote_join(folder, name)
+    target := domain.remote_join(folder, name)
     written := paste_write(mut sftp, mut local, req.local, folder, target) or err {
         msg := "{err.message()}"
         sftp.sftp_remove(target, false) or {}
@@ -118,19 +118,19 @@ fn paste_to_remote[T: ports.SftpTransport, L: ports.LocalFiles](mut sftp: T, mut
     }
     // The new folder's time is the host's "now", whatever this machine's clock says.
     made := sftp.sftp_stat(folder) or {
-        return PasteResult{ path: target, text: shell_escape_path(target), size: written }
+        return PasteResult{ path: target, text: domain.shell_escape_path(target), size: written }
     }
     prune_pastes(mut sftp, root, req.id, made.mtime)
-    return PasteResult{ path: target, text: shell_escape_path(target), size: written }
+    return PasteResult{ path: target, text: domain.shell_escape_path(target), size: written }
 }
 
 fn paste_write[T: ports.SftpTransport, L: ports.LocalFiles](mut sftp: T, mut local: L, src: str, folder: str, target: str) -> i64! {
-    try sftp.sftp_chmod(folder, PASTE_DIR_MODE)
+    try sftp.sftp_chmod(folder, domain.PASTE_DIR_MODE)
     try sftp.sftp_file_open(target, true, true)
     mut written: i64 = 0
     mut failed := ""
     // 0600 before a single byte is in it.
-    sftp.sftp_chmod(target, PASTE_FILE_MODE) or err {
+    sftp.sftp_chmod(target, domain.PASTE_FILE_MODE) or err {
         failed = "{err.message()}"
     }
     if failed.len() == 0 {
@@ -169,9 +169,9 @@ fn paste_write[T: ports.SftpTransport, L: ports.LocalFiles](mut sftp: T, mut loc
 // A paste over a session that is already logged in (the pane's), on an SFTP
 // channel of its own, as the Files view's transfers. The limit is this machine's
 // setting, never the request's.
-fn paste_over_session[T: ports.SftpTransport, L: ports.LocalFiles, S: ports.SettingsStore](mut sftp: T, mut local: L, settings: S, req: PasteRequest) -> PasteResult! {
+pub fn paste_over_session[T: ports.SftpTransport, L: ports.LocalFiles, S: ports.SettingsStore](mut sftp: T, mut local: L, settings: S, req: PasteRequest) -> PasteResult! {
     mut r := req
-    r.limit_mb = (load_settings(settings) or default_settings()).paste_limit_mb
+    r.limit_mb = (load_settings(settings) or domain.default_settings()).paste_limit_mb
     try open_sftp(mut sftp)
     return try paste_to_remote(mut sftp, mut local, r)
 }
@@ -187,9 +187,9 @@ type ClipboardPaste struct {
     size: i64 `json:"size"`
 }
 
-fn stage_clipboard[C: ports.Clipboard, D: ports.DropStage](mut clip: C, mut stage: D, drop_id: str, rel: str) -> ClipboardPaste! {
-    if !valid_drop_id(drop_id) || !valid_drop_path(rel) {
-        return error(coded(ERR_INVALID, "a paste needs a drop to stage it in"))
+pub fn stage_clipboard[C: ports.Clipboard, D: ports.DropStage](mut clip: C, mut stage: D, drop_id: str, rel: str) -> ClipboardPaste! {
+    if !domain.valid_drop_id(drop_id) || !domain.valid_drop_path(rel) {
+        return error(domain.coded(domain.ERR_INVALID, "a paste needs a drop to stage it in"))
     }
     held := try clip.clipboard_read()
     if held.text.len() > 0 {
@@ -213,7 +213,7 @@ type FieldPaste struct {
     secret: bool `json:"secret"`
 }
 
-fn field_paste_text[C: ports.Clipboard](mut clip: C) -> FieldPaste! {
+pub fn field_paste_text[C: ports.Clipboard](mut clip: C) -> FieldPaste! {
     if clip.clipboard_holds_secret() {
         return FieldPaste{ text: "", secret: true }
     }
@@ -224,9 +224,9 @@ fn field_paste_text[C: ports.Clipboard](mut clip: C) -> FieldPaste! {
 // The field menu's Copy and Cut: the selection, as plain text (not concealed, never
 // cleared), like a copy in any other app. The page never offers them in a password
 // field.
-fn field_copy_text[C: ports.Clipboard](mut clip: C, text: str) -> void! {
+pub fn field_copy_text[C: ports.Clipboard](mut clip: C, text: str) -> void! {
     if i64(text.len()) > FIELD_COPY_MAX_BYTES {
-        return error(coded(ERR_INVALID, "the selection is too long to copy"))
+        return error(domain.coded(domain.ERR_INVALID, "the selection is too long to copy"))
     }
     try clip.clipboard_copy_text(text)
 }

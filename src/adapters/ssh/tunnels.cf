@@ -21,7 +21,7 @@ TUNNEL_KEEPALIVE_SECS: i64 = 30
 // later `link_hangup` on this value does nothing.
 fn (mut self: SshLink) link_hand_over(key: str) -> void! {
     if self.hops.len() == 0 {
-        return error(coded(ERR_INTERNAL, "ssh: no hop is connected"))
+        return error(domain.coded(domain.ERR_INTERNAL, "ssh: no hop is connected"))
     }
     self.sftp_close()
     // CFIRE-UPSTREAM: CF-026
@@ -47,7 +47,7 @@ fn (mut self: SshLink) link_hand_over(key: str) -> void! {
     }
     if !ok {
         self.link_hangup()
-        return error(coded(ERR_INTERNAL, "the tunnel session could not start: {msg}"))
+        return error(domain.coded(domain.ERR_INTERNAL, "the tunnel session could not start: {msg}"))
     }
     // The registry owns the sessions and the jump tunnels now.
     // CFIRE-UPSTREAM: CF-026
@@ -58,11 +58,11 @@ fn (mut self: SshLink) link_hand_over(key: str) -> void! {
 }
 
 // The `TunnelRunner` adapter. Stateless: the registry is the process's own.
-type NativeTunnels struct {
+pub type NativeTunnels struct {
     unused: i64
 }
 
-fn new_native_tunnels() -> NativeTunnels {
+pub fn new_native_tunnels() -> NativeTunnels {
     return NativeTunnels{ unused: 0 }
 }
 
@@ -88,16 +88,16 @@ fn (mut self: NativeTunnels) tunnel_listen(host_id: str, tunnel_id: str, local_p
         msg = err;
     }
     if rc == 1 {
-        return error(coded(ERR_PORT_IN_USE, "port {local_port} on 127.0.0.1 is already in use"))
+        return error(domain.coded(domain.ERR_PORT_IN_USE, "port {local_port} on 127.0.0.1 is already in use"))
     }
     if rc == 4 {
-        return error(coded(ERR_PERMISSION, "port {local_port} on 127.0.0.1 cannot be used without more rights ({msg})"))
+        return error(domain.coded(domain.ERR_PERMISSION, "port {local_port} on 127.0.0.1 cannot be used without more rights ({msg})"))
     }
     if rc == 3 {
-        return error(coded(ERR_NETWORK, "the host's tunnel session is not connected"))
+        return error(domain.coded(domain.ERR_NETWORK, "the host's tunnel session is not connected"))
     }
     if rc != 0 {
-        return error(coded(ERR_IO, "cannot listen on 127.0.0.1:{local_port}: {msg}"))
+        return error(domain.coded(domain.ERR_IO, "cannot listen on 127.0.0.1:{local_port}: {msg}"))
     }
     return bound
 }
@@ -177,7 +177,7 @@ fn (self: NativeTunnels) tunnel_port_owner(port: i64) -> domain.PortOwner {
 }
 
 // Closes every tunnel and hangs up every tunnel session (the app quitting).
-fn release_all_tunnels() {
+pub fn release_all_tunnels() {
     // CFIRE-UPSTREAM: CF-026
     cpp {
         flint_tunnel::release_all();

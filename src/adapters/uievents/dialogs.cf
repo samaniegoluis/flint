@@ -6,7 +6,7 @@ package uievents
 import cpp "flint_dialog.hpp"
 
 // True when this platform's dialogs come from here rather than from ext:webui.
-fn native_file_dialogs() -> bool {
+pub fn native_file_dialogs() -> bool {
     mut yes := false
     // CFIRE-UPSTREAM: CF-077
     cpp {
@@ -16,7 +16,7 @@ fn native_file_dialogs() -> bool {
 }
 
 // Asks for a file to open; "" when cancelled.
-fn choose_file_to_open(title: str) -> str {
+pub fn choose_file_to_open(title: str) -> str {
     mut path := ""
     // CFIRE-UPSTREAM: CF-077
     cpp {
@@ -26,7 +26,7 @@ fn choose_file_to_open(title: str) -> str {
 }
 
 // Asks where to save a new file, `default_name` filled in; "" when cancelled.
-fn choose_file_to_save(title: str, default_name: str) -> str {
+pub fn choose_file_to_save(title: str, default_name: str) -> str {
     mut path := ""
     // CFIRE-UPSTREAM: CF-077
     cpp {

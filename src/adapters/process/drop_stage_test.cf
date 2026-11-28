@@ -1,11 +1,10 @@
 package process
 
-import "core:os"
 import "core:fs"
 import "core:crypto/sha256"
 import "../../ports"
 
-fn accepts_stage[D: ports.DropStage](mut d: D) -> bool {
+fn accepts_stage[D: ports.DropStage](mut _d: D) -> bool {
     return true
 }
 

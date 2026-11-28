@@ -4,7 +4,7 @@ package domain
 // this computer's preferences, not a vault, so they live beside the recent-vaults
 // list and never hold anything from inside a vault (Principle 5).
 
-type Settings struct {
+pub type Settings struct {
     theme:              str  `json:"theme"`
     accent:             str  `json:"accent"`
     density:            str  `json:"density"`
@@ -101,11 +101,11 @@ type Settings struct {
 }
 
 RDP_MAC_KEYS: []str = ["mac", "windows", "custom"]
-RDP_GRAPHICS: []str = ["auto", "pipeline", "compatible"]
+pub RDP_GRAPHICS: []str = ["auto", "pipeline", "compatible"]
 TOAST_CORNERS: []str = ["bottom-right", "bottom-left", "top-right", "top-left"]
-NTFY_PHONES: []str = ["iphone", "android"]
-CLOSE_ACTIONS: []str = ["", "quit", "background"]
-LANGUAGES: []str = ["system", "en", "es"]
+pub NTFY_PHONES: []str = ["iphone", "android"]
+pub CLOSE_ACTIONS: []str = ["", "quit", "background"]
+pub LANGUAGES: []str = ["system", "en", "es"]
 // The six modifier keys of a Mac keyboard, by their W3C `code`.
 RDP_MAC_KEY_CODES: []str = ["ControlLeft", "ControlRight", "AltLeft", "AltRight", "MetaLeft", "MetaRight"]
 // What each can send: a PC keyboard's Ctrl, Alt, AltGr (right Alt), Windows key, or nothing.
@@ -129,11 +129,11 @@ TERM_FONT_SIZE_MAX: i64 = 32
 TERM_LINE_HEIGHT_MIN: i64 = 100
 TERM_LINE_HEIGHT_MAX: i64 = 200
 
-fn default_settings() -> Settings {
+pub fn default_settings() -> Settings {
     return Settings{ theme: "system", accent: "ember", density: "default", follow_motion: true, reopen_last_vault: true, term_font: "", term_font_size: 13, term_line_height: 100, term_cursor: "block", term_cursor_blink: true, term_theme: "default", lock_after: LOCK_AFTER_DEFAULT, keys_cleared: false, webview_cleared: false, paste_limit_mb: PASTE_LIMIT_DEFAULT_MB, rdp_mac_keys: "mac", rdp_mac_custom: "", rdp_graphics: "auto", sync_interval: SYNC_INTERVAL_DEFAULT, toast_corner: "bottom-right", cli_offer_shown: false, update_check: true, update_toast_version: "", last_seen_version: "", server_stats: true, server_stats_colour: true, dim_unfocused: true, notify_grants: true, sudo_periods: false, approval_wait: APPROVAL_WAIT_DEFAULT, ntfy_on: false, ntfy_server: NTFY_SERVER_DEFAULT, ntfy_topic: "", ntfy_phone: "iphone", close_action: "", language: "system" }
 }
 
-fn one_of(value: str, allowed: []str) -> bool {
+pub fn one_of(value: str, allowed: []str) -> bool {
     for a in allowed {
         if a == value {
             return true
@@ -143,7 +143,7 @@ fn one_of(value: str, allowed: []str) -> bool {
 }
 
 // Whether check_settings passes.
-fn settings_valid(s: Settings) -> bool {
+pub fn settings_valid(s: Settings) -> bool {
     check_settings(s) or {
         return false
     }
@@ -151,7 +151,7 @@ fn settings_valid(s: Settings) -> bool {
 }
 
 // Checks every field; the message names the first one that is wrong.
-fn check_settings(s: Settings) -> void! {
+pub fn check_settings(s: Settings) -> void! {
     if !one_of(s.theme, ["system", "dark", "light"]) {
         return error(coded(ERR_INVALID, "theme must be system, dark or light"))
     }
@@ -241,7 +241,7 @@ fn lock_after_ms(setting: str) -> i64 {
     return 0
 }
 
-fn approval_wait_valid(minutes: i64) -> bool {
+pub fn approval_wait_valid(minutes: i64) -> bool {
     for m in APPROVAL_WAITS {
         if m == minutes {
             return true
@@ -254,7 +254,7 @@ fn approval_wait_valid(minutes: i64) -> bool {
 // the setting's minutes, or `override_ms` when it is shorter and above zero (the
 // end-to-end runs' FLINT_APPROVAL_WAIT_MS, to see a timeout in seconds). A setting
 // that is not one of APPROVAL_WAITS reads the default.
-fn approval_wait_ms(minutes: i64, override_ms: i64) -> i64 {
+pub fn approval_wait_ms(minutes: i64, override_ms: i64) -> i64 {
     mut m := minutes
     if !approval_wait_valid(m) {
         m = APPROVAL_WAIT_DEFAULT
@@ -267,7 +267,7 @@ fn approval_wait_ms(minutes: i64, override_ms: i64) -> i64 {
 }
 
 // Whether an unlocked vault last used at `last_ms` locks now.
-fn idle_lock_due(now_ms: i64, last_ms: i64, setting: str) -> bool {
+pub fn idle_lock_due(now_ms: i64, last_ms: i64, setting: str) -> bool {
     limit := lock_after_ms(setting)
     return limit > 0 && now_ms - last_ms >= limit
 }
@@ -298,10 +298,10 @@ fn check_rdp_mac_custom(v: str) -> void! {
 // milestone 14. With none, the person's answer decides; with no answer yet, the page
 // asks.
 CLOSE_HIDE: str = "hide"
-CLOSE_QUIT: str = "quit"
-CLOSE_ASK: str = "ask"
+pub CLOSE_QUIT: str = "quit"
+pub CLOSE_ASK: str = "ask"
 
-fn close_decision(has_tray: bool, close_action: str) -> str {
+pub fn close_decision(has_tray: bool, close_action: str) -> str {
     if has_tray || close_action == "background" {
         return CLOSE_HIDE
     }

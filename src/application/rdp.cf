@@ -16,7 +16,7 @@ import "../domain"
 import "../ports"
 
 // How long a connection may take, from the dial to the desktop (Principle 8).
-RDP_CONNECT_TIMEOUT_MS: i64 = 30000
+pub RDP_CONNECT_TIMEOUT_MS: i64 = 30000
 // How often a watched session is checked when nothing happens: also how soon a copy
 // on this machine is announced to the server (milestone 31).
 RDP_WAIT_MS: i64 = 250
@@ -24,7 +24,7 @@ RDP_WAIT_MS: i64 = 250
 RDP_PROBE_TIMEOUT_MS: i64 = 1500
 
 // A tab asking for a desktop: its id, the host and the tab's size in device pixels.
-type RdpOpenRequest struct {
+pub type RdpOpenRequest struct {
     tab: str
     alias: str
     width: i64
@@ -39,8 +39,8 @@ fn rdp_graphics_of(req: RdpOpenRequest) -> str! {
     if req.graphics.len() == 0 {
         return "auto"
     }
-    if !one_of(req.graphics, RDP_GRAPHICS) {
-        return error(coded(ERR_INVALID, "remote desktop graphics must be auto, pipeline or compatible"))
+    if !domain.one_of(req.graphics, domain.RDP_GRAPHICS) {
+        return error(domain.coded(domain.ERR_INVALID, "remote desktop graphics must be auto, pipeline or compatible"))
     }
     return req.graphics
 }
@@ -51,8 +51,8 @@ fn rdp_graphics_of(req: RdpOpenRequest) -> str! {
 fn rdp_target[C: ports.Crypto, S: ports.VaultStore, P: ports.Prompter](crypto: C, store: S, session: VaultSession, prompter: P, alias: str, size: domain.DesktopSize, graphics: str, ask: bool) -> domain.RdpTarget! {
     cat := try load_catalog(store)
     h := try require_host(cat.hosts, alias)
-    if !is_rdp_host(h) {
-        return error(coded(ERR_HOST_TYPE, "'{h.alias}' is an SSH host; a remote desktop needs an RDP host"))
+    if !domain.is_rdp_host(h) {
+        return error(domain.coded(domain.ERR_HOST_TYPE, "'{h.alias}' is an SSH host; a remote desktop needs an RDP host"))
     }
     user := try auth_user(cat, h)
     mut password := ""
@@ -67,15 +67,15 @@ fn rdp_target[C: ports.Crypto, S: ports.VaultStore, P: ports.Prompter](crypto: C
     }
     if password.len() == 0 {
         if !ask || !prompter.prompt_available() {
-            return error(core_msg(MSG_RDP_NO_SAVED_PASSWORD, [h.alias]))
+            return error(domain.core_msg(domain.MSG_RDP_NO_SAVED_PASSWORD, [h.alias]))
         }
         password = try prompter.prompt_password(user, h.alias)
         if password.len() == 0 {
-            return error(core_msg(MSG_RDP_NO_PASSWORD_GIVEN, [h.alias]))
+            return error(domain.core_msg(domain.MSG_RDP_NO_PASSWORD_GIVEN, [h.alias]))
         }
     }
     known := try store.known_hosts_all()
-    return domain.RdpTarget{ hostname: h.hostname, port: h.port, user: user, domain: h.domain, password: password, width: size.width, height: size.height, trusted_fingerprint: trusted_rdp_fingerprint(known, h.hostname, h.port), graphics: graphics, rtt_ms: -1, audio: rdp_audio_of(h), microphone: h.rdp_microphone }
+    return domain.RdpTarget{ hostname: h.hostname, port: h.port, user: user, domain: h.domain, password: password, width: size.width, height: size.height, trusted_fingerprint: domain.trusted_rdp_fingerprint(known, h.hostname, h.port), graphics: graphics, rtt_ms: -1, audio: domain.rdp_audio_of(h), microphone: h.rdp_microphone }
 }
 
 // "auto" made concrete before the engine sees it (milestone 35, D-083): the link's
@@ -95,7 +95,7 @@ fn resolve_rdp_graphics[R: ports.RemoteDesktop](mut rd: R, mut t: domain.RdpTarg
     }
     rtt := rd.rd_probe_rtt(t.hostname, t.port, RDP_PROBE_TIMEOUT_MS)
     t.rtt_ms = rtt
-    t.graphics = auto_rdp_graphics(rtt, i64(t.monitors.len()))
+    t.graphics = domain.auto_rdp_graphics(rtt, i64(t.monitors.len()))
 }
 
 // One connection attempt: "" when it opened (`got` holds the desktop), else the error.
@@ -112,7 +112,7 @@ fn rd_try_open[R: ports.RemoteDesktop](mut rd: R, tab: str, t: domain.RdpTarget,
 fn rdp_host_pipeline_only[S: ports.VaultStore, U: ports.UiStateStore](store: S, ui: U, alias: str) -> bool {
     cat := load_catalog(store) or { return false }
     h := require_host(cat.hosts, alias) or { return false }
-    return rdp_pipeline_remembered(load_ui_state(ui), h.id)
+    return domain.rdp_pipeline_remembered(load_ui_state(ui), h.id)
 }
 
 // One connection attempt, and in "auto" one more with the pipeline when the server
@@ -121,14 +121,14 @@ fn rdp_host_pipeline_only[S: ports.VaultStore, U: ports.UiStateStore](store: S, 
 // next time. `t.graphics` is left as the mode last tried.
 fn rd_open_with_fallback[R: ports.RemoteDesktop, U: ports.UiStateStore](mut rd: R, mut ui: U, tab: str, mut t: domain.RdpTarget, asked: str, host_id: str, timeout_ms: i64, mut got: domain.RdpDesktop) -> str {
     failure := rd_try_open(mut rd, tab, t, timeout_ms, mut got)
-    if failure.len() == 0 || !rdp_setup_fallback(asked, t.graphics, failure) {
+    if failure.len() == 0 || !domain.rdp_setup_fallback(asked, t.graphics, failure) {
         return failure
     }
     t.graphics = "pipeline"
     t.rtt_ms = -1
     again := rd_try_open(mut rd, tab, t, timeout_ms, mut got)
     if again.len() == 0 && host_id.len() > 0 {
-        ui.ui_state_save(clean_ui_state(remember_rdp_pipeline(load_ui_state(ui), host_id))) or {}
+        ui.ui_state_save(domain.clean_ui_state(domain.remember_rdp_pipeline(load_ui_state(ui), host_id))) or {}
     }
     return again
 }
@@ -139,24 +139,24 @@ fn rd_open_with_fallback[R: ports.RemoteDesktop, U: ports.UiStateStore](mut rd: 
 // one is refused with the reason (22d2), never continued.
 fn open_remote_desktop[C: ports.Crypto, S: ports.VaultStore, R: ports.RemoteDesktop, P: ports.Prompter, U: ports.UiStateStore](crypto: C, mut store: S, session: VaultSession, mut rd: R, prompter: P, mut ui: U, req: RdpOpenRequest) -> domain.RdpDesktop! {
     if req.tab.len() == 0 {
-        return error(coded(ERR_INVALID, "a remote desktop needs a tab id"))
+        return error(domain.coded(domain.ERR_INVALID, "a remote desktop needs a tab id"))
     }
     if req.timeout_ms <= 0 {
-        return error(coded(ERR_INVALID, "the connect timeout must be positive"))
+        return error(domain.coded(domain.ERR_INVALID, "the connect timeout must be positive"))
     }
-    size := fit_desktop_size(req.width, req.height)
+    size := domain.fit_desktop_size(req.width, req.height)
     graphics := try rdp_graphics_of(req)
     mut t := try rdp_target(crypto, store, session, prompter, req.alias, size, graphics, true)
     defer crypto.wipe_text(t.password)
     cat := try load_catalog(store)
     h := try require_host(cat.hosts, req.alias)
-    resolve_rdp_graphics(mut rd, mut t, rdp_pipeline_remembered(load_ui_state(ui), h.id))
+    resolve_rdp_graphics(mut rd, mut t, domain.rdp_pipeline_remembered(load_ui_state(ui), h.id))
     mut d := domain.RdpDesktop{ width: 0, height: 0, frame_port: 0, frame_token: "", graphics: "", rtt_ms: -1 }
     failure := rd_open_with_fallback(mut rd, mut ui, req.tab, mut t, graphics, h.id, req.timeout_ms, mut d)
     if failure.len() == 0 {
         return d
     }
-    if error_code_of(failure) != ERR_HOST_KEY {
+    if domain.error_code_of(failure) != domain.ERR_HOST_KEY {
         return error(failure)
     }
     cert := rd.rd_presented_cert(req.tab)
@@ -164,25 +164,25 @@ fn open_remote_desktop[C: ports.Crypto, S: ports.VaultStore, R: ports.RemoteDesk
         return error(failure)
     }
     known := try store.known_hosts_all()
-    status := check_rdp_cert(known, h.hostname, h.port, cert.fingerprint)
-    if status == HOST_KEY_CHANGED {
-        old := trusted_rdp_fingerprint(known, h.hostname, h.port)
-        prompter.host_key_changed(rdp_cert_question(h.alias, h.hostname, h.port, cert, old))
-        addr := rdp_cert_addr(h.hostname, h.port)
-        return error(core_msg(MSG_RDP_CERT_CHANGED, [h.alias, addr, cert.fingerprint]))
+    status := domain.check_rdp_cert(known, h.hostname, h.port, cert.fingerprint)
+    if status == domain.HOST_KEY_CHANGED {
+        old := domain.trusted_rdp_fingerprint(known, h.hostname, h.port)
+        prompter.host_key_changed(domain.rdp_cert_question(h.alias, h.hostname, h.port, cert, old))
+        addr := domain.rdp_cert_addr(h.hostname, h.port)
+        return error(domain.core_msg(domain.MSG_RDP_CERT_CHANGED, [h.alias, addr, cert.fingerprint]))
     }
-    if status == HOST_KEY_KNOWN {
+    if status == domain.HOST_KEY_KNOWN {
         // The engine refused a certificate the vault trusts: report what it said.
         return error(failure)
     }
     if !prompter.prompt_available() {
-        return error(core_msg(MSG_RDP_CERT_UNKNOWN, [h.alias]))
+        return error(domain.core_msg(domain.MSG_RDP_CERT_UNKNOWN, [h.alias]))
     }
-    trusted := try prompter.prompt_host_key(rdp_cert_question(h.alias, h.hostname, h.port, cert, ""))
+    trusted := try prompter.prompt_host_key(domain.rdp_cert_question(h.alias, h.hostname, h.port, cert, ""))
     if !trusted {
-        return error(core_msg(MSG_RDP_CERT_NOT_TRUSTED, [h.alias]))
+        return error(domain.core_msg(domain.MSG_RDP_CERT_NOT_TRUSTED, [h.alias]))
     }
-    try store.known_host_put(domain.KnownHost{ addr: rdp_cert_addr(h.hostname, h.port), key_type: RDP_CERT_KEY_TYPE, fingerprint: cert.fingerprint, host_id: h.id, added_at: "" })
+    try store.known_host_put(domain.KnownHost{ addr: domain.rdp_cert_addr(h.hostname, h.port), key_type: domain.RDP_CERT_KEY_TYPE, fingerprint: cert.fingerprint, host_id: h.id, added_at: "" })
     t.trusted_fingerprint = cert.fingerprint
     again := rd_open_with_fallback(mut rd, mut ui, req.tab, mut t, graphics, h.id, req.timeout_ms, mut d)
     if again.len() > 0 {
@@ -198,12 +198,12 @@ fn open_remote_desktop[C: ports.Crypto, S: ports.VaultStore, R: ports.RemoteDesk
 // locked, the password is not saved) the session keeps its size. The clipboard goes
 // both ways meanwhile (milestone 31, D-074): text the remote copies is written to this
 // machine's clipboard, and this machine's text is sent when the remote pastes.
-fn run_remote_desktop[C: ports.Crypto, S: ports.VaultStore, R: ports.RemoteDesktop, P: ports.Prompter, K: ports.DesktopSink, L: ports.Clipboard, U: ports.UiStateStore](crypto: C, mut store: S, session: VaultSession, mut rd: R, prompter: P, mut sink: K, mut clip: L, mut ui: U, req: RdpOpenRequest) -> void! {
+pub fn run_remote_desktop[C: ports.Crypto, S: ports.VaultStore, R: ports.RemoteDesktop, P: ports.Prompter, K: ports.DesktopSink, L: ports.Clipboard, U: ports.UiStateStore](crypto: C, mut store: S, session: VaultSession, mut rd: R, prompter: P, mut sink: K, mut clip: L, mut ui: U, req: RdpOpenRequest) -> void! {
     d := open_remote_desktop(crypto, mut store, session, mut rd, prompter, mut ui, req) or err {
         rd.rd_close(req.tab)
         msg := "{err.message()}"
         // Closed while it connected: ended on purpose, not a failure.
-        if rdp_closed_by_tab(msg) {
+        if domain.rdp_closed_by_tab(msg) {
             return
         }
         return error(msg)
@@ -224,36 +224,36 @@ fn run_remote_desktop[C: ports.Crypto, S: ports.VaultStore, R: ports.RemoteDeskt
     for {
         ev := rd.rd_wait(req.tab, RDP_WAIT_MS)
         now := clip.clipboard_change_count()
-        if now != seen && now >= 0 && ev.kind != RDP_EVENT_ENDED {
+        if now != seen && now >= 0 && ev.kind != domain.RDP_EVENT_ENDED {
             seen = now
             announce_desktop_clipboard(mut rd, mut clip, req.tab) or {}
         }
-        if ev.kind == RDP_EVENT_ENDED {
+        if ev.kind == domain.RDP_EVENT_ENDED {
             rd.rd_close(req.tab)
             if ev.message.len() > 0 {
                 return error(ev.message)
             }
             return
         }
-        if ev.kind == RDP_EVENT_RESIZE {
+        if ev.kind == domain.RDP_EVENT_RESIZE {
             mut sized := cur
             sized.graphics = engine
             // A close during the reconnect (Disconnect while the tab resized) ends the tab
             // on purpose, not as a lost connection.
             reconnect_at_size(crypto, store, session, mut rd, prompter, sized, ev) or err {
                 msg := "{err.message()}"
-                if rdp_closed_by_tab(msg) {
+                if domain.rdp_closed_by_tab(msg) {
                     return
                 }
                 return error(msg)
             }
         }
-        if ev.kind == RDP_EVENT_GRAPHICS {
+        if ev.kind == domain.RDP_EVENT_GRAPHICS {
             mut next := cur
             next.graphics = ev.message
             mut failure := ""
             sw := reconnect_in_mode_or(crypto, store, session, mut rd, prompter, next, ev, rdp_host_pipeline_only(store, ui, req.alias), mut failure)
-            if rdp_closed_by_tab(failure) {
+            if domain.rdp_closed_by_tab(failure) {
                 return
             }
             if failure.len() > 0 {
@@ -265,15 +265,15 @@ fn run_remote_desktop[C: ports.Crypto, S: ports.VaultStore, R: ports.RemoteDeskt
             }
             sink.desktop_graphics(req.tab, cur.graphics, sw)
         }
-        if ev.kind == RDP_EVENT_CLIP_TEXT {
+        if ev.kind == domain.RDP_EVENT_CLIP_TEXT {
             take_remote_copy(mut clip, ev.message)
             // Our own write is the remote's text: not announced back to it.
             seen = clip.clipboard_change_count()
         }
-        if ev.kind == RDP_EVENT_CLIP_REQUEST {
+        if ev.kind == domain.RDP_EVENT_CLIP_REQUEST {
             answer_remote_paste(mut rd, mut clip, req.tab, sink.desktop_window_open())
         }
-        if ev.kind == RDP_EVENT_POINTER {
+        if ev.kind == domain.RDP_EVENT_POINTER {
             sink.desktop_cursor(req.tab, ev.cursor)
         }
     }
@@ -307,7 +307,7 @@ fn answer_remote_paste[R: ports.RemoteDesktop, L: ports.Clipboard](mut rd: R, mu
 
 // The tab took the focus: the server learns whether this machine's clipboard holds
 // text now, so a paste there can ask for it. The text itself is not sent (D-074).
-fn announce_desktop_clipboard[R: ports.RemoteDesktop, L: ports.Clipboard](mut rd: R, mut clip: L, tab: str) -> void! {
+pub fn announce_desktop_clipboard[R: ports.RemoteDesktop, L: ports.Clipboard](mut rd: R, mut clip: L, tab: str) -> void! {
     got := clip.clipboard_read() or domain.ClipboardContent{ text: "", mime: "", image: "" }
     try rd.rd_clip_announce(tab, got.text.len() > 0)
 }
@@ -319,10 +319,10 @@ fn with_layout(mut t: domain.RdpTarget, monitors: []domain.RdpMonitor) {
     if monitors.len() == 0 {
         return
     }
-    check_rdp_layout(monitors) or {
+    domain.check_rdp_layout(monitors) or {
         return
     }
-    b := layout_bounds(monitors)
+    b := domain.layout_bounds(monitors)
     t.monitors = monitors
     t.width = b.width
     t.height = b.height
@@ -331,7 +331,7 @@ fn with_layout(mut t: domain.RdpTarget, monitors: []domain.RdpMonitor) {
 // Reconnects a running tab at the size of `ev`. Leaves the session as it is when its
 // login cannot be read now; fails, with the tab closed, when the new connection does.
 fn reconnect_at_size[C: ports.Crypto, S: ports.VaultStore, R: ports.RemoteDesktop, P: ports.Prompter](crypto: C, store: S, session: VaultSession, mut rd: R, prompter: P, req: RdpOpenRequest, ev: domain.RdpEvent) -> void! {
-    size := fit_desktop_size(ev.width, ev.height)
+    size := domain.fit_desktop_size(ev.width, ev.height)
     graphics := rdp_graphics_of(req) or {
         return
     }
@@ -358,12 +358,12 @@ fn reconnect_at_size[C: ports.Crypto, S: ports.VaultStore, R: ports.RemoteDeskto
 // connection does.
 fn reconnect_in_mode[C: ports.Crypto, S: ports.VaultStore, R: ports.RemoteDesktop, P: ports.Prompter](crypto: C, store: S, session: VaultSession, mut rd: R, prompter: P, req: RdpOpenRequest, ev: domain.RdpEvent, pipeline_only: bool) -> domain.RdpModeSwitch! {
     graphics := rdp_graphics_of(req) or err {
-        return domain.RdpModeSwitch{ why: error_text_of("{err.message()}"), graphics: "", rtt_ms: -1 }
+        return domain.RdpModeSwitch{ why: domain.error_text_of("{err.message()}"), graphics: "", rtt_ms: -1 }
     }
-    size := fit_desktop_size(ev.width, ev.height)
+    size := domain.fit_desktop_size(ev.width, ev.height)
     mut t := rdp_target(crypto, store, session, prompter, req.alias, size, graphics, false) or err {
         msg := "{err.message()}"
-        if error_code_of(msg) == ERR_AUTH {
+        if domain.error_code_of(msg) == domain.ERR_AUTH {
             return domain.RdpModeSwitch{ why: "the password is not saved in the vault, so the desktop cannot reconnect in another mode", graphics: "", rtt_ms: -1 }
         }
         return domain.RdpModeSwitch{ why: "the vault cannot give the password now ({error_text_of(msg)})", graphics: "", rtt_ms: -1 }
@@ -393,41 +393,41 @@ fn reconnect_in_mode_or[C: ports.Crypto, S: ports.VaultStore, R: ports.RemoteDes
 
 // The page asks for its tab in another graphics mode (milestone 35): checked here, then
 // the watched session reconnects (run_remote_desktop).
-fn switch_desktop_graphics[R: ports.RemoteDesktop](mut rd: R, tab: str, graphics: str) -> void! {
-    if !one_of(graphics, RDP_GRAPHICS) {
-        return error(coded(ERR_INVALID, "remote desktop graphics must be auto, pipeline or compatible"))
+pub fn switch_desktop_graphics[R: ports.RemoteDesktop](mut rd: R, tab: str, graphics: str) -> void! {
+    if !domain.one_of(graphics, domain.RDP_GRAPHICS) {
+        return error(domain.coded(domain.ERR_INVALID, "remote desktop graphics must be auto, pipeline or compatible"))
     }
     try rd.rd_set_graphics(tab, graphics)
 }
 
 // Whether `flint connect <alias>` opens a remote desktop: the host is an RDP host,
 // whose desktop only the app can show (the CLI never shows one, D-070).
-fn opens_remote_desktop[S: ports.VaultStore](store: S, alias: str) -> bool! {
+pub fn opens_remote_desktop[S: ports.VaultStore](store: S, alias: str) -> bool! {
     cat := try load_catalog(store)
     h := try require_host(cat.hosts, alias)
-    return is_rdp_host(h)
+    return domain.is_rdp_host(h)
 }
 
 // The refusal for `flint connect` on an RDP host when no app serves the vault.
-fn desktop_needs_app(alias: str) -> str {
-    return coded(ERR_HOST_TYPE, "'{alias}' is an RDP host: its desktop opens in the Flint app. Open Flint and unlock this vault, then run the command again")
+pub fn desktop_needs_app(alias: str) -> str {
+    return domain.coded(domain.ERR_HOST_TYPE, "'{alias}' is an RDP host: its desktop opens in the Flint app. Open Flint and unlock this vault, then run the command again")
 }
 
 // The tab now measures `width` x `height` device pixels.
-fn resize_remote_desktop[R: ports.RemoteDesktop](mut rd: R, tab: str, width: i64, height: i64) -> void! {
-    size := fit_desktop_size(width, height)
+pub fn resize_remote_desktop[R: ports.RemoteDesktop](mut rd: R, tab: str, width: i64, height: i64) -> void! {
+    size := domain.fit_desktop_size(width, height)
     try rd.rd_resize(tab, size.width, size.height)
 }
 
-fn send_desktop_key[R: ports.RemoteDesktop](mut rd: R, tab: str, code: str, down: bool) -> void! {
+pub fn send_desktop_key[R: ports.RemoteDesktop](mut rd: R, tab: str, code: str, down: bool) -> void! {
     if code.len() == 0 || code.len() > 32 {
-        return error(coded(ERR_INVALID, "a key needs its code"))
+        return error(domain.coded(domain.ERR_INVALID, "a key needs its code"))
     }
     try rd.rd_key(tab, code, down)
 }
 
-fn send_desktop_pointer[R: ports.RemoteDesktop](mut rd: R, tab: str, p: domain.RdpPointer) -> void! {
-    try check_rdp_pointer(p)
+pub fn send_desktop_pointer[R: ports.RemoteDesktop](mut rd: R, tab: str, p: domain.RdpPointer) -> void! {
+    try domain.check_rdp_pointer(p)
     try rd.rd_pointer(tab, p)
 }
 
@@ -435,40 +435,40 @@ fn send_desktop_pointer[R: ports.RemoteDesktop](mut rd: R, tab: str, p: domain.R
 
 // The remote's Caps, Num and Scroll Lock as this machine's (RDP_LOCK_* flags), sent
 // when the tab connects and whenever it takes the focus or a lock key changes.
-fn sync_desktop_locks[R: ports.RemoteDesktop](mut rd: R, tab: str, flags: i64) -> void! {
-    if flags < 0 || flags > (RDP_LOCK_SCROLL | RDP_LOCK_NUM | RDP_LOCK_CAPS) {
-        return error(coded(ERR_INVALID, "lock keys are a set of Scroll, Num and Caps Lock"))
+pub fn sync_desktop_locks[R: ports.RemoteDesktop](mut rd: R, tab: str, flags: i64) -> void! {
+    if flags < 0 || flags > (domain.RDP_LOCK_SCROLL | domain.RDP_LOCK_NUM | domain.RDP_LOCK_CAPS) {
+        return error(domain.coded(domain.ERR_INVALID, "lock keys are a set of Scroll, Num and Caps Lock"))
     }
     try rd.rd_sync_locks(tab, flags)
 }
 
 // Types `text` into the tab as key events (rdp_type_events) and returns how many
 // characters it typed. The text is never logged and never in an error.
-fn type_into_desktop[R: ports.RemoteDesktop](mut rd: R, tab: str, text: str) -> i64! {
-    n := rdp_type_count(text)
+pub fn type_into_desktop[R: ports.RemoteDesktop](mut rd: R, tab: str, text: str) -> i64! {
+    n := domain.rdp_type_count(text)
     if n == 0 {
-        return error(coded(ERR_INVALID, "there is no text to type"))
+        return error(domain.coded(domain.ERR_INVALID, "there is no text to type"))
     }
-    if n > RDP_TYPE_MAX_CHARS {
-        return error(coded(ERR_INVALID, "{n} characters is too much to type; Type takes up to {RDP_TYPE_MAX_CHARS}"))
+    if n > domain.RDP_TYPE_MAX_CHARS {
+        return error(domain.coded(domain.ERR_INVALID, "{n} characters is too much to type; Type takes up to {domain.RDP_TYPE_MAX_CHARS}"))
     }
     klid := rd.rd_keyboard_layout(tab)
     if klid == 0 {
-        return error(coded(ERR_NETWORK, "the remote desktop is not connected"))
+        return error(domain.coded(domain.ERR_NETWORK, "the remote desktop is not connected"))
     }
     // Bounded: at most RDP_TYPE_MAX_CHARS characters, each a few paced events; a tab
     // that closes meanwhile stops it (Principle 8).
-    for e in rdp_type_events(text, klid, rd.rd_locks(tab)) {
+    for e in domain.rdp_type_events(text, klid, rd.rd_locks(tab)) {
         try rd.rd_type_event(tab, e)
     }
     return n
 }
 
 // *Type clipboard*: this machine's clipboard text typed into the tab.
-fn type_clipboard_into_desktop[R: ports.RemoteDesktop, L: ports.Clipboard](mut rd: R, mut clip: L, tab: str) -> i64! {
+pub fn type_clipboard_into_desktop[R: ports.RemoteDesktop, L: ports.Clipboard](mut rd: R, mut clip: L, tab: str) -> i64! {
     content := try clip.clipboard_read()
     if content.text.len() == 0 {
-        return error(coded(ERR_NOT_FOUND, "the clipboard holds no text"))
+        return error(domain.coded(domain.ERR_NOT_FOUND, "the clipboard holds no text"))
     }
     return try type_into_desktop(mut rd, tab, content.text)
 }
@@ -507,24 +507,24 @@ fn rdp_has_saved_password(cat: domain.Catalog, h: domain.Host) -> bool {
 // (confirm_type_password), each time: typed anywhere, a password can be read there.
 // Only into a tab connected to that host's own address: the page cannot send one
 // host's password to another.
-fn type_host_password_into_desktop[C: ports.Crypto, S: ports.VaultStore, R: ports.RemoteDesktop, P: ports.Presence](crypto: C, store: S, session: VaultSession, mut rd: R, presence: P, master: str, tab: str, alias: str) -> i64! {
+pub fn type_host_password_into_desktop[C: ports.Crypto, S: ports.VaultStore, R: ports.RemoteDesktop, P: ports.Presence](crypto: C, store: S, session: VaultSession, mut rd: R, presence: P, master: str, tab: str, alias: str) -> i64! {
     cat := try load_catalog(store)
     h := try require_host(cat.hosts, alias)
-    if !is_rdp_host(h) {
-        return error(coded(ERR_HOST_TYPE, "'{h.alias}' is an SSH host; Type types into a remote desktop"))
+    if !domain.is_rdp_host(h) {
+        return error(domain.coded(domain.ERR_HOST_TYPE, "'{h.alias}' is an SSH host; Type types into a remote desktop"))
     }
-    if rd.rd_address(tab) != rdp_cert_addr(h.hostname, h.port) {
-        return error(coded(ERR_INVALID, "this tab is not connected to '{h.alias}'"))
+    if rd.rd_address(tab) != domain.rdp_cert_addr(h.hostname, h.port) {
+        return error(domain.coded(domain.ERR_INVALID, "this tab is not connected to '{h.alias}'"))
     }
     if !rdp_has_saved_password(cat, h) {
-        return error(coded(ERR_NOT_FOUND, "'{h.alias}' has no saved password"))
+        return error(domain.coded(domain.ERR_NOT_FOUND, "'{h.alias}' has no saved password"))
     }
     // Each time: typed anywhere, a password can be read there (owner, milestone 58).
-    try confirm_presence_for(crypto, store, presence, session, master, rdp_type_password_reason(h.alias), "nothing was typed")
+    try confirm_presence_for(crypto, store, presence, session, master, domain.rdp_type_password_reason(h.alias), "nothing was typed")
     password := try rdp_saved_password(crypto, session, cat, h)
     defer crypto.wipe_text(password)
     if password.len() == 0 {
-        return error(coded(ERR_NOT_FOUND, "'{h.alias}' has no saved password"))
+        return error(domain.coded(domain.ERR_NOT_FOUND, "'{h.alias}' has no saved password"))
     }
     return try type_into_desktop(mut rd, tab, password)
 }
@@ -532,28 +532,28 @@ fn type_host_password_into_desktop[C: ports.Crypto, S: ports.VaultStore, R: port
 // What the Type menu shows (design 25c1, 25c2): the clipboard's character count (0:
 // no text) and whether the host has a saved password. Neither the text nor the
 // password leaves the core.
-type RdpTypeInfo struct {
+pub type RdpTypeInfo struct {
     clipboard_chars: i64 `json:"clipboard_chars"`
     has_password: bool `json:"has_password"`
 }
 
-fn desktop_type_info[S: ports.VaultStore, L: ports.Clipboard](store: S, mut clip: L, alias: str) -> RdpTypeInfo! {
+pub fn desktop_type_info[S: ports.VaultStore, L: ports.Clipboard](store: S, mut clip: L, alias: str) -> RdpTypeInfo! {
     // A clipboard that cannot be read counts as holding no text.
     content := clip.clipboard_read() or domain.ClipboardContent{ text: "", mime: "", image: "" }
-    chars := rdp_type_count(content.text)
+    chars := domain.rdp_type_count(content.text)
     cat := try load_catalog(store)
     h := try require_host(cat.hosts, alias)
-    return RdpTypeInfo{ clipboard_chars: chars, has_password: is_rdp_host(h) && rdp_has_saved_password(cat, h) }
+    return RdpTypeInfo{ clipboard_chars: chars, has_password: domain.is_rdp_host(h) && rdp_has_saved_password(cat, h) }
 }
 
 // What the tab's desktop has done since it opened (milestone 34).
-fn remote_desktop_stats[R: ports.RemoteDesktop](rd: R, tab: str) -> domain.RdpStats! {
+pub fn remote_desktop_stats[R: ports.RemoteDesktop](rd: R, tab: str) -> domain.RdpStats! {
     if tab.len() == 0 {
-        return error(coded(ERR_INVALID, "statistics need a tab id"))
+        return error(domain.coded(domain.ERR_INVALID, "statistics need a tab id"))
     }
     return try rd.rd_stats(tab)
 }
 
-fn close_remote_desktop[R: ports.RemoteDesktop](mut rd: R, tab: str) {
+pub fn close_remote_desktop[R: ports.RemoteDesktop](mut rd: R, tab: str) {
     rd.rd_close(tab)
 }

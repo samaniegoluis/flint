@@ -3,7 +3,7 @@ package application
 import "../domain"
 
 fn code_of_err(msg: str) -> str {
-    return error_code_of(msg)
+    return domain.error_code_of(msg)
 }
 
 test "create, lock and unlock a vault through the keychain" {
@@ -140,7 +140,7 @@ test "a vault has a stable id and a moved vault replaces its recent entry" {
     kc := new_fake_keychain()
     recents := new_fake_recents()
     s := try create_vault(crypto, mut store, kc, recents, "/v/Lab.flint", "", "correct horse", true)
-    assert(is_hex_id(s.id))
+    assert(domain.is_hex_id(s.id))
     assert_eq((try list_recents(recents))[0].id, s.id)
     store.vault_detach()
     again := try unlock_vault(crypto, mut store, kc, recents, "/v/Lab.flint", "", true)
@@ -241,7 +241,7 @@ test "the keys earlier Flints cached are removed once per machine" {
     store.vault_detach()
     // A recent vault whose file is gone is skipped.
     try touch_recent(recents, domain.RecentVault{ path: "/v/gone.flint", name: "gone", id: "" })
-    mut settings := FakeSettingsStore{ saved: default_settings() }
+    mut settings := FakeSettingsStore{ saved: domain.default_settings() }
     assert_eq(try forget_cached_keys_once(mut settings, store, kc, recents), i64(1))
     assert(settings.saved.keys_cleared)
     unlock_vault(crypto, mut store, kc, recents, "/v/a.flint", "", false) or { refused += 1 }
@@ -254,7 +254,7 @@ test "the keys earlier Flints cached are removed once per machine" {
     assert((try unlock_vault(crypto, mut store, kc, recents, "/v/a.flint", "", false)).cached)
 
     // The page cannot reset the record.
-    mut page := default_settings()
+    mut page := domain.default_settings()
     page.theme = "dark"
     saved := try save_settings(mut settings, page)
     assert(saved.keys_cleared)
@@ -308,15 +308,15 @@ type RefusingKeychain struct {
     unused: bool
 }
 
-fn (self: RefusingKeychain) keychain_save(account: str, secret: []byte) -> void! {
-    return error(coded(ERR_KEYCHAIN, "the OS keychain refused to store the vault key"))
+fn (self: RefusingKeychain) keychain_save(_account: str, _secret: []byte) -> void! {
+    return error(domain.coded(domain.ERR_KEYCHAIN, "the OS keychain refused to store the vault key"))
 }
 
-fn (self: RefusingKeychain) keychain_load(account: str) -> []byte! {
-    return error(coded(ERR_KEYCHAIN, "the OS keychain refused to read the vault key"))
+fn (self: RefusingKeychain) keychain_load(_account: str) -> []byte! {
+    return error(domain.coded(domain.ERR_KEYCHAIN, "the OS keychain refused to read the vault key"))
 }
 
-fn (self: RefusingKeychain) keychain_forget(account: str) -> void! {
+fn (self: RefusingKeychain) keychain_forget(_account: str) -> void! {
 }
 
 test "a keychain that refuses the remembered key is told apart from none cached" {
@@ -328,13 +328,13 @@ test "a keychain that refuses the remembered key is told apart from none cached"
     store.vault_detach()
     mut denied := ""
     unlock_vault(crypto, mut store, RefusingKeychain{ unused: false }, recents, "/v/K.flint", "", false) or err { denied = "{err.message()}" }
-    assert_eq(code_of_err(denied), ERR_LOCKED)
-    assert(locked_by_keychain(denied))
+    assert_eq(code_of_err(denied), domain.ERR_LOCKED)
+    assert(domain.locked_by_keychain(denied))
 
     // No key cached at all is a plain `locked`.
     try lock_vault(mut store, kc, "/v/K.flint")
     mut none_cached := ""
     unlock_vault(crypto, mut store, kc, recents, "/v/K.flint", "", false) or err { none_cached = "{err.message()}" }
-    assert_eq(code_of_err(none_cached), ERR_LOCKED)
-    assert(!locked_by_keychain(none_cached))
+    assert_eq(code_of_err(none_cached), domain.ERR_LOCKED)
+    assert(!domain.locked_by_keychain(none_cached))
 }

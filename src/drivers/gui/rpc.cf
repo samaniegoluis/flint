@@ -70,7 +70,7 @@ fn run_e2e_cap(st: GuiState, mut app: webui.App) {
     deadline := time.now_ms() + i64(e2e_timeout_ms())
     for !st.holder.quitting() {
         if time.now_ms() >= deadline {
-            write_stderr("flint-gui: the e2e run hit its cap\n")
+            process.write_stderr("flint-gui: the e2e run hit its cap\n")
             app.quit()
             return
         }
@@ -315,7 +315,7 @@ fn no_vault_session() -> application.VaultSession {
 }
 
 fn new_gui_state() -> GuiState {
-    return GuiState{ holder: new_session_holder(), sync_hints: make(sync.Channel[str]), update_hints: make(sync.Channel[str]), alert_hints: make(sync.Channel[str]) }
+    return GuiState{ holder: vault.new_session_holder(), sync_hints: make(sync.Channel[str]), update_hints: make(sync.Channel[str]), alert_hints: make(sync.Channel[str]) }
 }
 
 fn (self: GuiState) unlocked() -> bool {
@@ -356,7 +356,7 @@ fn (self: GuiState) release() {
 // gets nothing from the vault, though the vault keeps serving its grants.
 fn (self: GuiState) require_unlocked() -> void! {
     if !self.unlocked() {
-        return error(core_msg(MSG_VAULT_NOT_UNLOCKED, []))
+        return error(domain.core_msg(domain.MSG_VAULT_NOT_UNLOCKED, []))
     }
     try self.require_open_window()
 }
@@ -364,7 +364,7 @@ fn (self: GuiState) require_unlocked() -> void! {
 // The vault alone, whatever the window: opening a locked window needs it unlocked.
 fn (self: GuiState) require_unlocked_vault() -> void! {
     if !self.unlocked() {
-        return error(core_msg(MSG_VAULT_NOT_UNLOCKED, []))
+        return error(domain.core_msg(domain.MSG_VAULT_NOT_UNLOCKED, []))
     }
 }
 
@@ -372,14 +372,14 @@ fn (self: GuiState) require_unlocked_vault() -> void! {
 // (typing into a session, answering its prompts).
 fn (self: GuiState) require_open_window() -> void! {
     if self.holder.window_locked() {
-        return error(core_msg(MSG_WINDOW_LOCKED, []))
+        return error(domain.core_msg(domain.MSG_WINDOW_LOCKED, []))
     }
 }
 
 fn parse_req[T](params: str) -> T! {
     // CFIRE-UPSTREAM: CF-164 (a labeled argument keeps libstdc++'s chrono::parse out)
-    return json.parse[T](payload: params) or err {
-        return error(coded(ERR_INVALID, "malformed request"))
+    return json.parse[T](payload: params) or {
+        return error(domain.coded(domain.ERR_INVALID, "malformed request"))
     }
 }
 
@@ -392,23 +392,23 @@ fn ok_json() -> str {
 // `locked`, never a half-closed vault. Callers hold the state (`st.hold()`).
 fn close_current(mut store: vault.LockedVaultStore, mut st: GuiState) {
     if st.unlocked() {
-        gui_session_close_all()
+        uievents.gui_session_close_all()
         st.forget()
-        close_vault(mut store)
+        application.close_vault(mut store)
     }
 }
 
 // ---- App and window -------------------------------------------------------------------
 
 fn rpc_app_info(e2e: bool) -> str! {
-    return json.stringify(AppInfo{ version: version.FLINT_VERSION, os: os_name(), libssh: libssh_version(), libsodium: sodium_version(), sqlite: sqlcipher_version(), freerdp: freerdp_version(), e2e: e2e, tray: window_has_tray(e2e), system_language: system_language(e2e), messages: message_defs() })
+    return json.stringify(AppInfo{ version: version.FLINT_VERSION, os: process.os_name(), libssh: flint_ssh.libssh_version(), libsodium: flint_crypto.sodium_version(), sqlite: vault.sqlcipher_version(), freerdp: rdp.freerdp_version(), e2e: e2e, tray: window_has_tray(e2e), system_language: system_language(e2e), messages: domain.message_defs() })
 }
 
 fn system_language(e2e: bool) -> str {
     if e2e && (os.getenv("FLINT_E2E_LANGUAGE") or "").len() > 0 {
-        return language_of_locale((os.getenv("FLINT_E2E_LANGUAGE") or ""))
+        return domain.language_of_locale((os.getenv("FLINT_E2E_LANGUAGE") or ""))
     }
-    return os_language()
+    return uievents.os_language()
 }
 
 fn rpc_window_theme(params: str, mut app: webui.App) -> str! {
@@ -419,48 +419,48 @@ fn rpc_window_theme(params: str, mut app: webui.App) -> str! {
 
 fn rpc_dialog_open(params: str, app: webui.App) -> str! {
     req := try parse_req[DialogReq](params)
-    if native_file_dialogs() {
-        return json.stringify(PathReply{ path: local_slashes(choose_file_to_open(req.title)) })
+    if uievents.native_file_dialogs() {
+        return json.stringify(PathReply{ path: process.local_slashes(uievents.choose_file_to_open(req.title)) })
     }
-    return json.stringify(PathReply{ path: local_slashes(app.open_file_dialog(req.title)) })
+    return json.stringify(PathReply{ path: process.local_slashes(app.open_file_dialog(req.title)) })
 }
 
 fn rpc_dialog_save(params: str, app: webui.App) -> str! {
     req := try parse_req[DialogReq](params)
-    if native_file_dialogs() {
-        return json.stringify(PathReply{ path: local_slashes(choose_file_to_save(req.title, req.default_name)) })
+    if uievents.native_file_dialogs() {
+        return json.stringify(PathReply{ path: process.local_slashes(uievents.choose_file_to_save(req.title, req.default_name)) })
     }
-    return json.stringify(PathReply{ path: local_slashes(app.save_file_dialog(req.title, req.default_name)) })
+    return json.stringify(PathReply{ path: process.local_slashes(app.save_file_dialog(req.title, req.default_name)) })
 }
 
 fn rpc_settings_get(store: config.JsonSettingsStore) -> str! {
-    return json.stringify(try load_settings(store))
+    return json.stringify(try application.load_settings(store))
 }
 
 fn rpc_settings_set(params: str, c: flint_crypto.Sodium, mut store: config.JsonSettingsStore, st: GuiState, presence: uievents.OsPresence, sys_lang: str, mut app: webui.App) -> str! {
     try st.require_open_window()
     req := try parse_req[domain.Settings](params)
-    mut saved := try save_settings(mut store, req)
+    mut saved := try application.save_settings(mut store, req)
     if saved.ntfy_on {
         // Phone alerts turned on: this machine's topic, made the first time (milestone 63).
-        saved = try ensure_alert_topic(mut store, c)
+        saved = try application.ensure_alert_topic(mut store, c)
     }
-    st.holder.set_alerts(alert_target(saved))
+    st.holder.set_alerts(domain.alert_target(saved))
     st.holder.set_lock_after(saved.lock_after)
     // The OS presence dialog's reason follows a change of language at once.
-    presence.set_language(app_language(saved.language, sys_lang))
+    presence.set_language(domain.app_language(saved.language, sys_lang))
     st.holder.set_notify_grants(saved.notify_grants)
     st.holder.set_sudo_periods(saved.sudo_periods)
-    st.holder.set_approval_wait(approval_wait_ms(saved.approval_wait, approval_wait_override_ms()))
+    st.holder.set_approval_wait(domain.approval_wait_ms(saved.approval_wait, approval_wait_override_ms()))
     if !saved.sudo_periods {
         // *Allow sudo for a while* off ends every root period at once (milestone 57).
         st.holder.access_hold()
         mut book := st.holder.access_book()
-        ended := end_root_periods(mut book)
+        ended := domain.end_root_periods(mut book)
         st.holder.put_access_book(book)
         st.holder.access_release()
         if ended > 0 {
-            write_stderr("flint-gui: sudo for a while turned off; {ended} root period(s) ended\n")
+            process.write_stderr("flint-gui: sudo for a while turned off; {ended} root period(s) ended\n")
             app.emit("access:changed", GrantsChanged{ count: i64(book.grants.len()) })
         }
     }
@@ -475,7 +475,7 @@ fn rpc_ui_state_get(ui: config.JsonUiStateStore, store: vault.LockedVaultStore, 
     if st.unlocked() {
         vault = st.vault_session().id
     }
-    return json.stringify(try ui_state_paths(ui, store, vault))
+    return json.stringify(try application.ui_state_paths(ui, store, vault))
 }
 
 fn rpc_ui_state_set(params: str, mut ui: config.JsonUiStateStore, store: vault.LockedVaultStore, st: GuiState) -> str! {
@@ -488,17 +488,17 @@ fn rpc_ui_state_set(params: str, mut ui: config.JsonUiStateStore, store: vault.L
     } else {
         view.collapsed = []
     }
-    return json.stringify(try save_ui_state_paths(mut ui, store, vault, view))
+    return json.stringify(try application.save_ui_state_paths(mut ui, store, vault, view))
 }
 
 fn rpc_fonts_mono(catalog: fonts.OsFontCatalog) -> str! {
-    return json.stringify(FontList{ fonts: try list_mono_fonts(catalog) })
+    return json.stringify(FontList{ fonts: try application.list_mono_fonts(catalog) })
 }
 
 // ---- Vaults -------------------------------------------------------------------------
 
 fn rpc_vault_recents(store: vault.LockedVaultStore, recents: config.JsonRecentStore) -> str! {
-    return json.stringify(try recent_vault_views(store, recents))
+    return json.stringify(try application.recent_vault_views(store, recents))
 }
 
 // An empty password tries the keychain; the error code `locked` means it has no key.
@@ -514,24 +514,24 @@ fn rpc_vault_unlock(req: UnlockReq, c: flint_crypto.Sodium, mut store: vault.Loc
         try st.require_open_window()
     }
     if req.password.len() == 0 && st.holder.relocked(req.path) {
-        return error(core_msg(MSG_VAULT_RELOCKED, []))
+        return error(domain.core_msg(domain.MSG_VAULT_RELOCKED, []))
     }
     st.hold()
     defer st.release()
-    (asked, caller) := st.holder.ask()
+    (asked, _caller) := st.holder.ask()
     asking := st.holder.access_book().asking
     close_current(mut store, mut st)
-    s := unlock_vault(c, mut store, kc, recents, req.path, req.password, req.remember) or err {
+    s := application.unlock_vault(c, mut store, kc, recents, req.path, req.password, req.remember) or err {
         msg := "{err.message()}"
-        if req.password.len() == 0 && locked_by_keychain(msg) {
+        if req.password.len() == 0 && domain.locked_by_keychain(msg) {
             // A Keychain *Deny* (milestone 61): `vault status` says so.
-            st.holder.set_lock_reason(LOCK_REASON_KEYCHAIN_DENIED)
+            st.holder.set_lock_reason(domain.LOCK_REASON_KEYCHAIN_DENIED)
         }
         return error(msg)
     }
     if req.password.len() > 0 && !req.remember && st.holder.remembered(s.path) {
         // Unticked: this computer no longer remembers it.
-        _ = forget_vault_key(store, kc, s.path)
+        _ = application.forget_vault_key(store, kc, s.path)
     }
     st.holder.set_remembered(s.path, s.cached)
     st.adopt(s)
@@ -539,8 +539,8 @@ fn rpc_vault_unlock(req: UnlockReq, c: flint_crypto.Sodium, mut store: vault.Loc
     // What aged out of the activity log while the vault was closed (milestone 15). A
     // failure is reported by its code only (Principle 5) and does not stop the unlock.
     mut ts := store
-    prune_activity(mut ts, time.unix_seconds()) or err {
-        write_stderr("flint-gui: the activity log was not pruned ({error_code_of("{err.message()}")})\n")
+    application.prune_activity(mut ts, time.unix_seconds()) or err {
+        process.write_stderr("flint-gui: the activity log was not pruned ({error_code_of("{err.message()}")})\n")
     }
     if req.password.len() > 0 {
         // The master password just typed opens the window too.
@@ -550,20 +550,20 @@ fn rpc_vault_unlock(req: UnlockReq, c: flint_crypto.Sodium, mut store: vault.Loc
         st.holder.set_ask("", "")
         // `token create` and `exec --sudo` are never allowed here: only the approval
         // window allows them.
-        if req.allow && req.password.len() > 0 && asking.len() > 0 && allowed_at_unlock(asking[0].need) {
+        if req.allow && req.password.len() > 0 && asking.len() > 0 && domain.allowed_at_unlock(asking[0].need) {
             allow_on_unlock(asking[0], c, store, st, s.id)
         }
     }
-    return session_info(s)
+    return application.session_info(s)
 }
 
 // The unlock screen's "Allow" for the caller that asked: the grant the approval
 // window would propose, confirmed by the master password just typed.
 fn allow_on_unlock(asked: domain.Approval, c: flint_crypto.Sodium, store: vault.LockedVaultStore, st: GuiState, vault_id: str) {
-    cat := load_catalog(store) or domain.Catalog{ groups: [], hosts: [], keys: [], creds: [] }
+    cat := application.load_catalog(store) or domain.Catalog{ groups: [], hosts: [], keys: [], creds: [] }
     mut ap := asked
     ap.vault_id = vault_id
-    mut g := proposed_grant(ap, cat, hex.encode(c.random_bytes(8)), time.now_ms()) or {
+    mut g := domain.proposed_grant(ap, cat, hex.encode(c.random_bytes(8)), time.now_ms()) or {
         return
     }
     g.notify = st.holder.notify_grants()
@@ -572,7 +572,7 @@ fn allow_on_unlock(asked: domain.Approval, c: flint_crypto.Sodium, store: vault.
     book.grants.push(g)
     st.holder.put_access_book(book)
     st.holder.access_release()
-    write_stderr("flint-gui: allowed {g.label} ({g.duration}) at unlock\n")
+    process.write_stderr("flint-gui: allowed {g.label} ({g.duration}) at unlock\n")
 }
 
 // Locks the vault now (the Lock button, the palette, ⌘L).
@@ -600,7 +600,7 @@ fn rpc_unlock_request(st: GuiState, recents: config.JsonRecentStore) -> str! {
     mut command := domain.CommandText{ text: caller, cut: 0 }
     if asking.len() > 0 {
         command = asking[0].command
-        if allowed_at_unlock(asking[0].need) {
+        if domain.allowed_at_unlock(asking[0].need) {
             label = asking[0].label
         }
     }
@@ -618,10 +618,10 @@ fn rpc_vault_create(req: CreateReq, c: flint_crypto.Sodium, mut store: vault.Loc
     st.hold()
     defer st.release()
     close_current(mut store, mut st)
-    s := try create_vault(c, mut store, kc, recents, req.path, req.name, req.password, req.remember)
+    s := try application.create_vault(c, mut store, kc, recents, req.path, req.name, req.password, req.remember)
     st.holder.set_remembered(s.path, s.cached)
     st.adopt(s)
-    return session_info(s)
+    return application.session_info(s)
 }
 
 // Closes the vault in this window: every session ends and its keys leave memory.
@@ -630,9 +630,9 @@ fn rpc_vault_close(mut store: vault.LockedVaultStore, mut st: GuiState) -> str! 
     try st.require_open_window()
     st.hold()
     defer st.release()
-    gui_session_close_all()
+    uievents.gui_session_close_all()
     st.forget()
-    close_vault(mut store)
+    application.close_vault(mut store)
     return ok_json()
 }
 
@@ -642,10 +642,10 @@ fn rpc_vault_forget_key(params: str, mut store: vault.LockedVaultStore, kc: flin
     st.hold()
     defer st.release()
     if st.unlocked() && req.path == st.vault_session().path {
-        gui_session_close_all()
+        uievents.gui_session_close_all()
         st.forget()
     }
-    try lock_vault(mut store, kc, req.path)
+    try application.lock_vault(mut store, kc, req.path)
     st.holder.set_remembered(req.path, false)
     return ok_json()
 }
@@ -663,11 +663,11 @@ fn rpc_vault_forget(params: str, mut store: vault.LockedVaultStore, kc: flint_ke
     st.hold()
     defer st.release()
     if st.unlocked() && req.path == st.vault_session().path {
-        gui_session_close_all()
+        uievents.gui_session_close_all()
         st.forget()
     }
     st.holder.set_remembered(req.path, false)
-    return json.stringify(try forget_recent(mut store, kc, recents, req.path))
+    return json.stringify(try application.forget_recent(mut store, kc, recents, req.path))
 }
 
 // Renames the vault open in this window; another vault must be opened first.
@@ -676,9 +676,9 @@ fn rpc_vault_rename(params: str, mut store: vault.LockedVaultStore, recents: con
     st.hold()
     defer st.release()
     try st.require_unlocked()
-    s := try rename_vault(mut store, recents, st.vault_session(), req.name)
+    s := try application.rename_vault(mut store, recents, st.vault_session(), req.name)
     st.adopt(s)
-    return json.stringify(session_info(s))
+    return json.stringify(application.session_info(s))
 }
 
 // Changes the open vault's master password (milestone 40, D-095). On a worker: two
@@ -691,9 +691,9 @@ fn rpc_vault_passwd(req: PasswdReq, c: flint_crypto.Sodium, mut store: vault.Loc
     defer st.release()
     try st.require_unlocked()
     old := st.vault_session()
-    strength := password_strength(req.password, old.name)
+    strength := application.password_strength(req.password, old.name)
     // A connected vault: in step with its server first, then uploaded (milestone 43).
-    s := try change_master_password_synced(c, mut store, kc, new_json_remote_link_store(flint_config_dir()), new_http_vault_remote(), kc, old, req.current, req.password, time.unix_seconds() * 1000)
+    s := try application.change_master_password_synced(c, mut store, kc, config.new_json_remote_link_store(config.flint_config_dir()), vaultremote.new_http_vault_remote(), kc, old, req.current, req.password, time.unix_seconds() * 1000)
     st.holder.set_remembered(s.path, s.cached)
     st.adopt(s)
     return PasswdReply{ remembered: s.cached, strength: strength }
@@ -707,56 +707,56 @@ fn rpc_password_strength(params: str, st: GuiState) -> str! {
     if st.unlocked() {
         name = st.vault_session().name
     }
-    return json.stringify(password_strength(req.password, name))
+    return json.stringify(application.password_strength(req.password, name))
 }
 
 fn rpc_vault_status(mut store: vault.LockedVaultStore, st: GuiState) -> str! {
     try st.require_unlocked()
-    return json.stringify(try open_vault_status(store, store, st.vault_session()))
+    return json.stringify(try application.open_vault_status(store, store, st.vault_session()))
 }
 
 // ---- Catalog ------------------------------------------------------------------------
 
 fn rpc_catalog(store: vault.LockedVaultStore, st: GuiState) -> str! {
     try st.require_unlocked()
-    return json.stringify(try catalog_view(store))
+    return json.stringify(try application.catalog_view(store))
 }
 
 fn rpc_group_add(params: str, c: flint_crypto.Sodium, mut store: vault.LockedVaultStore, st: GuiState) -> str! {
     try st.require_unlocked()
     req := try parse_req[PathReq](params)
-    return json.stringify(try add_group(c, mut store, req.path))
+    return json.stringify(try application.add_group(c, mut store, req.path))
 }
 
 fn rpc_group_rename(params: str, mut store: vault.LockedVaultStore, st: GuiState) -> str! {
     try st.require_unlocked()
     req := try parse_req[RenameReq](params)
-    return json.stringify(try rename_group(mut store, req.name, req.new_name))
+    return json.stringify(try application.rename_group(mut store, req.name, req.new_name))
 }
 
 fn rpc_group_rm(params: str, mut store: vault.LockedVaultStore, st: GuiState) -> str! {
     try st.require_unlocked()
     req := try parse_req[PathReq](params)
-    return json.stringify(try remove_group(mut store, req.path))
+    return json.stringify(try application.remove_group(mut store, req.path))
 }
 
 fn rpc_host_add(params: str, c: flint_crypto.Sodium, mut store: vault.LockedVaultStore, st: GuiState) -> str! {
     try st.require_unlocked()
     req := try parse_req[application.HostPatch](params)
-    return json.stringify(try add_host(c, mut store, st.vault_session(), req))
+    return json.stringify(try application.add_host(c, mut store, st.vault_session(), req))
 }
 
 fn rpc_host_edit(params: str, c: flint_crypto.Sodium, mut store: vault.LockedVaultStore, st: GuiState) -> str! {
     try st.require_unlocked()
     target := try parse_req[TargetReq](params)
     patch := try parse_req[application.HostPatch](params)
-    return json.stringify(try edit_host(c, mut store, st.vault_session(), target.target, patch))
+    return json.stringify(try application.edit_host(c, mut store, st.vault_session(), target.target, patch))
 }
 
 fn rpc_host_rm(params: str, mut store: vault.LockedVaultStore, st: GuiState) -> str! {
     try st.require_unlocked()
     req := try parse_req[NameReq](params)
-    return json.stringify(try remove_host(mut store, req.name))
+    return json.stringify(try application.remove_host(mut store, req.name))
 }
 
 // The key comes pasted (`private_key`) or from a file the person picked (`file`).
@@ -765,42 +765,42 @@ fn rpc_key_add(params: str, c: flint_crypto.Sodium, mut store: vault.LockedVault
     req := try parse_req[KeyAddReq](params)
     mut content := req.private_key
     if req.file.len() > 0 {
-        content = fs.read_text(req.file) or err {
-            return error(coded(ERR_NOT_FOUND, "cannot read the key file {req.file}"))
+        content = fs.read_text(req.file) or {
+            return error(domain.coded(domain.ERR_NOT_FOUND, "cannot read the key file {req.file}"))
         }
     }
-    return json.stringify(try add_key(c, mut store, inspector, st.vault_session(), req.name, content, req.passphrase))
+    return json.stringify(try application.add_key(c, mut store, inspector, st.vault_session(), req.name, content, req.passphrase))
 }
 
 fn rpc_key_rename(params: str, mut store: vault.LockedVaultStore, st: GuiState) -> str! {
     try st.require_unlocked()
     req := try parse_req[RenameReq](params)
-    return json.stringify(try rename_key(mut store, req.name, req.new_name))
+    return json.stringify(try application.rename_key(mut store, req.name, req.new_name))
 }
 
 fn rpc_key_rm(params: str, mut store: vault.LockedVaultStore, st: GuiState) -> str! {
     try st.require_unlocked()
     req := try parse_req[NameReq](params)
-    return json.stringify(try remove_key(mut store, req.name))
+    return json.stringify(try application.remove_key(mut store, req.name))
 }
 
 fn rpc_cred_add(params: str, c: flint_crypto.Sodium, mut store: vault.LockedVaultStore, st: GuiState) -> str! {
     try st.require_unlocked()
     req := try parse_req[application.CredPatch](params)
-    return json.stringify(try add_cred(c, mut store, st.vault_session(), req))
+    return json.stringify(try application.add_cred(c, mut store, st.vault_session(), req))
 }
 
 fn rpc_cred_edit(params: str, c: flint_crypto.Sodium, mut store: vault.LockedVaultStore, st: GuiState) -> str! {
     try st.require_unlocked()
     target := try parse_req[TargetReq](params)
     patch := try parse_req[application.CredPatch](params)
-    return json.stringify(try edit_cred(c, mut store, st.vault_session(), target.target, patch))
+    return json.stringify(try application.edit_cred(c, mut store, st.vault_session(), target.target, patch))
 }
 
 fn rpc_cred_rm(params: str, mut store: vault.LockedVaultStore, st: GuiState) -> str! {
     try st.require_unlocked()
     req := try parse_req[NameReq](params)
-    return json.stringify(try remove_cred(mut store, req.name))
+    return json.stringify(try application.remove_cred(mut store, req.name))
 }
 
 // ---- Reveal and copy (D-029) ---------------------------------------------------------
@@ -810,14 +810,14 @@ fn rpc_cred_rm(params: str, mut store: vault.LockedVaultStore, st: GuiState) -> 
 fn rpc_secret_reveal(params: str, c: flint_crypto.Sodium, store: vault.LockedVaultStore, st: GuiState) -> str! {
     try st.require_unlocked()
     req := try parse_req[SecretReq](params)
-    return json.stringify(RevealReply{ value: try reveal_password(c, store, st.vault_session(), req.kind, req.name) })
+    return json.stringify(RevealReply{ value: try application.reveal_password(c, store, st.vault_session(), req.kind, req.name) })
 }
 
 // Copies a saved password; the value never crosses RPC.
 fn rpc_secret_copy(params: str, c: flint_crypto.Sodium, store: vault.LockedVaultStore, mut clip: uievents.OsClipboard, st: GuiState) -> str! {
     try st.require_unlocked()
     req := try parse_req[SecretReq](params)
-    try copy_password(c, store, st.vault_session(), mut clip, req.kind, req.name)
+    try application.copy_password(c, store, st.vault_session(), mut clip, req.kind, req.name)
     return ok_json()
 }
 
@@ -826,7 +826,7 @@ fn rpc_secret_copy(params: str, c: flint_crypto.Sodium, store: vault.LockedVault
 // clipboard API refuses a write no click started (Tether 57f8c51).
 fn rpc_terminal_clipboard(params: str, mut clip: uievents.OsClipboard) -> str! {
     req := try parse_req[NameReq](params)
-    return json.stringify(try osc52_copy(mut clip, req.name))
+    return json.stringify(try application.osc52_copy(mut clip, req.name))
 }
 
 // Forgets a host's key: the explicit step before reconnecting to a host whose key
@@ -834,7 +834,7 @@ fn rpc_terminal_clipboard(params: str, mut clip: uievents.OsClipboard) -> str! {
 fn rpc_known_host_rm(params: str, mut store: vault.LockedVaultStore, st: GuiState) -> str! {
     try st.require_unlocked()
     req := try parse_req[NameReq](params)
-    return json.stringify(try remove_known_host(mut store, req.name))
+    return json.stringify(try application.remove_known_host(mut store, req.name))
 }
 
 // ---- Sessions ---------------------------------------------------------------------------
@@ -846,16 +846,16 @@ fn session_open_check(params: str, st: GuiState) -> SessionOpenReq! {
     // cannot be returned (CFIRE-UPSTREAM: CF-162).
     // CFIRE-UPSTREAM: CF-164 (a labeled argument keeps libstdc++'s chrono::parse out)
     req := json.parse[SessionOpenReq](payload: params) or {
-        return error(coded(ERR_INVALID, "malformed request"))
+        return error(domain.coded(domain.ERR_INVALID, "malformed request"))
     }
     if req.session.len() == 0 || req.alias.len() == 0 {
-        return error(coded(ERR_INVALID, "a session needs an id and a host alias"))
+        return error(domain.coded(domain.ERR_INVALID, "a session needs an id and a host alias"))
     }
-    if gui_session_count() >= MAX_SESSIONS {
-        return error(coded(ERR_CONFLICT, "{MAX_SESSIONS} sessions are open; close one first"))
+    if uievents.gui_session_count() >= MAX_SESSIONS {
+        return error(domain.coded(domain.ERR_CONFLICT, "{MAX_SESSIONS} sessions are open; close one first"))
     }
-    if !gui_session_open(req.session, req.cols, req.rows) {
-        return error(coded(ERR_CONFLICT, "session '{req.session}' already exists"))
+    if !uievents.gui_session_open(req.session, req.cols, req.rows) {
+        return error(domain.coded(domain.ERR_CONFLICT, "session '{req.session}' already exists"))
     }
     return req
 }
@@ -863,30 +863,30 @@ fn session_open_check(params: str, st: GuiState) -> SessionOpenReq! {
 // The connection itself, on a worker thread. It ends with a "session:state" event:
 // the shell's exit status, or an error code.
 fn run_gui_session(mut app: webui.App, c: flint_crypto.Sodium, mut store: vault.LockedVaultStore, vs: application.VaultSession, req: SessionOpenReq) {
-    mut opts := default_connect_options()
+    mut opts := application.default_connect_options()
     opts.accept_new_host_key = req.accept_new_host_key
     opts.run_initial_command = !req.no_command
     // Lends the session to the Files view once its shell is open (D-053).
-    mut link := new_shared_link(req.session)
-    mut term := new_gui_terminal(app, req.session)
-    prompter := new_gui_prompter(app, req.session)
-    mut clock := new_system_clock()
+    mut link := flint_ssh.new_shared_link(req.session)
+    mut term := uievents.new_gui_terminal(app, req.session)
+    prompter := uievents.new_gui_prompter(app, req.session)
+    mut clock := process.new_system_clock()
     mut result: i64! = 0
     if req.files_only {
         // The second Files pane on a host with no open tab: no PTY (D-056).
-        result = hold_files_session(c, mut store, vs, mut link, prompter, mut term, mut clock, req.alias, opts)
+        result = application.hold_files_session(c, mut store, vs, mut link, prompter, mut term, mut clock, req.alias, opts)
     } else {
-        result = connect_host(c, mut store, vs, mut link, prompter, mut term, mut clock, req.alias, "xterm-256color", opts)
+        result = application.connect_host(c, mut store, vs, mut link, prompter, mut term, mut clock, req.alias, "xterm-256color", opts)
     }
     link.link_hangup()
     match result {
-        Ok(code) => emit_session_state(mut app, req.session, "ended", "", "", code),
+        Ok(code) => uievents.emit_session_state(mut app, req.session, "ended", "", "", code),
         Err(e) => {
             msg := "{e.message()}"
-            emit_session_state(mut app, req.session, "ended", error_code_of(msg), error_text_of(msg), -1)
+            uievents.emit_session_state(mut app, req.session, "ended", domain.error_code_of(msg), domain.error_text_of(msg), -1)
         },
     }
-    gui_session_drop(req.session)
+    uievents.gui_session_drop(req.session)
 }
 
 // ---- Testing a host ------------------------------------------------------------------
@@ -899,17 +899,17 @@ fn host_test_check(params: str, st: GuiState) -> HostTestReq! {
     // cannot be returned (CFIRE-UPSTREAM: CF-162).
     // CFIRE-UPSTREAM: CF-164 (a labeled argument keeps libstdc++'s chrono::parse out)
     req := json.parse[HostTestReq](payload: params) or {
-        return error(coded(ERR_INVALID, "malformed request"))
+        return error(domain.coded(domain.ERR_INVALID, "malformed request"))
     }
     _ = try parse_req[application.HostPatch](params)
     if req.session.len() == 0 {
-        return error(coded(ERR_INVALID, "a host test needs an id"))
+        return error(domain.coded(domain.ERR_INVALID, "a host test needs an id"))
     }
-    if gui_session_count() >= MAX_SESSIONS {
-        return error(coded(ERR_CONFLICT, "{MAX_SESSIONS} sessions are open; close one first"))
+    if uievents.gui_session_count() >= MAX_SESSIONS {
+        return error(domain.coded(domain.ERR_CONFLICT, "{MAX_SESSIONS} sessions are open; close one first"))
     }
-    if !gui_session_open(req.session, 80, 24) {
-        return error(coded(ERR_CONFLICT, "session '{req.session}' already exists"))
+    if !uievents.gui_session_open(req.session, 80, 24) {
+        return error(domain.coded(domain.ERR_CONFLICT, "session '{req.session}' already exists"))
     }
     return req
 }
@@ -917,22 +917,22 @@ fn host_test_check(params: str, st: GuiState) -> HostTestReq! {
 // The test itself, on a worker thread: the editor's unsaved form (`target` "" for a
 // new host). It ends with a "host:test" event.
 fn run_gui_host_test(mut app: webui.App, c: flint_crypto.Sodium, mut store: vault.LockedVaultStore, vs: application.VaultSession, req: HostTestReq, patch: application.HostPatch) {
-    mut opts := default_connect_options()
+    mut opts := application.default_connect_options()
     opts.accept_new_host_key = req.accept_new_host_key
-    mut link := new_ssh_link()
-    mut clock := new_system_clock()
-    prompter := new_gui_prompter(app, req.session)
-    r := test_host_draft(c, mut store, vs, mut link, prompter, mut clock, req.target, patch, opts) or err {
+    mut link := flint_ssh.new_ssh_link()
+    mut clock := process.new_system_clock()
+    prompter := uievents.new_gui_prompter(app, req.session)
+    r := application.test_host_draft(c, mut store, vs, mut link, prompter, mut clock, req.target, patch, opts) or err {
         link.link_hangup()
         msg := "{err.message()}"
-        m := core_message_of(msg)
+        m := domain.core_message_of(msg)
         app.emit("host:test", HostTestEvent{ session: req.session, code: m.code, message: m.message, id: m.id, params: m.params, host: "", target: "", hops: 0, duration_ms: 0 })
-        gui_session_drop(req.session)
+        uievents.gui_session_drop(req.session)
         return
     }
     link.link_hangup()
     app.emit("host:test", HostTestEvent{ session: req.session, code: "", message: "", id: "", params: [], host: r.host, target: r.target, hops: r.hops, duration_ms: r.duration_ms })
-    gui_session_drop(req.session)
+    uievents.gui_session_drop(req.session)
 }
 
 // Typing, answering a prompt and closing a tab are refused while the window is
@@ -940,27 +940,27 @@ fn run_gui_host_test(mut app: webui.App, c: flint_crypto.Sodium, mut store: vaul
 fn rpc_session_input(params: str, st: GuiState) -> str! {
     try st.require_open_window()
     req := try parse_req[SessionInputReq](params)
-    try gui_session_input(req.session, req.data)
+    try uievents.gui_session_input(req.session, req.data)
     return ok_json()
 }
 
 fn rpc_session_resize(params: str) -> str! {
     req := try parse_req[SessionResizeReq](params)
-    try gui_session_resize(req.session, req.cols, req.rows)
+    try uievents.gui_session_resize(req.session, req.cols, req.rows)
     return ok_json()
 }
 
 fn rpc_session_answer(params: str, st: GuiState) -> str! {
     try st.require_open_window()
     req := try parse_req[SessionAnswerReq](params)
-    try gui_session_answer(req.session, req.prompt, req.ok, req.value)
+    try uievents.gui_session_answer(req.session, req.prompt, req.ok, req.value)
     return ok_json()
 }
 
 fn rpc_session_close(params: str, st: GuiState) -> str! {
     try st.require_open_window()
     req := try parse_req[SessionReq](params)
-    _ = gui_session_close(req.session)
+    _ = uievents.gui_session_close(req.session)
     return ok_json()
 }
 
@@ -978,18 +978,18 @@ fn rpc_e2e_report(params: str, mut app: webui.App) -> str! {
 
 // The headless run's private clipboard, to check an OSC 52 copy. Bound only in that run.
 fn rpc_e2e_clipboard(clip: uievents.OsClipboard) -> str! {
-    return json.stringify(NameReq{ name: clipboard_read_text(clip.board) })
+    return json.stringify(NameReq{ name: uievents.clipboard_read_text(clip.board) })
 }
 
 // Puts a PNG (base64 in `name`) alone on the run's clipboard, as a screenshot tool
 // does, for the paste whose event arrives empty (milestone 25 on Linux).
 fn rpc_e2e_clipboard_png(params: str, clip: uievents.OsClipboard) -> str! {
     req := try parse_req[NameReq](params)
-    png := base64.decode_str(req.name) or err {
-        return error(coded(ERR_INVALID, "not base64"))
+    png := base64.decode_str(req.name) or {
+        return error(domain.coded(domain.ERR_INVALID, "not base64"))
     }
-    if clipboard_copy_png(clip.board, png) != 0 {
-        return error(coded(ERR_IO, "the clipboard refused the image"))
+    if uievents.clipboard_copy_png(clip.board, png) != 0 {
+        return error(domain.coded(domain.ERR_IO, "the clipboard refused the image"))
     }
     return ok_json()
 }
@@ -1005,7 +1005,7 @@ fn rpc_e2e_clipboard_set(params: str, clip: uievents.OsClipboard) -> str! {
 
 fn rpc_e2e_log(params: str, mut app: webui.App) -> str! {
     req := try parse_req[NameReq](params)
-    write_stderr("[page] {req.name}\n")
+    process.write_stderr("[page] {req.name}\n")
     // The last line, for the verdict when the page never reports (main.cf).
     app.set_state("e2e_last", req.name)
     return ok_json()

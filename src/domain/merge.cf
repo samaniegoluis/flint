@@ -21,24 +21,24 @@ package domain
 
 import "core:encoding/hex"
 
-MERGE_KIND_GROUP: str = "group"
-MERGE_KIND_HOST: str = "host"
-MERGE_KIND_KEY: str = "key"
-MERGE_KIND_CRED: str = "credential"
-MERGE_KIND_KNOWN_HOST: str = "known_host"
-MERGE_KIND_TUNNEL: str = "tunnel"
-MERGE_KIND_TOKEN: str = "token"
+pub MERGE_KIND_GROUP: str = "group"
+pub MERGE_KIND_HOST: str = "host"
+pub MERGE_KIND_KEY: str = "key"
+pub MERGE_KIND_CRED: str = "credential"
+pub MERGE_KIND_KNOWN_HOST: str = "known_host"
+pub MERGE_KIND_TUNNEL: str = "tunnel"
+pub MERGE_KIND_TOKEN: str = "token"
 
 // A deleted record, kept as a marker so a copy that still holds it learns it is gone.
 // `id` is the record's id (a known host's address).
-type Tombstone struct {
+pub type Tombstone struct {
     kind: str
     id: str
     deleted_at: i64
 }
 
 // Every synced row of a vault, with its tombstones.
-type VaultRecords struct {
+pub type VaultRecords struct {
     groups: []Group
     hosts: []Host
     keys: []SshKey
@@ -54,14 +54,14 @@ type VaultRecords struct {
 // holds the name it had), `unlinked` (`detail` names the reference cleared), `cut`
 // (a group loop broken) or `dropped` (a tunnel of a host gone). `name` is the record
 // as a person knows it: an alias, a name, an address, `host:tunnel`. Never a secret.
-type MergeChange struct {
+pub type MergeChange struct {
     kind:   str `json:"kind"`
     name:   str `json:"name"`
     change: str `json:"change"`
     detail: str `json:"detail"`
 }
 
-type MergeReport struct {
+pub type MergeReport struct {
     added:   i64           `json:"added"`
     updated: i64           `json:"updated"`
     removed: i64           `json:"removed"`
@@ -70,7 +70,7 @@ type MergeReport struct {
     notes:   []MergeChange `json:"notes"`
 }
 
-type MergeResult struct {
+pub type MergeResult struct {
     records: VaultRecords
     report: MergeReport
 }
@@ -294,7 +294,7 @@ fn live_ids_groups(list: []Group) -> map[str]bool {
 
 // Merges `other` (a conflict copy, or the server's copy) into `local`. Both must be
 // copies of the same vault: same secrets key, so sealed fields move as they are.
-fn merge_vaults(local: VaultRecords, other: VaultRecords) -> MergeResult {
+pub fn merge_vaults(local: VaultRecords, other: VaultRecords) -> MergeResult {
     mut w := MergeWork{ records: VaultRecords{}, notes: [] }
 
     // Groups.

@@ -5,11 +5,11 @@ package domain
 // count or position (a byte loop, a cap, binary data carried in a `str`), as cfire
 // 0.10's `substr` did. It copies `s` whole first: there is no byte view of a `str`.
 // CFIRE-UPSTREAM: CF-155
-fn byte_slice(s: str, a: usize, b: usize) -> str {
+pub fn byte_slice(s: str, a: usize, b: usize) -> str {
     return str(s.bytes()[a..b])
 }
 
 // `byte_slice` from `a` to the end.
-fn byte_tail(s: str, a: usize) -> str {
+pub fn byte_tail(s: str, a: usize) -> str {
     return byte_slice(s, a, s.len())
 }

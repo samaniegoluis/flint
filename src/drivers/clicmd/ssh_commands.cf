@@ -4,11 +4,9 @@ package clicmd
 // flags, calls one use case and formats the result (Principle 2). `connect` and
 // `exec` return the remote exit status, which becomes Flint's own (as with ssh).
 
-import "core:os"
 import "core:json"
 import "../../adapters/config"
 import "../../adapters/crypto" as flint_crypto
-import "../../adapters/keychain" as flint_keychain
 import "../../adapters/process"
 import "../../adapters/ssh" as flint_ssh
 import "../../adapters/vault"
@@ -27,7 +25,7 @@ type ForgottenKey struct {
 }
 
 fn connect_options(p: ParsedArgs) -> application.ConnectOptions! {
-    mut opts := default_connect_options()
+    mut opts := application.default_connect_options()
     if p.has_flag("--timeout") {
         opts.timeout_secs = try parse_seconds_flag("--timeout", p.flag_value("--timeout"))
     }
@@ -64,19 +62,19 @@ fn remote_command(p: ParsedArgs) -> str {
 fn cmd_connect[M: ports.Terminal, P: ports.Prompter](p: ParsedArgs, sec: SecretInput, as_json: bool, c: flint_crypto.Sodium, mut store: vault.LockedVaultStore, src: VaultSource, recents: config.JsonRecentStore, mut term: M, prompter: P, term_name: str) -> i32! {
     try p.allow_flags("connect", ["--timeout", "--accept-new-host-key", "--no-command"])
     if p.positionals.len() != 2 || p.has_rest {
-        return error(coded(ERR_USAGE, "usage: flint connect <alias> [--timeout <secs>] [--accept-new-host-key] [--no-command]"))
+        return error(domain.coded(domain.ERR_USAGE, "usage: flint connect <alias> [--timeout <secs>] [--accept-new-host-key] [--no-command]"))
     }
     opts := try connect_options(p)
     alias := p.positional(1)
     s := try open_target(p, sec, c, mut store, src, recents)
     // Served by the app, an RDP host's connect opened its tab before this ran
     // (desktop_opened_frame); here no app serves the vault.
-    if try opens_remote_desktop(store, alias) {
-        return error(desktop_needs_app(alias))
+    if try application.opens_remote_desktop(store, alias) {
+        return error(application.desktop_needs_app(alias))
     }
-    mut link := new_ssh_link()
-    mut clock := new_system_clock()
-    code := try connect_host(c, mut store, s, mut link, prompter, mut term, mut clock, alias, term_name, opts)
+    mut link := flint_ssh.new_ssh_link()
+    mut clock := process.new_system_clock()
+    code := try application.connect_host(c, mut store, s, mut link, prompter, mut term, mut clock, alias, term_name, opts)
     if as_json {
         say(json.stringify(SessionEnd{ host: alias, exit_code: code }))
     }
@@ -86,27 +84,27 @@ fn cmd_connect[M: ports.Terminal, P: ports.Prompter](p: ParsedArgs, sec: SecretI
 fn cmd_exec[P: ports.Prompter, O: ports.ExecSink](p: ParsedArgs, sec: SecretInput, as_json: bool, c: flint_crypto.Sodium, mut store: vault.LockedVaultStore, src: VaultSource, recents: config.JsonRecentStore, prompter: P, mut sink: O) -> i32! {
     try p.allow_flags("exec", ["--timeout", "--exec-timeout", "--accept-new-host-key", "--sudo"])
     if p.positionals.len() != 2 || !p.has_rest || p.rest.len() == 0 {
-        return error(coded(ERR_USAGE, "usage: flint exec <alias> [--timeout <secs>] [--exec-timeout <secs>] [--sudo] -- <command>"))
+        return error(domain.coded(domain.ERR_USAGE, "usage: flint exec <alias> [--timeout <secs>] [--exec-timeout <secs>] [--sudo] -- <command>"))
     }
     // D-039: only the running Flint runs a command as root, after the owner allowed
     // it in its window; never on a typed master password.
     if p.has_flag("--sudo") && !sec.in_app {
-        return error(coded(ERR_LOCKED, "`flint exec --sudo` runs only through Flint: open Flint, unlock this vault there, and run it again"))
+        return error(domain.coded(domain.ERR_LOCKED, "`flint exec --sudo` runs only through Flint: open Flint, unlock this vault there, and run it again"))
     }
     opts := try connect_options(p)
     // CFIRE-UPSTREAM: CF-196 (`mut x := CONST` of another package infers no type)
-    mut exec_timeout: i64 = SSH_EXEC_TIMEOUT_SECS
+    mut exec_timeout: i64 = domain.SSH_EXEC_TIMEOUT_SECS
     if p.has_flag("--exec-timeout") {
         exec_timeout = try parse_seconds_flag("--exec-timeout", p.flag_value("--exec-timeout"))
     }
     s := try open_target(p, sec, c, mut store, src, recents)
-    mut link := new_ssh_link()
-    mut clock := new_system_clock()
+    mut link := flint_ssh.new_ssh_link()
+    mut clock := process.new_system_clock()
     mut res := domain.ExecResult{ host: "", exit_code: 0, signal: "", stdout: "", stderr: "", duration_ms: 0 }
     if p.has_flag("--sudo") {
-        res = try exec_sudo_on_host(c, mut store, s, mut link, prompter, mut sink, mut clock, p.positional(1), p.rest, sec.sudo_typed, opts, exec_timeout, as_json)
+        res = try application.exec_sudo_on_host(c, mut store, s, mut link, prompter, mut sink, mut clock, p.positional(1), p.rest, sec.sudo_typed, opts, exec_timeout, as_json)
     } else {
-        res = try exec_on_host(c, mut store, s, mut link, prompter, mut sink, mut clock, p.positional(1), remote_command(p), opts, exec_timeout, as_json)
+        res = try application.exec_on_host(c, mut store, s, mut link, prompter, mut sink, mut clock, p.positional(1), remote_command(p), opts, exec_timeout, as_json)
     }
     if as_json {
         say(json.stringify(res))
@@ -120,13 +118,13 @@ fn cmd_host_test[P: ports.Prompter](p: ParsedArgs, sec: SecretInput, as_json: bo
     try p.allow_flags("host test", ["--timeout", "--accept-new-host-key"])
     try p.expect_args("host test", 1, "<alias> [--timeout <secs>] [--accept-new-host-key]")
     if p.has_rest {
-        return error(coded(ERR_USAGE, "`flint host test` runs no command; use `flint exec <alias> -- <command>`"))
+        return error(domain.coded(domain.ERR_USAGE, "`flint host test` runs no command; use `flint exec <alias> -- <command>`"))
     }
     opts := try connect_options(p)
     s := try open_target(p, sec, c, mut store, src, recents)
-    mut link := new_ssh_link()
-    mut clock := new_system_clock()
-    r := try test_host(c, mut store, s, mut link, prompter, mut clock, p.positional(2), opts)
+    mut link := flint_ssh.new_ssh_link()
+    mut clock := process.new_system_clock()
+    r := try application.test_host(c, mut store, s, mut link, prompter, mut clock, p.positional(2), opts)
     if as_json {
         say(json.stringify(r))
         return
@@ -146,7 +144,7 @@ fn cmd_known_host(p: ParsedArgs, sec: SecretInput, as_json: bool, c: flint_crypt
         try p.allow_flags("known-host list", [])
         try p.expect_args("known-host list", 0, "")
         _ = try open_target(p, sec, c, mut store, src, recents)
-        list := try list_known_hosts(store)
+        list := try application.list_known_hosts(store)
         if as_json {
             say(json.stringify(list))
         } else {
@@ -158,7 +156,7 @@ fn cmd_known_host(p: ParsedArgs, sec: SecretInput, as_json: bool, c: flint_crypt
         try p.allow_flags("known-host rm", [])
         try p.expect_args("known-host rm", 1, "<alias|address>")
         _ = try open_target(p, sec, c, mut store, src, recents)
-        k := try remove_known_host(mut store, p.positional(2))
+        k := try application.remove_known_host(mut store, p.positional(2))
         if as_json {
             say(json.stringify(ForgottenKey{ removed: "known-host", addr: k.addr, fingerprint: k.fingerprint }))
         } else {
@@ -166,7 +164,7 @@ fn cmd_known_host(p: ParsedArgs, sec: SecretInput, as_json: bool, c: flint_crypt
         }
         return
     }
-    return error(coded(ERR_USAGE, "unknown command `flint known-host {verb}`; see `flint help`"))
+    return error(domain.coded(domain.ERR_USAGE, "unknown command `flint known-host {verb}`; see `flint help`"))
 }
 
 // `flint connect <rdp-host>` served by the app (milestone 30): the app opened the
@@ -179,7 +177,7 @@ type DesktopOpened struct {
 
 fn desktop_opened_text(alias: str, as_json: bool) -> str {
     if as_json {
-        return json.stringify(DesktopOpened{ host: alias, host_type: HOST_TYPE_RDP, opened: true }) + "\n"
+        return json.stringify(DesktopOpened{ host: alias, host_type: domain.HOST_TYPE_RDP, opened: true }) + "\n"
     }
     return "Opened {alias} in Flint (remote desktop).\n"
 }

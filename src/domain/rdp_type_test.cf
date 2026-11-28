@@ -103,3 +103,8 @@ fuzz "every key pressed is released" |s: str, klid: i64| {
         }
     }
 }
+
+// Whether Flint types layout `klid` by scan code.
+fn rdp_layout_known(klid: i64) -> bool {
+    return rdp_layout(klid).plain.len() > 0
+}

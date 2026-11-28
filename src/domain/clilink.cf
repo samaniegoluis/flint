@@ -9,7 +9,7 @@ package domain
 // alone.
 
 // What is at one place the link can go, as the adapter found it.
-type LinkProbe struct {
+pub type LinkProbe struct {
     exists:        bool `json:"exists"`
     is_link:       bool `json:"is_link"`
     target:        str  `json:"target"`
@@ -19,8 +19,8 @@ type LinkProbe struct {
     dir_writable:  bool `json:"dir_writable"`
 }
 
-// One place the command can be installed, and what is there now (CLI_LINK_STATES).
-type CliLinkSpot struct {
+// One place the command can be installed, and what is there now.
+pub type CliLinkSpot struct {
     path:   str  `json:"path"`
     state:  str  `json:"state"`
     target: str  `json:"target"`
@@ -29,7 +29,7 @@ type CliLinkSpot struct {
 
 // The command as the app sees it: whether this copy carries a CLI, where it is, and
 // each place it can be linked from, the default (on every Mac's PATH) first.
-type CliLinkStatus struct {
+pub type CliLinkStatus struct {
     available: bool          `json:"available"`
     cli:       str           `json:"cli"`
     spots:     []CliLinkSpot `json:"spots"`
@@ -41,15 +41,15 @@ type CliLinkStatus struct {
     kind:      str           `json:"kind"`
 }
 
-// missing: nothing there. installed: a link to this copy's CLI. other-copy: a link to
-// another Flint.app's CLI that still exists. broken: a link to a Flint.app's CLI that
-// is gone (the app was moved or deleted). foreign: something that is not our link.
-CLI_LINK_STATES: []str = ["missing", "installed", "other-copy", "broken", "foreign"]
+// A spot's state: "missing", nothing there; "installed", a link to this copy's CLI;
+// "other-copy", a link to another Flint.app's CLI that still exists; "broken", a link
+// to a Flint.app's CLI that is gone (the app was moved or deleted); "foreign",
+// something that is not our link.
 CLI_IN_BUNDLE: str = "/Contents/Helpers/flint"
 
 // The CLI inside the bundle the app runs from, or "" when the app is not in a bundle
 // (a Linux or Windows build, or a build from source run in place).
-fn bundle_cli_path(exe_dir: str) -> str {
+pub fn bundle_cli_path(exe_dir: str) -> str {
     suffix := "/Contents/MacOS"
     if !exe_dir.ends_with(suffix) {
         return ""
@@ -59,7 +59,7 @@ fn bundle_cli_path(exe_dir: str) -> str {
 
 // The Flint.app a CLI inside a bundle belongs to, or "" (milestone 48: `flint` starts
 // the app it came with, not whichever Flint.app macOS finds first).
-fn bundle_of_cli(exe_dir: str) -> str {
+pub fn bundle_of_cli(exe_dir: str) -> str {
     suffix := "/Contents/Helpers"
     if !exe_dir.ends_with(suffix) {
         return ""
@@ -71,7 +71,7 @@ fn bundle_of_cli(exe_dir: str) -> str {
     return bundle
 }
 
-fn cli_link_state(cli: str, p: LinkProbe) -> str {
+pub fn cli_link_state(cli: str, p: LinkProbe) -> str {
     if !p.exists && !p.is_link {
         return "missing"
     }
@@ -89,7 +89,7 @@ fn cli_link_state(cli: str, p: LinkProbe) -> str {
 
 // What the first launch's toast offers: "install" once while nothing is linked,
 // "fix" whenever a link of ours points at another or a missing copy, else "".
-fn cli_link_offer(available: bool, spots: []CliLinkSpot, offer_shown: bool) -> str {
+pub fn cli_link_offer(available: bool, spots: []CliLinkSpot, offer_shown: bool) -> str {
     if !available {
         return ""
     }
@@ -127,13 +127,13 @@ CLI_PATH_BIN: str = "bin"
 
 // The folder a packaged Windows app offers for the PATH, or "" when the app does not
 // run from a package's layout (a build from source has no bin\flint.exe beside it).
-fn windows_cli_dir(exe_dir: str) -> str {
+pub fn windows_cli_dir(exe_dir: str) -> str {
     return exe_dir + "/" + CLI_PATH_BIN
 }
 
 // A Path entry as compared: backslashes, no trailing separator, lower case (NTFS
 // ignores case), no surrounding quotes or spaces.
-fn path_entry_key(entry: str) -> str {
+pub fn path_entry_key(entry: str) -> str {
     mut e := entry.trim().replace_all("\"", "").replace_all("/", "\\").to_lower()
     for e.len() > 3 && e.ends_with("\\") {
         e = "{e[0..e.len() - 1]}"
@@ -142,7 +142,7 @@ fn path_entry_key(entry: str) -> str {
 }
 
 // The user's Path value split into its entries, empty ones dropped.
-fn split_path_value(value: str) -> []str {
+pub fn split_path_value(value: str) -> []str {
     mut out: []str = []
     for part in value.split(";") {
         if part.trim().len() > 0 {
@@ -154,7 +154,7 @@ fn split_path_value(value: str) -> []str {
 
 // What one Path entry is, as the adapter found it: `has_cli` = entry\flint.exe exists,
 // `has_app` = entry\..\Flint.exe exists.
-type PathEntryProbe struct {
+pub type PathEntryProbe struct {
     entry:   str  `json:"entry"`
     has_cli: bool `json:"has_cli"`
     has_app: bool `json:"has_app"`
@@ -178,7 +178,7 @@ fn path_entry_state(bin: str, p: PathEntryProbe) -> str {
 
 // The one Windows spot: installed when this copy's folder is on the Path; else the
 // first entry of another or a missing copy; else missing.
-fn path_spot(bin: str, probes: []PathEntryProbe) -> CliLinkSpot {
+pub fn path_spot(bin: str, probes: []PathEntryProbe) -> CliLinkSpot {
     for p in probes {
         if path_entry_state(bin, p) == "installed" {
             return CliLinkSpot{ path: bin, state: "installed", target: p.entry, admin: false }
@@ -195,7 +195,7 @@ fn path_spot(bin: str, probes: []PathEntryProbe) -> CliLinkSpot {
 
 // The Path with this copy's folder first and every entry of another or a missing copy
 // taken out; everything else kept, in order, as written.
-fn path_with_cli(bin: str, probes: []PathEntryProbe) -> str {
+pub fn path_with_cli(bin: str, probes: []PathEntryProbe) -> str {
     mut out: []str = [bin.replace_all("/", "\\")]
     for p in probes {
         if path_entry_state(bin, p).len() == 0 {
@@ -206,7 +206,7 @@ fn path_with_cli(bin: str, probes: []PathEntryProbe) -> str {
 }
 
 // The Path without this copy's folder (other entries, ours or not, stay).
-fn path_without_cli(bin: str, probes: []PathEntryProbe) -> str {
+pub fn path_without_cli(bin: str, probes: []PathEntryProbe) -> str {
     mut out: []str = []
     for p in probes {
         if path_entry_state(bin, p) != "installed" {

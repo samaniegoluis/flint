@@ -32,7 +32,7 @@ type ErrorEnvelopeWithId struct {
 
 // The JSON for an error on stderr: `id` and `params` only when the core names it.
 fn error_json(msg: str) -> str {
-    m := core_message_of(msg)
+    m := domain.core_message_of(msg)
     if m.id.len() == 0 {
         return json.stringify(ErrorEnvelope{ err_body: ErrorBody{ code: m.code, message: m.message } })
     }
@@ -44,25 +44,25 @@ type RemovedNote struct {
     name:    str `json:"name"`
 }
 
-fn say(line: str) {
-    write_stdout(line + "\n")
+pub fn say(line: str) {
+    process.write_stdout(line + "\n")
 }
 
 // Prints an error to stderr and returns its stable exit code.
-fn report_error(msg: str, as_json: bool) -> i32 {
-    code := error_code_of(msg)
-    text := error_text_of(msg)
+pub fn report_error(msg: str, as_json: bool) -> i32 {
+    code := domain.error_code_of(msg)
+    text := domain.error_text_of(msg)
     if as_json {
-        write_stderr(error_json(msg) + "\n")
+        process.write_stderr(error_json(msg) + "\n")
     } else {
-        write_stderr("flint: " + text + "\n")
+        process.write_stderr("flint: " + text + "\n")
     }
-    return exit_code_for(code)
+    return domain.exit_code_for(code)
 }
 
 // Prints an error and ends the process with its stable exit code.
-fn fail_with(msg: str, as_json: bool) {
-    exit_process(report_error(msg, as_json))
+pub fn fail_with(msg: str, as_json: bool) {
+    process.exit_process(report_error(msg, as_json))
 }
 
 fn pad_right(s: str, width: usize) -> str {
@@ -155,7 +155,7 @@ fn host_target(h: application.HostView) -> str {
     if user.len() > 0 {
         t = user + "@" + t
     }
-    if h.port != default_port_for(h.host_type) {
+    if h.port != domain.default_port_for(h.host_type) {
         t = t + ":{h.port}"
     }
     return t
@@ -174,10 +174,10 @@ fn command_text(h: application.HostView) -> str {
 
 // An RDP host's audio in words (milestone 60).
 fn audio_text(audio: str) -> str {
-    if audio == RDP_AUDIO_REMOTE {
+    if audio == domain.RDP_AUDIO_REMOTE {
         return "on the remote computer"
     }
-    if audio == RDP_AUDIO_OFF {
+    if audio == domain.RDP_AUDIO_OFF {
         return "off"
     }
     return "on this computer"
@@ -192,7 +192,7 @@ fn print_host(h: application.HostView) {
     if h.has_sudo_password {
         sudo_pw = "set"
     }
-    if h.host_type == HOST_TYPE_RDP {
+    if h.host_type == domain.HOST_TYPE_RDP {
         mut mic := "off"
         if h.microphone {
             mic = "on"

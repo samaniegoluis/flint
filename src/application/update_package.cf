@@ -14,31 +14,31 @@ import "../ports"
 
 // Where a package came from (D-124 (1)): asked of the package manager; anything it
 // cannot tell reads as a file.
-fn package_source[P: ports.PackageSourceProbe](probe: P, kind: str) -> str {
-    format := package_format(kind)
+pub fn package_source[P: ports.PackageSourceProbe](probe: P, kind: str) -> str {
+    format := domain.package_format(kind)
     if format.len() == 0 {
         return ""
     }
     text := probe.package_source_text(format)
-    if format == PACKAGE_RPM {
-        return dnf_source_of(text)
+    if format == domain.PACKAGE_RPM {
+        return domain.dnf_source_of(text)
     }
-    return apt_source_of(text)
+    return domain.apt_source_of(text)
 }
 
 // Download for a package: the manifest fetched and verified again (its exact bytes are
 // what root verifies), the package it names for this format, its SHA-256 checked, and
 // the three files staged with `ready`. Any failure removes the staging.
-fn download_package_update[Fd: ports.UpdateFeed, V: ports.UpdateVerifier, D: ports.UpdateDownloader, H: ports.UpdateHasher, F: ports.UpdateFiles](feed: Fd, verifier: V, mut dl: D, hasher: H, mut files: F, src: UpdateSource, s: domain.UpdateStatus, kind: str, p: domain.UpdatePaths) -> void! {
-    format := package_format(kind)
-    if s.action != UPDATE_ACTION_DOWNLOAD || format.len() == 0 {
-        return error(coded(ERR_INVALID, "there is no package to download for this copy of Flint"))
+pub fn download_package_update[Fd: ports.UpdateFeed, V: ports.UpdateVerifier, D: ports.UpdateDownloader, H: ports.UpdateHasher, F: ports.UpdateFiles](feed: Fd, verifier: V, mut dl: D, hasher: H, mut files: F, src: UpdateSource, s: domain.UpdateStatus, kind: str, p: domain.UpdatePaths) -> void! {
+    format := domain.package_format(kind)
+    if s.action != domain.UPDATE_ACTION_DOWNLOAD || format.len() == 0 {
+        return error(domain.coded(domain.ERR_INVALID, "there is no package to download for this copy of Flint"))
     }
     signed := try fetch_signed_manifest(feed, verifier, src)
     if signed.manifest.version != s.version {
-        return error(coded(ERR_CONFLICT, "a newer release came out meanwhile: check for updates again"))
+        return error(domain.coded(domain.ERR_CONFLICT, "a newer release came out meanwhile: check for updates again"))
     }
-    key := update_package_asset_key(format)
+    key := domain.update_package_asset_key(format)
     mut asset := domain.UpdateAsset{ key: "", name: "", url: "", size: 0, sha256: "" }
     for i in 0..signed.manifest.assets.len() {
         if signed.manifest.assets[i].key == key {
@@ -46,7 +46,7 @@ fn download_package_update[Fd: ports.UpdateFeed, V: ports.UpdateVerifier, D: por
         }
     }
     if asset.key.len() == 0 {
-        return error(coded(ERR_NOT_FOUND, "this release has no {format} package"))
+        return error(domain.coded(domain.ERR_NOT_FOUND, "this release has no {format} package"))
     }
     discard_staging(mut files, p)
     try files.upd_mkdir(p.staging)
@@ -58,15 +58,15 @@ fn download_package_update[Fd: ports.UpdateFeed, V: ports.UpdateVerifier, D: por
         discard_staging(mut files, p)
         return error(err)
     }
-    if !sha256_matches(asset.sha256, got) {
+    if !domain.sha256_matches(asset.sha256, got) {
         discard_staging(mut files, p)
-        return error(coded(ERR_INVALID, "the download did not match the release's SHA-256 and was discarded"))
+        return error(domain.coded(domain.ERR_INVALID, "the download did not match the release's SHA-256 and was discarded"))
     }
-    files.upd_write(update_manifest_path(p), str(signed.body)) or err {
+    files.upd_write(domain.update_manifest_path(p), str(signed.body)) or err {
         discard_staging(mut files, p)
         return error(err)
     }
-    files.upd_write(update_signature_path(p), signed.signature + "\n") or err {
+    files.upd_write(domain.update_signature_path(p), signed.signature + "\n") or err {
         discard_staging(mut files, p)
         return error(err)
     }
@@ -80,18 +80,18 @@ fn download_package_update[Fd: ports.UpdateFeed, V: ports.UpdateVerifier, D: por
 // the new CLI waits for this app to quit and starts the new one. The package and the
 // manifest are removed once installed (the staging stays for the new app's word); a
 // failed check discards them; anything else keeps them for another Relaunch.
-fn relaunch_package_update[F: ports.UpdateFiles, P: ports.UpdateProcesses, R: ports.RootRunner](mut files: F, mut procs: P, mut runner: R, p: domain.UpdatePaths, helper: str, current: str, pid: i64, log: str) -> domain.PackageRelaunch {
+pub fn relaunch_package_update[F: ports.UpdateFiles, P: ports.UpdateProcesses, R: ports.RootRunner](mut files: F, mut procs: P, mut runner: R, p: domain.UpdatePaths, helper: str, current: str, pid: i64, log: str) -> domain.PackageRelaunch {
     if staged_update_at(mut files, p, current).len() == 0 {
-        return domain.PackageRelaunch{ installed: false, discard: false, code: ERR_NOT_FOUND, message: "no update is ready to apply" }
+        return domain.PackageRelaunch{ installed: false, discard: false, code: domain.ERR_NOT_FOUND, message: "no update is ready to apply" }
     }
     files.upd_remove(p.started) or {}
     files.upd_remove(p.outcome) or {}
     run := runner.run_root_helper(helper) or err {
         msg := "{err.message()}"
-        return domain.PackageRelaunch{ installed: false, discard: false, code: error_code_of(msg), message: error_text_of(msg) }
+        return domain.PackageRelaunch{ installed: false, discard: false, code: domain.error_code_of(msg), message: domain.error_text_of(msg) }
     }
     told := json.parse[domain.RootOutcome](payload: run.stdout.trim()) or domain.RootOutcome{ installed: false, version: "", code: "", message: "", discard: false }
-    r := package_relaunch_of(run.exit_code, told)
+    r := domain.package_relaunch_of(run.exit_code, told)
     if r.discard {
         discard_staging(mut files, p)
         return r
@@ -100,14 +100,14 @@ fn relaunch_package_update[F: ports.UpdateFiles, P: ports.UpdateProcesses, R: po
         return r
     }
     files.upd_remove(p.zip) or {}
-    files.upd_remove(update_manifest_path(p)) or {}
-    files.upd_remove(update_signature_path(p)) or {}
+    files.upd_remove(domain.update_manifest_path(p)) or {}
+    files.upd_remove(domain.update_signature_path(p)) or {}
     files.upd_remove(p.ready) or {}
     args: []str = ["update-apply", "--wait", "{pid}", "--start", "--to", p.installed, "--staging", p.staging]
-    procs.proc_spawn(update_cli_exe(p.installed, "linux"), args, log) or err {
+    procs.proc_spawn(domain.update_cli_exe(p.installed, "linux"), args, log) or err {
         // Installed: the next launch is the new version, so only the restart is lost.
         msg := "{err.message()}"
-        return domain.PackageRelaunch{ installed: true, discard: false, code: ERR_IO, message: "Flint was updated but could not restart: open it again ({error_text_of(msg)})" }
+        return domain.PackageRelaunch{ installed: true, discard: false, code: domain.ERR_IO, message: "Flint was updated but could not restart: open it again ({error_text_of(msg)})" }
     }
     return r
 }
@@ -116,41 +116,41 @@ fn relaunch_package_update[F: ports.UpdateFiles, P: ports.UpdateProcesses, R: po
 // nothing is swapped: wait for the old app to quit, start the new one, wait for its
 // word. With none, say so at the next launch; there is no folder to put back, and a
 // downgrade as root is never attempted (D-124 (4)).
-fn apply_package_start[F: ports.UpdateFiles, P: ports.UpdateProcesses](mut files: F, mut procs: P, r: domain.ApplyRequest) -> domain.ApplyOutcome {
-    check_apply_request(r) or err {
+pub fn apply_package_start[F: ports.UpdateFiles, P: ports.UpdateProcesses](mut files: F, mut procs: P, r: domain.ApplyRequest) -> domain.ApplyOutcome {
+    domain.check_apply_request(r) or err {
         msg := "{err.message()}"
-        return apply_failed(APPLY_STEP_ARGS, error_code_of(msg), msg, false)
+        return domain.apply_failed(domain.APPLY_STEP_ARGS, domain.error_code_of(msg), msg, false)
     }
     started := r.staging + "/started"
     outcome := r.staging + "/outcome.json"
     if r.wait_pid > 0 {
-        deadline := procs.proc_now_ms() + UPDATE_WAIT_QUIT_MS
+        deadline := procs.proc_now_ms() + domain.UPDATE_WAIT_QUIT_MS
         for procs.proc_alive(r.wait_pid) && procs.proc_now_ms() < deadline {
-            procs.proc_sleep(UPDATE_POLL_MS)
+            procs.proc_sleep(domain.UPDATE_POLL_MS)
         }
     }
     files.upd_remove(started) or {}
-    child := procs.proc_spawn(update_app_exe(r.to, "linux"), [], r.app_log) or 0
+    child := procs.proc_spawn(domain.update_app_exe(r.to, "linux"), [], r.app_log) or 0
     mut said := false
     if child > 0 {
-        start_deadline := procs.proc_now_ms() + UPDATE_WAIT_START_MS
+        start_deadline := procs.proc_now_ms() + domain.UPDATE_WAIT_START_MS
         for !said && procs.proc_alive(child) && procs.proc_now_ms() < start_deadline {
-            procs.proc_sleep(UPDATE_POLL_MS)
+            procs.proc_sleep(domain.UPDATE_POLL_MS)
             said = files.upd_exists(started)
         }
         said = said || files.upd_exists(started)
     }
     if said {
         files.upd_remove(r.staging) or {}
-        return apply_ok()
+        return domain.apply_ok()
     }
-    mut why := "it did not say it started within {UPDATE_WAIT_START_MS / 1000} s."
+    mut why := "it did not say it started within {domain.UPDATE_WAIT_START_MS / 1000} s."
     if child == 0 {
         why = "it could not be started."
     } else if !procs.proc_alive(child) {
         why = "it quit as soon as it started."
     }
-    o := apply_failed(APPLY_STEP_PACKAGE_START, ERR_TIMEOUT, why, false)
+    o := domain.apply_failed(domain.APPLY_STEP_PACKAGE_START, domain.ERR_TIMEOUT, why, false)
     files.upd_write(outcome, json.stringify(o)) or {}
     return o
 }
@@ -159,7 +159,7 @@ fn apply_package_start[F: ports.UpdateFiles, P: ports.UpdateProcesses](mut files
 // and version installed (root's own install-kind and the helper's compiled version),
 // the key and where packages may come from (Flint's releases; a test package's
 // compiled-in local feed).
-type RootUpdateRequest struct {
+pub type RootUpdateRequest struct {
     uid:             i64
     format:          str
     installed:       str
@@ -171,7 +171,7 @@ type RootUpdateRequest struct {
 ROOT_PACKAGE_MAX_BYTES: i64 = 268435456
 
 fn root_refused(version: str, err_msg: str) -> domain.RootOutcome {
-    return domain.RootOutcome{ installed: false, version: version, code: error_code_of(err_msg), message: error_text_of(err_msg), discard: true }
+    return domain.RootOutcome{ installed: false, version: version, code: domain.error_code_of(err_msg), message: domain.error_text_of(err_msg), discard: true }
 }
 
 // flint-update-root (Principle 17): copies the caller's staged manifest, signature and
@@ -179,28 +179,28 @@ fn root_refused(version: str, err_msg: str) -> domain.RootOutcome {
 // the compiled-in key, a newer release with a package of the installed format, its
 // size and SHA-256) and only then has apt or dnf install it. Its folder is removed
 // whatever happens.
-fn root_install_update[S: ports.RootStage, V: ports.UpdateVerifier, H: ports.UpdateHasher, I: ports.PackageInstaller](mut stage: S, verifier: V, hasher: H, mut installer: I, r: RootUpdateRequest) -> domain.RootOutcome {
+pub fn root_install_update[S: ports.RootStage, V: ports.UpdateVerifier, H: ports.UpdateHasher, I: ports.PackageInstaller](mut stage: S, verifier: V, hasher: H, mut installer: I, r: RootUpdateRequest) -> domain.RootOutcome {
     o := root_install_steps(mut stage, verifier, hasher, mut installer, r)
     stage.stage_done()
     return o
 }
 
 fn root_install_steps[S: ports.RootStage, V: ports.UpdateVerifier, H: ports.UpdateHasher, I: ports.PackageInstaller](mut stage: S, verifier: V, hasher: H, mut installer: I, r: RootUpdateRequest) -> domain.RootOutcome {
-    if r.uid <= 0 || package_format("package:" + r.format).len() == 0 {
-        return domain.RootOutcome{ installed: false, version: "", code: ERR_USAGE, message: "flint-update-root runs through pkexec, for a Flint installed from a .deb or .rpm", discard: false }
+    if r.uid <= 0 || domain.package_format("package:" + r.format).len() == 0 {
+        return domain.RootOutcome{ installed: false, version: "", code: domain.ERR_USAGE, message: "flint-update-root runs through pkexec, for a Flint installed from a .deb or .rpm", discard: false }
     }
-    manifest_path := stage.stage_copy(r.uid, UPDATE_MANIFEST_FILE, UPDATE_MANIFEST_MAX_BYTES) or err {
+    manifest_path := stage.stage_copy(r.uid, domain.UPDATE_MANIFEST_FILE, domain.UPDATE_MANIFEST_MAX_BYTES) or err {
         msg := "{err.message()}"
-        if error_code_of(msg) == ERR_NOT_FOUND {
-            return domain.RootOutcome{ installed: false, version: "", code: ERR_NOT_FOUND, message: "no update is ready to apply", discard: false }
+        if domain.error_code_of(msg) == domain.ERR_NOT_FOUND {
+            return domain.RootOutcome{ installed: false, version: "", code: domain.ERR_NOT_FOUND, message: "no update is ready to apply", discard: false }
         }
         return root_refused("", msg)
     }
-    sig_path := stage.stage_copy(r.uid, UPDATE_SIGNATURE_FILE, UPDATE_SIGNATURE_MAX_BYTES) or err {
+    sig_path := stage.stage_copy(r.uid, domain.UPDATE_SIGNATURE_FILE, UPDATE_SIGNATURE_MAX_BYTES) or err {
         return root_refused("", "{err.message()}")
     }
     // Verified on root's copy, never on the person's file (Principle 17).
-    body := stage.stage_read(manifest_path, UPDATE_MANIFEST_MAX_BYTES) or err {
+    body := stage.stage_read(manifest_path, domain.UPDATE_MANIFEST_MAX_BYTES) or err {
         return root_refused("", "{err.message()}")
     }
     sig := stage.stage_read(sig_path, UPDATE_SIGNATURE_MAX_BYTES) or err {
@@ -209,13 +209,13 @@ fn root_install_steps[S: ports.RootStage, V: ports.UpdateVerifier, H: ports.Upda
     m := verify_signed_manifest(verifier, body, str(sig), r.public_key, r.download_prefix) or err {
         return root_refused("", "{err.message()}")
     }
-    asset := root_update_asset(m, r.format, r.installed, r.download_prefix) or err {
+    asset := domain.root_update_asset(m, r.format, r.installed, r.download_prefix) or err {
         return root_refused(m.version, "{err.message()}")
     }
     if asset.size > ROOT_PACKAGE_MAX_BYTES {
-        return root_refused(m.version, coded(ERR_INVALID, "the package is larger than Flint takes"))
+        return root_refused(m.version, domain.coded(domain.ERR_INVALID, "the package is larger than Flint takes"))
     }
-    pkg := stage.stage_copy(r.uid, update_package_file(r.format), asset.size) or err {
+    pkg := stage.stage_copy(r.uid, domain.update_package_file(r.format), asset.size) or err {
         return root_refused(m.version, "{err.message()}")
     }
     size := stage.stage_size(pkg) or err {
@@ -224,12 +224,12 @@ fn root_install_steps[S: ports.RootStage, V: ports.UpdateVerifier, H: ports.Upda
     sha := hasher.update_file_sha256(pkg) or err {
         return root_refused(m.version, "{err.message()}")
     }
-    root_package_matches(asset, size, sha) or err {
+    domain.root_package_matches(asset, size, sha) or err {
         return root_refused(m.version, "{err.message()}")
     }
     installer.pkg_install(r.format, pkg) or err {
         msg := "{err.message()}"
-        return domain.RootOutcome{ installed: false, version: m.version, code: error_code_of(msg), message: error_text_of(msg), discard: false }
+        return domain.RootOutcome{ installed: false, version: m.version, code: domain.error_code_of(msg), message: domain.error_text_of(msg), discard: false }
     }
     return domain.RootOutcome{ installed: true, version: m.version, code: "", message: "", discard: false }
 }

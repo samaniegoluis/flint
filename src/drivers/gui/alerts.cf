@@ -20,7 +20,7 @@ ALERT_TICK_MS: i64 = 1000
 // Queues `kind` when an alert is due for a request now (before the window is brought
 // to the front: once it is, it has the focus). Returns whether it was queued.
 fn queue_alert(st: GuiState, kind: str, already_sent: bool) -> bool {
-    if !alert_due(st.holder.alerts(), st.holder.attended(time.now_ms()), already_sent) {
+    if !application.alert_due(st.holder.alerts(), st.holder.attended(time.now_ms()), already_sent) {
         return false
     }
     st.alert_hints.send(kind)
@@ -28,18 +28,18 @@ fn queue_alert(st: GuiState, kind: str, already_sent: bool) -> bool {
 }
 
 fn run_alert_loop(st: GuiState, mut app: webui.App) {
-    n := new_ntfy_notifier()
+    n := vaultremote.new_ntfy_notifier()
     for !st.holder.quitting() {
         kind := st.alert_hints.recv_timeout(ALERT_TICK_MS) or ""
         if kind.len() == 0 {
             continue
         }
-        status := publish_alert(n, st.holder.alerts(), kind, time.now_ms())
+        status := application.publish_alert(n, st.holder.alerts(), kind, time.now_ms())
         st.holder.set_alert_status(status)
         if status.ok {
-            write_stderr("flint-gui: sent a phone alert ({kind})\n")
+            process.write_stderr("flint-gui: sent a phone alert ({kind})\n")
         } else {
-            write_stderr("flint-gui: a phone alert ({kind}) was not sent: {status.error}\n")
+            process.write_stderr("flint-gui: a phone alert ({kind}) was not sent: {status.error}\n")
         }
         app.emit("alerts:status", status)
     }
@@ -70,14 +70,14 @@ fn rpc_alerts_status(st: GuiState) -> str! {
 // exists; its outcome comes back as `alerts:status`.
 fn rpc_alerts_test(st: GuiState) -> str! {
     try st.require_open_window()
-    st.alert_hints.send(ALERT_TEST)
+    st.alert_hints.send(domain.ALERT_TEST)
     return ok_json()
 }
 
 // *New topic*: the phone must subscribe again.
 fn rpc_alerts_new_topic(c: flint_crypto.Sodium, mut store: config.JsonSettingsStore, st: GuiState) -> str! {
     try st.require_open_window()
-    saved := try new_alert_topic(mut store, c)
-    st.holder.set_alerts(alert_target(saved))
+    saved := try application.new_alert_topic(mut store, c)
+    st.holder.set_alerts(domain.alert_target(saved))
     return json.stringify(saved)
 }

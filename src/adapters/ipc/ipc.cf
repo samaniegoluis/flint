@@ -17,19 +17,19 @@ IPC_SOCKET_NAME: str = "flint.sock"
 // The largest frame either side accepts (a request carries at most a private key).
 IPC_MAX_FRAME: usize = 16777216
 
-type IpcPeer struct {
+pub type IpcPeer struct {
     uid: i64
     pid: i64
 }
 
 // A connection. `open` is false for "no connection" (a zero fd is stdin, CF-078).
-type IpcConn struct {
+pub type IpcConn struct {
     fd:   i32
     open: bool
     peer: IpcPeer
 }
 
-type IpcListener struct {
+pub type IpcListener struct {
     fd:   i32
     open: bool
     path: str
@@ -39,7 +39,7 @@ type IpcListener struct {
     flag: shared[cpp.flint_ipc::StopFlag]
 }
 
-fn ipc_socket_path(config_dir: str) -> str {
+pub fn ipc_socket_path(config_dir: str) -> str {
     return config_dir + "/" + IPC_SOCKET_NAME
 }
 
@@ -64,7 +64,7 @@ fn ipc_file_mode(path: str) -> i64 {
 
 // Listens on `path` for peers of this process's uid. Fails with `conflict` when
 // another Flint already serves it.
-fn ipc_listen(path: str) -> IpcListener! {
+pub fn ipc_listen(path: str) -> IpcListener! {
     return try ipc_listen_for(path, ipc_own_uid())
 }
 
@@ -80,10 +80,10 @@ fn ipc_listen_for(path: str, uid: i64) -> IpcListener! {
         msg = err;
     }
     if fd == -2 {
-        return error(coded(ERR_CONFLICT, msg))
+        return error(domain.coded(domain.ERR_CONFLICT, msg))
     }
     if fd < 0 {
-        return error(coded(ERR_IO, "cannot listen on {path}: {msg}"))
+        return error(domain.coded(domain.ERR_IO, "cannot listen on {path}: {msg}"))
     }
     mut l := IpcListener{ fd: fd, open: true, path: path, allowed_uid: uid }
     // CFIRE-UPSTREAM: CF-026
@@ -129,7 +129,7 @@ fn (self: IpcListener) accept_wait(timeout_ms: i32) -> IpcConn! {
         }
     }
     if fd == -1 {
-        return error(coded(ERR_IO, "accept failed on {self.path}"))
+        return error(domain.coded(domain.ERR_IO, "accept failed on {self.path}"))
     }
     if fd < 0 {
         return IpcConn{ fd: 0, open: false, peer: IpcPeer{ uid: -1, pid: 0 } }
@@ -150,7 +150,7 @@ fn (self: IpcListener) accept_wait(timeout_ms: i32) -> IpcConn! {
 
 // How many CLI connections the app is serving now (milestone 50): a running `flint
 // exec` or `connect` is one. Relaunch's confirmation counts them.
-fn ipc_served_count() -> i64 {
+pub fn ipc_served_count() -> i64 {
     mut n: i64 = 0
     // CFIRE-UPSTREAM: CF-081
     cpp {
@@ -161,7 +161,7 @@ fn ipc_served_count() -> i64 {
 
 // Shuts down every connection still being served: its command sees the client gone
 // and ends. For quitting, after a grace (drivers/gui/main.cf).
-fn ipc_served_shutdown_all() {
+pub fn ipc_served_shutdown_all() {
     // CFIRE-UPSTREAM: CF-081
     cpp {
         flint_ipc::served_shutdown_all();
@@ -206,7 +206,7 @@ fn (mut self: IpcListener) ipc_close() {
 
 // Connects to the app. Fails with `not_found` when no Flint listens at `path`, so
 // the caller can tell "not running" from a broken socket (`io`).
-fn ipc_connect(path: str, timeout_ms: i32) -> IpcConn! {
+pub fn ipc_connect(path: str, timeout_ms: i32) -> IpcConn! {
     mut fd: i32 = -1
     mut msg := ""
     // CFIRE-UPSTREAM: CF-081
@@ -216,17 +216,17 @@ fn ipc_connect(path: str, timeout_ms: i32) -> IpcConn! {
         msg = err;
     }
     if fd == -2 {
-        return error(coded(ERR_NOT_FOUND, "Flint is not running"))
+        return error(domain.coded(domain.ERR_NOT_FOUND, "Flint is not running"))
     }
     if fd < 0 {
-        return error(coded(ERR_IO, "cannot reach Flint at {path}: {msg}"))
+        return error(domain.coded(domain.ERR_IO, "cannot reach Flint at {path}: {msg}"))
     }
     return IpcConn{ fd: fd, open: true, peer: IpcPeer{ uid: -1, pid: 0 } }
 }
 
 fn (self: IpcConn) send(payload: str, timeout_ms: i32) -> void! {
     if !self.open {
-        return error(coded(ERR_IO, "the connection is closed"))
+        return error(domain.coded(domain.ERR_IO, "the connection is closed"))
     }
     mut ok := false
     // CFIRE-UPSTREAM: CF-081
@@ -234,14 +234,14 @@ fn (self: IpcConn) send(payload: str, timeout_ms: i32) -> void! {
         ok = flint_ipc::write_frame(self.fd, payload, timeout_ms);
     }
     if !ok {
-        return error(coded(ERR_IO, "the other side of the socket went away"))
+        return error(domain.coded(domain.ERR_IO, "the other side of the socket went away"))
     }
 }
 
 // The next frame. A peer that closed cleanly gives an `io` error saying so.
 fn (self: IpcConn) recv(timeout_ms: i32) -> str! {
     if !self.open {
-        return error(coded(ERR_IO, "the connection is closed"))
+        return error(domain.coded(domain.ERR_IO, "the connection is closed"))
     }
     mut rc: i32 = 0
     mut got := ""
@@ -253,16 +253,16 @@ fn (self: IpcConn) recv(timeout_ms: i32) -> str! {
         got = std::move(buf);
     }
     if rc == -2 {
-        return error(coded(ERR_TIMEOUT, "no answer on the socket within {timeout_ms} ms"))
+        return error(domain.coded(domain.ERR_TIMEOUT, "no answer on the socket within {timeout_ms} ms"))
     }
     if rc == -3 {
-        return error(coded(ERR_INVALID, "a message on the socket is over {max} bytes"))
+        return error(domain.coded(domain.ERR_INVALID, "a message on the socket is over {max} bytes"))
     }
     if rc == 1 {
-        return error(coded(ERR_IO, "the other side closed the socket"))
+        return error(domain.coded(domain.ERR_IO, "the other side closed the socket"))
     }
     if rc != 0 {
-        return error(coded(ERR_IO, "the socket broke in the middle of a message"))
+        return error(domain.coded(domain.ERR_IO, "the socket broke in the middle of a message"))
     }
     return got
 }

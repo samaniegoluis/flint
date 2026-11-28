@@ -32,7 +32,7 @@ fn every_byte() -> str {
 }
 
 fn uses_port[B: ports.BlobStore](mut b: B) -> i64 {
-    h := b.blob_head(VID) or err {
+    h := b.blob_head(VID) or {
         return -1
     }
     return h.version
@@ -68,13 +68,13 @@ test "a write that does not follow the head is refused" {
     try s.blob_write(VID, 1, "a", 1)
     mut code := ""
     s.blob_write(VID, 1, "b", 2) or err {
-        code = error_code_of(err.message())
+        code = domain.error_code_of(err.message())
     }
-    assert_eq(code, ERR_CONFLICT)
+    assert_eq(code, domain.ERR_CONFLICT)
     s.blob_write(VID, 3, "b", 2) or err {
-        code = "again " + error_code_of(err.message())
+        code = "again " + domain.error_code_of(err.message())
     }
-    assert_eq(code, "again " + ERR_CONFLICT)
+    assert_eq(code, "again " + domain.ERR_CONFLICT)
     assert_eq(try s.blob_read(VID, 1), "a")
 }
 
@@ -88,7 +88,7 @@ test "the newest ten versions are kept, newest first" {
         try s.blob_write(VID, n, "v{n}", n * 10)
     }
     kept := try s.blob_versions(VID)
-    assert_eq(i64(kept.len()), SERVER_VERSIONS_KEPT)
+    assert_eq(i64(kept.len()), domain.SERVER_VERSIONS_KEPT)
     assert_eq(kept[0].version, i64(13))
     assert_eq(kept[9].version, i64(4))
     assert(!fs.exists(dir + "/vaults/" + VID + "/versions/3.blob"))
@@ -96,9 +96,9 @@ test "the newest ten versions are kept, newest first" {
     assert_eq(try s.blob_read(VID, 4), "v4")
     mut code := ""
     s.blob_read(VID, 3) or err {
-        code = error_code_of(err.message())
+        code = domain.error_code_of(err.message())
     }
-    assert_eq(code, ERR_NOT_FOUND)
+    assert_eq(code, domain.ERR_NOT_FOUND)
 }
 
 test "a version cut short past the head and a stray tmp file are not listed" {
@@ -129,9 +129,9 @@ test "a held lock refuses a writer, and a stale one is taken" {
     try fs.mkdir_all(dir + "/vaults/" + VID + "/.lock")
     mut code := ""
     s.blob_write(VID, 1, "a", 1) or err {
-        code = error_code_of(err.message())
+        code = domain.error_code_of(err.message())
     }
-    assert_eq(code, ERR_CONFLICT)
+    assert_eq(code, domain.ERR_CONFLICT)
     assert_eq((try s.blob_head(VID)).version, i64(0))
     // A lock older than the stale limit: left by a process that died.
     _ = os.command("touch", ["-t", "202001010000", dir + "/vaults/" + VID + "/.lock"])
@@ -193,9 +193,9 @@ test "vaults are kept apart, each with its own versions, and listed by id" {
     assert_eq((try s.blob_head("abababababababababababababababab")).version, i64(0))
     mut code := ""
     s.blob_head("../etc") or err {
-        code = error_code_of(err.message())
+        code = domain.error_code_of(err.message())
     }
-    assert_eq(code, ERR_INVALID)
+    assert_eq(code, domain.ERR_INVALID)
 }
 
 test "a damaged head leaves its vault out of the listing, not the whole store" {
@@ -229,13 +229,13 @@ test "delete removes a vault's folder, under its lock, and refuses one not kept"
     assert_eq(all.len(), usize(1))
     assert_eq(all[0].id, VID2)
     mut code := ""
-    s.blob_delete(VID) or err { code = error_code_of(err.message()) }
-    assert_eq(code, ERR_NOT_FOUND)
+    s.blob_delete(VID) or err { code = domain.error_code_of(err.message()) }
+    assert_eq(code, domain.ERR_NOT_FOUND)
     // A vault held by a writer is not deleted.
     try fs.mkdir_all(dir + "/vaults/" + VID2 + "/.lock")
     code = ""
-    s.blob_delete(VID2) or err { code = error_code_of(err.message()) }
-    assert_eq(code, ERR_CONFLICT)
+    s.blob_delete(VID2) or err { code = domain.error_code_of(err.message()) }
+    assert_eq(code, domain.ERR_CONFLICT)
     assert(fs.exists(dir + "/vaults/" + VID2 + "/head.json"))
 }
 
@@ -247,16 +247,16 @@ test "a label is kept beside its vault, cleared with an empty one, and checked" 
     mut s := try new_file_blob_store(dir)
     mut code := ""
     s.blob_set_label(VID, "Work") or err {
-        code = error_code_of(err.message())
+        code = domain.error_code_of(err.message())
     }
-    assert_eq(code, ERR_NOT_FOUND)
+    assert_eq(code, domain.ERR_NOT_FOUND)
     try s.blob_write(VID, 1, "a", 1)
     try s.blob_set_label(VID, "Work laptop")
     assert_eq((try s.blob_vaults())[0].label, "Work laptop")
     s.blob_set_label(VID, "bad\nline") or err {
-        code = "ctl " + error_code_of(err.message())
+        code = "ctl " + domain.error_code_of(err.message())
     }
-    assert_eq(code, "ctl " + ERR_INVALID)
+    assert_eq(code, "ctl " + domain.ERR_INVALID)
     assert_eq((try s.blob_vaults())[0].label, "Work laptop")
     try s.blob_set_label(VID, "")
     assert_eq((try s.blob_vaults())[0].label, "")

@@ -23,14 +23,14 @@ type RecentFile struct {
     vaults:  []RecentEntry `json:"vaults"`
 }
 
-type JsonRecentStore struct {
+pub type JsonRecentStore struct {
     path: str
 }
 
 // Where Flint keeps per-machine settings: $FLINT_CONFIG_DIR when set, else
 // ~/Library/Application Support/Flint on macOS, $XDG_CONFIG_HOME/flint
 // (default ~/.config/flint) on Linux and %APPDATA%\Flint on Windows.
-fn flint_config_dir() -> str {
+pub fn flint_config_dir() -> str {
     override := (os.getenv("FLINT_CONFIG_DIR") or "")
     if override.len() > 0 {
         return override
@@ -60,7 +60,7 @@ fn flint_config_dir() -> str {
     return home + "/.config/flint"
 }
 
-fn new_json_recent_store(dir: str) -> JsonRecentStore {
+pub fn new_json_recent_store(dir: str) -> JsonRecentStore {
     return JsonRecentStore{ path: dir + "/vaults.json" }
 }
 
@@ -68,12 +68,12 @@ fn (self: JsonRecentStore) recents_load() -> []domain.RecentVault! {
     if !fs.exists(self.path) {
         return []
     }
-    text := fs.read_text(self.path) or err {
-        return error(coded(ERR_IO, "cannot read {self.path}"))
+    text := fs.read_text(self.path) or {
+        return error(domain.coded(domain.ERR_IO, "cannot read {self.path}"))
     }
     // CFIRE-UPSTREAM: CF-164 (a labeled argument keeps libstdc++'s chrono::parse out)
-    parsed := json.parse[RecentFile](payload: text) or err {
-        return error(coded(ERR_IO, "{self.path} is not a valid vault list; fix or delete it"))
+    parsed := json.parse[RecentFile](payload: text) or {
+        return error(domain.coded(domain.ERR_IO, "{self.path} is not a valid vault list; fix or delete it"))
     }
     mut list: []domain.RecentVault = []
     for e in parsed.vaults {
@@ -84,15 +84,15 @@ fn (self: JsonRecentStore) recents_load() -> []domain.RecentVault! {
 
 fn (self: JsonRecentStore) recents_save(list: []domain.RecentVault) -> void! {
     dir := fs.dirname(self.path)
-    fs.mkdir_all(dir) or err {
-        return error(coded(ERR_IO, "cannot create {dir}"))
+    fs.mkdir_all(dir) or {
+        return error(domain.coded(domain.ERR_IO, "cannot create {dir}"))
     }
     mut entries: []RecentEntry = []
     for v in list {
         entries.push(RecentEntry{ path: v.path, name: v.name, id: v.id })
     }
     body := json.stringify(RecentFile{ version: 1, vaults: entries })
-    fs.write_text(self.path, body + "\n") or err {
-        return error(coded(ERR_IO, "cannot write {self.path}"))
+    fs.write_text(self.path, body + "\n") or {
+        return error(domain.coded(domain.ERR_IO, "cannot write {self.path}"))
     }
 }

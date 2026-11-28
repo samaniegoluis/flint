@@ -14,7 +14,7 @@ NONCE_LEN: usize = 24
 TAG_LEN: usize = 16
 
 // Stateless: the KDF cost is chosen by the caller (the vault format pins it, D-017).
-type Sodium struct {
+pub type Sodium struct {
     ready: bool
 }
 
@@ -32,7 +32,7 @@ fn init_sodium() -> bool {
 
 SODIUM_READY: bool = init_sodium()
 
-fn new_sodium() -> Sodium! {
+pub fn new_sodium() -> Sodium! {
     if !SODIUM_READY {
         return error("internal: libsodium failed to initialise")
     }
@@ -212,7 +212,7 @@ fn wipe(mut buf: []byte) {
     }
 }
 
-fn sodium_version() -> str {
+pub fn sodium_version() -> str {
     mut v := ""
     // CFIRE-UPSTREAM: CF-006
     cpp {

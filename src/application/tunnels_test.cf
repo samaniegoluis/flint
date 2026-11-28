@@ -63,9 +63,9 @@ fn (mut self: FakeRunner) adopt(host_id: str) {
     self.states.push(1)
 }
 
-fn (mut self: FakeRunner) tunnel_listen(host_id: str, tunnel_id: str, local_port: i64, dest_host: str, dest_port: i64) -> i64! {
+fn (mut self: FakeRunner) tunnel_listen(host_id: str, tunnel_id: str, local_port: i64, _dest_host: str, _dest_port: i64) -> i64! {
     if self.tunnel_host_state(host_id) != 1 {
-        return error(coded(ERR_NETWORK, "the host's tunnel session is not connected"))
+        return error(domain.coded(domain.ERR_NETWORK, "the host's tunnel session is not connected"))
     }
     // A listener that went down is replaced, as the native registry does.
     mut kept: []domain.TunnelLive = []
@@ -81,7 +81,7 @@ fn (mut self: FakeRunner) tunnel_listen(host_id: str, tunnel_id: str, local_port
     self.live = kept
     for p in self.busy {
         if p == local_port {
-            return error(coded(ERR_PORT_IN_USE, "port {local_port} on 127.0.0.1 is already in use"))
+            return error(domain.coded(domain.ERR_PORT_IN_USE, "port {local_port} on 127.0.0.1 is already in use"))
         }
     }
     self.live.push(domain.TunnelLive{ host_id: host_id, tunnel_id: tunnel_id, up: true, down: false, port: local_port, connections: 0, opened: 0, failed: 0, error: "" })
@@ -192,7 +192,7 @@ test "a tunnel is saved in its host, with the same port on the server by default
     v := try add_tunnel(crypto, store, mut tun, runner, "web", pg_patch("pg", 5432))
     assert_eq(v.host, "web")
     assert_eq(v.destination, "localhost:5432")
-    assert_eq(v.state, TUNNEL_STOPPED)
+    assert_eq(v.state, domain.TUNNEL_STOPPED)
     mut p := pg_patch("redis", 16379)
     p.set_dest = true
     p.dest_host = "cache.internal"
@@ -205,7 +205,7 @@ test "a tunnel is saved in its host, with the same port on the server by default
     // Names are unique in a host, whatever their case; another host may reuse one.
     mut got := ""
     add_tunnel(crypto, store, mut tun, runner, "web", pg_patch("PG", 1)) or err { got = "{err.message()}" }
-    assert_eq(error_code_of(got), ERR_CONFLICT)
+    assert_eq(domain.error_code_of(got), domain.ERR_CONFLICT)
     _ = try add_tunnel(crypto, store, mut tun, runner, "bastion", pg_patch("pg", 5432))
     mut runner2 := runner
     all := try list_tunnels(store, tun, mut runner2, "")
@@ -217,10 +217,10 @@ test "a tunnel is saved in its host, with the same port on the server by default
     // A bad port or name never reaches the store.
     got = ""
     add_tunnel(crypto, store, mut tun, runner, "web", pg_patch("x", 70000)) or err { got = "{err.message()}" }
-    assert_eq(error_code_of(got), ERR_INVALID)
+    assert_eq(domain.error_code_of(got), domain.ERR_INVALID)
     got = ""
     add_tunnel(crypto, store, mut tun, runner, "nope", pg_patch("x", 1)) or err { got = "{err.message()}" }
-    assert_eq(error_code_of(got), ERR_NOT_FOUND)
+    assert_eq(domain.error_code_of(got), domain.ERR_NOT_FOUND)
 }
 
 test "editing and removing a tunnel" {
@@ -246,11 +246,11 @@ test "editing and removing a tunnel" {
     clash.name = "other"
     mut got := ""
     edit_tunnel(store, mut tun, runner, "web", "postgres", clash) or err { got = "{err.message()}" }
-    assert_eq(error_code_of(got), ERR_CONFLICT)
+    assert_eq(domain.error_code_of(got), domain.ERR_CONFLICT)
     _ = try remove_tunnel(store, mut tun, mut runner, "web", "postgres")
     got = ""
     tunnel_status(store, tun, mut runner, "web", "postgres") or err { got = "{err.message()}" }
-    assert_eq(error_code_of(got), ERR_NOT_FOUND)
+    assert_eq(domain.error_code_of(got), domain.ERR_NOT_FOUND)
 }
 
 test "starting a tunnel logs in once per host, hands the session over and listens" {
@@ -267,29 +267,29 @@ test "starting a tunnel logs in once per host, hands the session over and listen
     // and the listen fails; adopt it by hand and start again.
     mut got := ""
     start_tunnel(crypto, mut store, tun, s, mut link, no_prompter(), mut runner, "web", "pg", accept_opts()) or err { got = "{err.message()}" }
-    assert_eq(error_code_of(got), ERR_NETWORK)
+    assert_eq(domain.error_code_of(got), domain.ERR_NETWORK)
     assert_eq(link.calls[link.calls.len() - 1], "hand_over {web}")
     runner.adopt(web)
     v2 := try start_tunnel(crypto, mut store, tun, s, mut link, no_prompter(), mut runner, "web", "pg", accept_opts())
-    assert_eq(v2.state, TUNNEL_LISTENING)
+    assert_eq(v2.state, domain.TUNNEL_LISTENING)
     assert_eq(v2.listen, "127.0.0.1:5432")
     // A second tunnel on the same host rides the same session: no new login.
     mut second := web_link()
     v3 := try start_tunnel(crypto, mut store, tun, s, mut second, no_prompter(), mut runner, "web", "redis", accept_opts())
-    assert_eq(v3.state, TUNNEL_LISTENING)
+    assert_eq(v3.state, domain.TUNNEL_LISTENING)
     assert_eq(second.calls.len(), 0)
     assert_eq((try running_tunnels(store, tun, mut runner)).len(), 2)
     // Stopping one keeps the session; stopping the last hangs it up.
     before := runner.released.len()
     d := try stop_tunnel(store, tun, mut runner, "web", "pg")
-    assert_eq(d.state, TUNNEL_STOPPED)
+    assert_eq(d.state, domain.TUNNEL_STOPPED)
     assert_eq(runner.released.len(), before)
     _ = try stop_tunnel(store, tun, mut runner, "web", "redis")
     assert_eq(runner.released.len(), before + 1)
     assert_eq(runner.tunnel_host_state(web), 0)
     // Stopping a stopped tunnel is not an error.
     again := try stop_tunnel(store, tun, mut runner, "web", "redis")
-    assert_eq(again.state, TUNNEL_STOPPED)
+    assert_eq(again.state, domain.TUNNEL_STOPPED)
 }
 
 test "a port in use fails the start and hangs up a session that carries nothing" {
@@ -305,7 +305,7 @@ test "a port in use fails the start and hangs up a session that carries nothing"
     mut link := web_link()
     mut got := ""
     start_tunnel(crypto, mut store, tun, s, mut link, no_prompter(), mut runner, "web", "pg", accept_opts()) or err { got = "{err.message()}" }
-    assert_eq(error_code_of(got), ERR_PORT_IN_USE)
+    assert_eq(domain.error_code_of(got), domain.ERR_PORT_IN_USE)
     assert_eq(runner.released.len(), 1)
 }
 
@@ -322,7 +322,7 @@ test "a lost session shows its tunnels lost until started again" {
     _ = try start_tunnel(crypto, mut store, tun, s, mut link, no_prompter(), mut runner, "web", "pg", accept_opts())
     runner.lose(web)
     st := try tunnel_status(store, tun, mut runner, "web", "pg")
-    assert_eq(st.state, TUNNEL_LOST)
+    assert_eq(st.state, domain.TUNNEL_LOST)
     assert(st.error.len() > 0)
     // Starting it again releases the lost session and logs in anew.
     mut fresh := web_link()
@@ -331,7 +331,7 @@ test "a lost session shows its tunnels lost until started again" {
     assert_eq(fresh.calls[fresh.calls.len() - 1], "hand_over {web}")
     assert_eq(runner.released[0], web)
     // (The fake runner never receives the new session, so that start then fails.)
-    assert_eq(error_code_of(got), ERR_NETWORK)
+    assert_eq(domain.error_code_of(got), domain.ERR_NETWORK)
 }
 
 test "a tunnel the system stopped listing reads not listening, and starts again on the same session" {
@@ -348,7 +348,7 @@ test "a tunnel the system stopped listing reads not listening, and starts again 
     pg_id := runner.live[0].tunnel_id
     runner.drop_listener(web, pg_id)
     st := try tunnel_status(store, tun, mut runner, "web", "pg")
-    assert_eq(st.state, TUNNEL_NOT_LISTENING)
+    assert_eq(st.state, domain.TUNNEL_NOT_LISTENING)
     assert(st.error.contains("no longer lists"))
     assert_eq(st.listen, "")
     // It is offered again by a start of every tunnel, and listens on the live session.
@@ -356,7 +356,7 @@ test "a tunnel the system stopped listing reads not listening, and starts again 
     assert_eq(names.len(), 1)
     mut again := web_link()
     v := try start_tunnel(crypto, mut store, tun, s, mut again, no_prompter(), mut runner, "web", "pg", accept_opts())
-    assert_eq(v.state, TUNNEL_LISTENING)
+    assert_eq(v.state, domain.TUNNEL_LISTENING)
     assert_eq(runner.released.len(), 0)
 }
 
@@ -371,7 +371,7 @@ test "a login that fails hands nothing over" {
     link.fail_dial = true
     mut got := ""
     start_tunnel(crypto, mut store, tun, s, mut link, no_prompter(), mut runner, "web", "pg", accept_opts()) or err { got = "{err.message()}" }
-    assert_eq(error_code_of(got), ERR_NETWORK)
+    assert_eq(domain.error_code_of(got), domain.ERR_NETWORK)
     for c in link.calls {
         assert(!c.starts_with("hand_over"))
     }
@@ -412,8 +412,7 @@ test "every start holds its host's gate, and leaves it on failure too" {
     web := host_id_of(store, "web")
     mut link := web_link()
     // Only the gates it leaves behind are checked, whatever the start gives.
-    mut why := ""
-    start_tunnel(crypto, mut store, tun, s, mut link, no_prompter(), mut runner, "web", "pg", accept_opts()) or err { why = err.message() }
+    start_tunnel(crypto, mut store, tun, s, mut link, no_prompter(), mut runner, "web", "pg", accept_opts()) or {}
     assert_eq(runner.gates.len(), 2)
     assert_eq(runner.gates[0], "+" + web)
     assert_eq(runner.gates[1], "-" + web)
@@ -493,12 +492,12 @@ test "a start from the app opens each tunnel in turn, and stops at a login that 
     got := start_tunnels(crypto, mut store, tun, s, mut link, no_prompter(), mut runner, "web", ["pg", "redis"], accept_opts())
     assert_eq(got.len(), 2)
     assert_eq(got[0].error, "")
-    assert_eq(error_code_of(got[1].error), ERR_PORT_IN_USE)
+    assert_eq(domain.error_code_of(got[1].error), domain.ERR_PORT_IN_USE)
     // A login that fails ends the start there: the second would only ask again.
     _ = try stop_tunnel(store, tun, mut runner, "web", "pg")
     mut down := web_link()
     down.fail_dial = true
     lost := start_tunnels(crypto, mut store, tun, s, mut down, no_prompter(), mut runner, "web", ["pg", "redis"], accept_opts())
     assert_eq(lost.len(), 1)
-    assert_eq(error_code_of(lost[0].error), ERR_NETWORK)
+    assert_eq(domain.error_code_of(lost[0].error), domain.ERR_NETWORK)
 }

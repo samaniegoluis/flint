@@ -9,8 +9,6 @@ package main
 // shows the sync's state (milestone 44, remote.cf and design 23c).
 
 import "ext:webui"
-import "core:json"
-import "core:sync"
 import "core:time"
 import "core:os"
 import "../../adapters/config"
@@ -38,12 +36,12 @@ fn apply_sync_hint(mut clock: domain.SyncClock, hint: str) -> str {
     what := str(hint[..colon])
     about := str(hint[colon + 1..])
     if what == SYNC_HINT_REFUSED {
-        sync_pause(mut clock, about)
+        domain.sync_pause(mut clock, about)
     } else if what == SYNC_HINT_RESUME {
-        sync_resume(mut clock, about)
+        domain.sync_resume(mut clock, about)
     } else if what == SYNC_HINT_TOKEN {
-        sync_resume(mut clock, about)
-        return SYNC_HINT_NOW
+        domain.sync_resume(mut clock, about)
+        return domain.SYNC_HINT_NOW
     }
     return ""
 }
@@ -76,16 +74,16 @@ type SyncHintReq struct {
 // The `<what>:<path>` hints below come from the core itself, never from the page.
 fn rpc_vault_sync_hint(params: str, st: GuiState) -> str! {
     req := try parse_req[SyncHintReq](params)
-    if req.reason == SYNC_HINT_FOCUS || req.reason == SYNC_HINT_NOW {
+    if req.reason == domain.SYNC_HINT_FOCUS || req.reason == domain.SYNC_HINT_NOW {
         st.sync_hints.send(req.reason)
     }
     return ok_json()
 }
 
 fn run_sync_loop(c: flint_crypto.Sodium, mut store: vault.LockedVaultStore, kc: flint_keychain.OsKeychain, settings_store: config.JsonSettingsStore, st: GuiState, mut app: webui.App) {
-    links := new_json_remote_link_store(flint_config_dir())
-    remote := new_http_vault_remote()
-    mut clock := new_sync_clock()
+    links := config.new_json_remote_link_store(config.flint_config_dir())
+    remote := vaultremote.new_http_vault_remote()
+    mut clock := domain.new_sync_clock()
     // FLINT_SYNC_DIAG=1: one stderr line per tick with what the loop saw (paths are
     // the vault's file path, already in the recents list; nothing from inside it).
     diag := (os.getenv("FLINT_SYNC_DIAG") or "") == "1"
@@ -97,40 +95,40 @@ fn run_sync_loop(c: flint_crypto.Sodium, mut store: vault.LockedVaultStore, kc: 
             continue
         }
         session := st.vault_session()
-        connected := remote_connected(links, session.path)
+        connected := application.remote_connected(links, session.path)
         if !connected {
             if diag {
-                write_stderr("flint-gui: diag: sync tick at {time.now_ms()}: {session.path} not connected\n")
+                process.write_stderr("flint-gui: diag: sync tick at {time.now_ms()}: {session.path} not connected\n")
             }
             continue
         }
-        interval := (load_settings(settings_store) or default_settings()).sync_interval
-        pending := remote_pending(c, store, links, session.path)
+        interval := (application.load_settings(settings_store) or domain.default_settings()).sync_interval
+        pending := application.remote_pending(c, store, links, session.path)
         now := time.now_ms()
-        due := sync_due(mut clock, session.path, now, pending, interval, hint)
+        due := domain.sync_due(mut clock, session.path, now, pending, interval, hint)
         if diag {
-            write_stderr("flint-gui: diag: sync tick at {now}: pending {pending} hint '{hint}' refused {sync_refused(clock, session.path)} due {due}\n")
+            process.write_stderr("flint-gui: diag: sync tick at {now}: pending {pending} hint '{hint}' refused {sync_refused(clock, session.path)} due {due}\n")
         }
         if !due {
             continue
         }
-        app.emit("vault:sync", SyncEvent{ path: session.path, state: SYNC_STATE_SYNCING, version: 0, report: empty_merge_report(), code: "", message: "" })
+        app.emit("vault:sync", SyncEvent{ path: session.path, state: SYNC_STATE_SYNCING, version: 0, report: application.empty_merge_report(), code: "", message: "" })
         mut s := session
-        got := sync_vault(c, mut store, links, remote, kc, kc, mut s, "", time.unix_seconds() * 1000) or err {
+        got := application.sync_vault(c, mut store, links, remote, kc, kc, mut s, "", time.unix_seconds() * 1000) or err {
             msg := "{err.message()}"
-            code := error_code_of(msg)
-            sync_checked(mut clock, session.path, time.now_ms(), code)
-            if code == ERR_AUTH {
-                write_stderr("flint-gui: sync failed (auth): paused until Sync now, a new token or a restart\n")
+            code := domain.error_code_of(msg)
+            domain.sync_checked(mut clock, session.path, time.now_ms(), code)
+            if code == domain.ERR_AUTH {
+                process.write_stderr("flint-gui: sync failed (auth): paused until Sync now, a new token or a restart\n")
             } else {
-                write_stderr("flint-gui: sync failed ({code})\n")
+                process.write_stderr("flint-gui: sync failed ({code})\n")
             }
-            app.emit("vault:sync", SyncEvent{ path: session.path, state: "error", version: 0, report: empty_merge_report(), code: error_code_of(msg), message: msg })
+            app.emit("vault:sync", SyncEvent{ path: session.path, state: "error", version: 0, report: application.empty_merge_report(), code: domain.error_code_of(msg), message: msg })
             continue
         }
-        sync_checked(mut clock, session.path, time.now_ms(), "")
-        if got.result != SYNC_IN_STEP {
-            write_stderr("flint-gui: synced ({got.result}, version {got.version})\n")
+        domain.sync_checked(mut clock, session.path, time.now_ms(), "")
+        if got.result != application.SYNC_IN_STEP {
+            process.write_stderr("flint-gui: synced ({got.result}, version {got.version})\n")
         }
         emit_sync_outcome(mut app, session.path, session.name, got)
     }

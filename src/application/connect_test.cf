@@ -204,7 +204,7 @@ test "an unknown host key needs a terminal or --accept-new-host-key" {
     mut link2 := new_fake_link()
     link2.good_password = "host-pw"
     got_code = "ok"
-    open_link(crypto, mut store, s, mut link2, refuse, "bastion", default_connect_options()) or err { got_code = error_code_of("{err.message()}") }
+    open_link(crypto, mut store, s, mut link2, refuse, "bastion", default_connect_options()) or err { got_code = domain.error_code_of("{err.message()}") }
     assert_eq(got_code, "host_key")
     assert_eq((try store.known_hosts_all()).len(), 0)
 
@@ -246,7 +246,7 @@ test "a changed host key is refused even with --accept-new-host-key, until forgo
     gone := try remove_known_host(mut store, "bastion")
     assert_eq(gone.addr, "bastion.example.org")
     got_code = "ok"
-    remove_known_host(mut store, "bastion") or err { got_code = error_code_of("{err.message()}") }
+    remove_known_host(mut store, "bastion") or err { got_code = domain.error_code_of("{err.message()}") }
     assert_eq(got_code, "not_found")
 
     mut again := new_fake_link()
@@ -292,10 +292,10 @@ test "exec times out and refuses an empty command" {
     run_exec(mut link, mut sink, mut clock, "web", "sleep 99", 2, false) or err { r = "{err.message()}" }
     assert_eq(err_code(r), "timeout")
     got_code = "ok"
-    run_exec(mut link, mut sink, mut clock, "web", "", 2, false) or err { got_code = error_code_of("{err.message()}") }
+    run_exec(mut link, mut sink, mut clock, "web", "", 2, false) or err { got_code = domain.error_code_of("{err.message()}") }
     assert_eq(got_code, "usage")
     got_code = "ok"
-    run_exec(mut link, mut sink, mut clock, "web", "x", 0, false) or err { got_code = error_code_of("{err.message()}") }
+    run_exec(mut link, mut sink, mut clock, "web", "x", 0, false) or err { got_code = domain.error_code_of("{err.message()}") }
     assert_eq(got_code, "invalid")
 }
 
@@ -347,7 +347,7 @@ test "a keepalive that cannot be sent ends the session with a network error" {
     mut r := ""
     run_shell(mut link, mut term, mut clock, "xterm-256color", "") or err { r = "{err.message()}" }
     assert(r.len() > 0)
-    assert_eq(error_code_of("{r}"), ERR_NETWORK)
+    assert_eq(domain.error_code_of("{r}"), domain.ERR_NETWORK)
     assert_eq(link.keepalives, 1)
     assert(!term.raw, "raw mode is left on the way out")
 }
@@ -410,7 +410,7 @@ test "a host's initial command is stored, shown and run on the PTY" {
     c.command = "a\nb"
     c.set_command = true
     got_code = "ok"
-    edit_host(crypto, mut store, s, "web", c) or err { got_code = error_code_of("{err.message()}") }
+    edit_host(crypto, mut store, s, "web", c) or err { got_code = domain.error_code_of("{err.message()}") }
     assert_eq(got_code, "invalid")
     c.command = ""
     assert_eq((try edit_host(crypto, mut store, s, "web", c)).command, "")
@@ -458,7 +458,7 @@ test "host test reports a failed method without asking for a password" {
     mut first := web_link()
     _ = try test_host(crypto, mut store, s, mut first, no_prompter(), mut clock, "bastion", accept_opts())
     got_code = "ok"
-    test_host(crypto, mut store, s, mut evil, yes_prompter(), mut clock, "bastion", accept_opts()) or err { got_code = error_code_of("{err.message()}") }
+    test_host(crypto, mut store, s, mut evil, yes_prompter(), mut clock, "bastion", accept_opts()) or err { got_code = domain.error_code_of("{err.message()}") }
     assert_eq(got_code, "host_key")
 }
 
@@ -536,7 +536,7 @@ test "an edited draft overrides the saved host for the test only" {
     assert_eq(link.calls[0], "dial jump@Bastion.Example.org:2200")
     assert_eq((try show_host(store, "bastion")).port, 22)
     got_code = "ok"
-    test_host_draft(crypto, mut store, s, mut link, yes_prompter(), mut clock, "", empty_host_patch(), default_connect_options()) or err { got_code = error_code_of("{err.message()}") }
+    test_host_draft(crypto, mut store, s, mut link, yes_prompter(), mut clock, "", empty_host_patch(), default_connect_options()) or err { got_code = domain.error_code_of("{err.message()}") }
     assert_eq(got_code, "usage")
 }
 
@@ -555,10 +555,10 @@ test "a saved password is revealed or copied only by name, and the copy is clear
     assert_eq(err_code(no_pw), "not_found")
     assert(!"{no_pw}".contains("pw"))
     got_code = "ok"
-    reveal_password(crypto, store, s, "host", "nope") or err { got_code = error_code_of("{err.message()}") }
+    reveal_password(crypto, store, s, "host", "nope") or err { got_code = domain.error_code_of("{err.message()}") }
     assert_eq(got_code, "not_found")
     got_code = "ok"
-    reveal_password(crypto, store, s, "key", "k1") or err { got_code = error_code_of("{err.message()}") }
+    reveal_password(crypto, store, s, "key", "k1") or err { got_code = domain.error_code_of("{err.message()}") }
     assert_eq(got_code, "invalid")
 
     mut clip := FakeClipboard{ text: "", clear_after_ms: 0, copies: 0, held: domain.ClipboardContent{ text: "", mime: "", image: "" } }
@@ -566,7 +566,7 @@ test "a saved password is revealed or copied only by name, and the copy is clear
     assert_eq(clip.text, "cred-pw")
     assert_eq(clip.clear_after_ms, 30000)
     got_code = "ok"
-    copy_password(crypto, store, s, mut clip, "host", "web") or err { got_code = error_code_of("{err.message()}") }
+    copy_password(crypto, store, s, mut clip, "host", "web") or err { got_code = domain.error_code_of("{err.message()}") }
     assert_eq(got_code, "not_found")
     assert_eq(clip.copies, 1)
 
@@ -607,7 +607,7 @@ test "a Files pane's session ends with a network error when a keepalive cannot b
     mut clock := FakeClock{ now_ms: 0, step_ms: 20000 }
     mut r := ""
     hold_files_session(crypto, mut store, s, mut link, no_prompter(), mut term, mut clock, "web", accept_opts()) or err { r = "{err.message()}" }
-    assert_eq(error_code_of("{r}"), ERR_NETWORK)
+    assert_eq(domain.error_code_of("{r}"), domain.ERR_NETWORK)
     assert_eq(link.keepalives, 1)
     assert(link.hung_up)
 }
@@ -622,7 +622,7 @@ test "a Files pane's session that fails to log in never lends it" {
     mut clock := idle_clock()
     mut r := ""
     hold_files_session(crypto, mut store, s, mut link, no_prompter(), mut term, mut clock, "web", accept_opts()) or err { r = "{err.message()}" }
-    assert_eq(error_code_of("{r}"), ERR_NETWORK)
+    assert_eq(domain.error_code_of("{r}"), domain.ERR_NETWORK)
     for c in link.calls {
         assert(c != "lend")
     }

@@ -60,7 +60,7 @@ type RemoteLinkList struct {
 }
 
 fn gui_remote_links() -> config.JsonRemoteLinkStore {
-    return new_json_remote_link_store(flint_config_dir())
+    return config.new_json_remote_link_store(config.flint_config_dir())
 }
 
 fn sync_wall_ms() -> i64 {
@@ -71,18 +71,18 @@ fn sync_wall_ms() -> i64 {
 // answers for a locked vault too (the unlock screen's line, design 23g).
 fn rpc_vault_remote_status(params: str, c: flint_crypto.Sodium, store: vault.LockedVaultStore) -> str! {
     req := try parse_req[PathReq](params)
-    return json.stringify(try remote_status(c, store, gui_remote_links(), req.path))
+    return json.stringify(try application.remote_status(c, store, gui_remote_links(), req.path))
 }
 
 // The vaults connected on this machine, for the cloud mark on recents (design 23d).
 fn rpc_vault_remotes() -> str! {
-    return json.stringify(RemoteLinkList{ links: try remote_link_views(gui_remote_links()) })
+    return json.stringify(RemoteLinkList{ links: try application.remote_link_views(gui_remote_links()) })
 }
 
 // Connect remote vault, step 1 (design 23a1-23a3): the vaults the server keeps.
 fn rpc_vault_remote_probe(req: RemoteServerReq, c: flint_crypto.Sodium) -> application.RemoteProbe! {
     defer c.wipe_text(req.token)
-    return try probe_remote(new_http_vault_remote(), req.url, req.token)
+    return try application.probe_remote(vaultremote.new_http_vault_remote(), req.url, req.token)
 }
 
 // Connect remote vault, step 2 (design 23a3-23a4): the server's vault downloaded to a
@@ -94,10 +94,10 @@ fn rpc_vault_remote_download(req: RemoteDownloadReq, c: flint_crypto.Sodium, mut
     st.hold()
     defer st.release()
     close_current(mut store, mut st)
-    s := try download_remote(c, mut store, gui_remote_links(), new_http_vault_remote(), kc, kc, recents, req.url, req.token, req.vault_id, req.password, req.path, req.remember, sync_wall_ms())
+    s := try application.download_remote(c, mut store, gui_remote_links(), vaultremote.new_http_vault_remote(), kc, kc, recents, req.url, req.token, req.vault_id, req.password, req.path, req.remember, sync_wall_ms())
     st.holder.set_remembered(s.path, s.cached)
     st.adopt(s)
-    return session_info(s)
+    return application.session_info(s)
 }
 
 // Settings → Vault → Connect to a server (design 23b2): the open vault goes to the
@@ -109,7 +109,7 @@ fn rpc_vault_remote_connect(req: RemoteConnectReq, c: flint_crypto.Sodium, mut s
     st.hold()
     defer st.release()
     mut session := st.vault_session()
-    got := try connect_remote(c, mut store, gui_remote_links(), new_http_vault_remote(), kc, kc, mut session, req.url, req.token, req.password, req.label, sync_wall_ms())
+    got := try application.connect_remote(c, mut store, gui_remote_links(), vaultremote.new_http_vault_remote(), kc, kc, mut session, req.url, req.token, req.password, req.label, sync_wall_ms())
     emit_sync_outcome(mut app, session.path, session.name, got)
     return got
 }
@@ -122,13 +122,13 @@ fn rpc_vault_sync_now(req: SyncNowReq, c: flint_crypto.Sodium, mut store: vault.
     st.hold()
     defer st.release()
     mut session := st.vault_session()
-    app.emit("vault:sync", SyncEvent{ path: session.path, state: SYNC_STATE_SYNCING, version: 0, report: empty_merge_report(), code: "", message: "" })
-    got := sync_vault(c, mut store, gui_remote_links(), new_http_vault_remote(), kc, kc, mut session, req.new_password, sync_wall_ms()) or err {
+    app.emit("vault:sync", SyncEvent{ path: session.path, state: SYNC_STATE_SYNCING, version: 0, report: application.empty_merge_report(), code: "", message: "" })
+    got := application.sync_vault(c, mut store, gui_remote_links(), vaultremote.new_http_vault_remote(), kc, kc, mut session, req.new_password, sync_wall_ms()) or err {
         msg := "{err.message()}"
-        if error_code_of(msg) == ERR_AUTH {
+        if domain.error_code_of(msg) == domain.ERR_AUTH {
             tell_sync_loop(st, SYNC_HINT_REFUSED, session.path)
         }
-        app.emit("vault:sync", SyncEvent{ path: session.path, state: "error", version: 0, report: empty_merge_report(), code: error_code_of(msg), message: msg })
+        app.emit("vault:sync", SyncEvent{ path: session.path, state: "error", version: 0, report: application.empty_merge_report(), code: domain.error_code_of(msg), message: msg })
         return error(msg)
     }
     tell_sync_loop(st, SYNC_HINT_RESUME, session.path)
@@ -145,17 +145,17 @@ fn rpc_vault_remote_token(req: RemoteTokenReq, c: flint_crypto.Sodium, st: GuiSt
     defer c.wipe_text(req.token)
     try st.require_unlocked()
     path := st.vault_session().path
-    link := try replace_remote_token(gui_remote_links(), new_http_vault_remote(), kc, path, req.token)
+    link := try application.replace_remote_token(gui_remote_links(), vaultremote.new_http_vault_remote(), kc, path, req.token)
     // A refused vault resumes with the new token, and syncs at once (milestone 71).
     tell_sync_loop(st, SYNC_HINT_TOKEN, path)
     return RemoteGone{ path: path, url: link.url }
 }
 
 // Settings → Vault → Disconnect (design 23b3): the vault file and the server's copy stay.
-fn rpc_vault_remote_disconnect(c: flint_crypto.Sodium, st: GuiState, kc: flint_keychain.OsKeychain) -> str! {
+fn rpc_vault_remote_disconnect(_c: flint_crypto.Sodium, st: GuiState, kc: flint_keychain.OsKeychain) -> str! {
     try st.require_unlocked()
     path := st.vault_session().path
-    gone := try disconnect_remote(gui_remote_links(), kc, path)
+    gone := try application.disconnect_remote(gui_remote_links(), kc, path)
     return json.stringify(RemoteGone{ path: path, url: gone.url })
 }
 

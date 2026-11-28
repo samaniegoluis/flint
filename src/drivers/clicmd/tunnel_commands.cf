@@ -17,7 +17,7 @@ import "../../application"
 import "../../domain"
 
 fn tunnel_usage() -> str {
-    return coded(ERR_USAGE, `usage: flint tunnel add <host> <name> --local <port> [--to <host:port>] [--open-on-connect]
+    return domain.coded(domain.ERR_USAGE, `usage: flint tunnel add <host> <name> --local <port> [--to <host:port>] [--open-on-connect]
        flint tunnel edit <host>:<name> [--name <name>] [--local <port>] [--to <host:port>] [--open-on-connect | --no-open-on-connect]
        flint tunnel rm <host>:<name> | flint tunnel ls [<host>]
        flint tunnel up|down <host>:<name> | flint tunnel status [<host>:<name>]`)
@@ -31,23 +31,23 @@ fn is_tunnel_session(p: ParsedArgs) -> bool {
 }
 
 fn tunnel_patch_from_flags(p: ParsedArgs) -> application.TunnelPatch! {
-    mut patch := empty_tunnel_patch()
+    mut patch := application.empty_tunnel_patch()
     if p.has_flag("--name") {
         patch.set_name = true
         patch.name = p.flag_value("--name")
     }
     if p.has_flag("--local") {
         patch.set_local_port = true
-        patch.local_port = try parse_port_text(p.flag_value("--local"), "local port")
+        patch.local_port = try domain.parse_port_text(p.flag_value("--local"), "local port")
     }
     if p.has_flag("--to") {
-        (h, port) := try parse_tunnel_destination(p.flag_value("--to"))
+        (h, port) := try domain.parse_tunnel_destination(p.flag_value("--to"))
         patch.set_dest = true
         patch.dest_host = h
         patch.dest_port = port
     }
     if p.has_flag("--open-on-connect") && p.has_flag("--no-open-on-connect") {
-        return error(coded(ERR_USAGE, "pass --open-on-connect or --no-open-on-connect, not both"))
+        return error(domain.coded(domain.ERR_USAGE, "pass --open-on-connect or --no-open-on-connect, not both"))
     }
     if p.has_flag("--open-on-connect") {
         patch.set_open = true
@@ -68,7 +68,7 @@ fn tunnel_state_text(v: application.TunnelView) -> str {
     if v.state.len() == 0 {
         return "-"
     }
-    if v.state == TUNNEL_LISTENING {
+    if v.state == domain.TUNNEL_LISTENING {
         return "listening · {plural(v.connections, "connection", "connections")}"
     }
     return v.state
@@ -99,7 +99,7 @@ fn print_tunnel(v: application.TunnelView) {
 fn cmd_tunnel(p: ParsedArgs, sec: SecretInput, as_json: bool, c: flint_crypto.Sodium, mut store: vault.LockedVaultStore, src: VaultSource, recents: config.JsonRecentStore) -> void! {
     verb := p.positional(1)
     mut tun := store
-    mut runner := new_native_tunnels()
+    mut runner := flint_ssh.new_native_tunnels()
     if verb == "add" {
         try p.allow_flags("tunnel add", ["--local", "--to", "--open-on-connect"])
         try p.expect_args("tunnel add", 2, "<host> <name> --local <port> [--to <host:port>] [--open-on-connect]")
@@ -110,7 +110,7 @@ fn cmd_tunnel(p: ParsedArgs, sec: SecretInput, as_json: bool, c: flint_crypto.So
         patch.set_name = true
         patch.name = p.positional(3)
         _ = try open_target(p, sec, c, mut store, src, recents)
-        v := try add_tunnel(c, store, mut tun, runner, p.positional(2), patch)
+        v := try application.add_tunnel(c, store, mut tun, runner, p.positional(2), patch)
         if as_json {
             say(json.stringify(v))
         } else {
@@ -121,13 +121,13 @@ fn cmd_tunnel(p: ParsedArgs, sec: SecretInput, as_json: bool, c: flint_crypto.So
     if verb == "edit" {
         try p.allow_flags("tunnel edit", ["--name", "--local", "--to", "--open-on-connect", "--no-open-on-connect"])
         try p.expect_args("tunnel edit", 1, "<host>:<name> [--name <name>] [--local <port>] [--to <host:port>] [--open-on-connect | --no-open-on-connect]")
-        (alias, name) := try split_tunnel_ref(p.positional(2))
+        (alias, name) := try domain.split_tunnel_ref(p.positional(2))
         patch := try tunnel_patch_from_flags(p)
         _ = try open_target(p, sec, c, mut store, src, recents)
-        v := try edit_tunnel(store, mut tun, runner, alias, name, patch)
+        v := try application.edit_tunnel(store, mut tun, runner, alias, name, patch)
         if as_json {
             say(json.stringify(v))
-        } else if v.state == TUNNEL_LISTENING {
+        } else if v.state == domain.TUNNEL_LISTENING {
             say("Updated tunnel '{tunnel_ref_text(v)}'. It keeps running as it was until it is started again.")
         } else {
             say("Updated tunnel '{tunnel_ref_text(v)}'.")
@@ -137,9 +137,9 @@ fn cmd_tunnel(p: ParsedArgs, sec: SecretInput, as_json: bool, c: flint_crypto.So
     if verb == "rm" {
         try p.allow_flags("tunnel rm", [])
         try p.expect_args("tunnel rm", 1, "<host>:<name>")
-        (alias, name) := try split_tunnel_ref(p.positional(2))
+        (alias, name) := try domain.split_tunnel_ref(p.positional(2))
         _ = try open_target(p, sec, c, mut store, src, recents)
-        v := try remove_tunnel(store, mut tun, mut runner, alias, name)
+        v := try application.remove_tunnel(store, mut tun, mut runner, alias, name)
         if as_json {
             say(json.stringify(RemovedNote{ removed: "tunnel", name: tunnel_ref_text(v) }))
         } else {
@@ -150,10 +150,10 @@ fn cmd_tunnel(p: ParsedArgs, sec: SecretInput, as_json: bool, c: flint_crypto.So
     if verb == "ls" || verb == "list" {
         try p.allow_flags("tunnel ls", [])
         if p.positionals.len() > 3 {
-            return error(coded(ERR_USAGE, "usage: flint tunnel ls [<host>]"))
+            return error(domain.coded(domain.ERR_USAGE, "usage: flint tunnel ls [<host>]"))
         }
         _ = try open_target(p, sec, c, mut store, src, recents)
-        mut list := try list_tunnels(store, tun, mut runner, p.positional(2))
+        mut list := try application.list_tunnels(store, tun, mut runner, p.positional(2))
         if !sec.in_app {
             // Tunnels run in Flint: this process cannot see them.
             for i in 0..list.len() {
@@ -167,11 +167,11 @@ fn cmd_tunnel(p: ParsedArgs, sec: SecretInput, as_json: bool, c: flint_crypto.So
         }
         return
     }
-    return error(coded(ERR_USAGE, "unknown command `flint tunnel {verb}`; see `flint help`"))
+    return error(domain.coded(domain.ERR_USAGE, "unknown command `flint tunnel {verb}`; see `flint help`"))
 }
 
 fn tunnels_need_flint(verb: str) -> str {
-    return coded(ERR_LOCKED, "`flint tunnel {verb}` runs only through Flint, which keeps tunnels running: open Flint, unlock this vault there, and run it again")
+    return domain.coded(domain.ERR_LOCKED, "`flint tunnel {verb}` runs only through Flint, which keeps tunnels running: open Flint, unlock this vault there, and run it again")
 }
 
 // `up`, `down` and `status`, run by the app for the CLI.
@@ -186,13 +186,13 @@ fn cmd_tunnel_session[P: ports.Prompter](p: ParsedArgs, sec: SecretInput, as_jso
     } else {
         try p.allow_flags("tunnel status", [])
         if p.positionals.len() > 3 {
-            return error(coded(ERR_USAGE, "usage: flint tunnel status [<host>:<name>]"))
+            return error(domain.coded(domain.ERR_USAGE, "usage: flint tunnel status [<host>:<name>]"))
         }
     }
     mut alias := ""
     mut name := ""
     if p.positional(2).len() > 0 {
-        (a, n) := try split_tunnel_ref(p.positional(2))
+        (a, n) := try domain.split_tunnel_ref(p.positional(2))
         alias = a
         name = n
     }
@@ -203,9 +203,9 @@ fn cmd_tunnel_session[P: ports.Prompter](p: ParsedArgs, sec: SecretInput, as_jso
     opts := try connect_options(p)
     s := try open_target(p, sec, c, mut store, src, recents)
     tun := store
-    mut runner := new_native_tunnels()
+    mut runner := flint_ssh.new_native_tunnels()
     if verb == "status" && alias.len() == 0 {
-        list := try running_tunnels(store, tun, mut runner)
+        list := try application.running_tunnels(store, tun, mut runner)
         if as_json {
             say(json.stringify(list))
         } else if list.len() == 0 {
@@ -217,12 +217,12 @@ fn cmd_tunnel_session[P: ports.Prompter](p: ParsedArgs, sec: SecretInput, as_jso
     }
     mut v := application.TunnelView{ host: "", name: "", local_port: 0, destination: "", open_on_connect: false, state: "", listen: "", connections: 0, error: "" }
     if verb == "up" {
-        mut link := new_ssh_link()
-        v = try start_tunnel(c, mut store, tun, s, mut link, prompter, mut runner, alias, name, opts)
+        mut link := flint_ssh.new_ssh_link()
+        v = try application.start_tunnel(c, mut store, tun, s, mut link, prompter, mut runner, alias, name, opts)
     } else if verb == "down" {
-        v = try stop_tunnel(store, tun, mut runner, alias, name)
+        v = try application.stop_tunnel(store, tun, mut runner, alias, name)
     } else {
-        v = try tunnel_status(store, tun, mut runner, alias, name)
+        v = try application.tunnel_status(store, tun, mut runner, alias, name)
     }
     if as_json {
         say(json.stringify(v))

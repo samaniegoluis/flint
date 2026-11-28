@@ -1,7 +1,7 @@
 # Flint on Windows: port guide
 
-How Flint builds, runs, is checked and is packaged on Windows, on **stock cfire `v0.12.7`**
-(D-154): cfire's Windows release, natively in MSYS2 CLANG64, with none of the patches the
+How Flint builds, runs, is checked and is packaged on Windows, on **stock cfire `v0.13.1`**
+(D-164): cfire's Windows release, natively in MSYS2 CLANG64, with none of the patches the
 first port needed. Worked out in step 6 of the cfire move ([`cfire-migration.md`](cfire-migration.md),
 2026-11-18 and 19, on `v0.12.2`) on the dedicated Windows test VM; `windows/bin/setup.sh`
 fetches the pinned release into `<opt>/cfire-<version>`, so a pin change installs the new

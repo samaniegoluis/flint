@@ -5,7 +5,7 @@ package domain
 // back for whoever diagnoses a release. Autofill stays off either way.
 
 // Whether FLINT_DEVTOOLS asks for the inspector: "1", "true", "yes" or "on".
-fn devtools_requested(v: str) -> bool {
+pub fn devtools_requested(v: str) -> bool {
     t := v.trim().to_lower()
     return t == "1" || t == "true" || t == "yes" || t == "on"
 }
@@ -13,6 +13,6 @@ fn devtools_requested(v: str) -> bool {
 // Whether a file of WebView2's profile holds what autofill or password autosave
 // stored: Chromium's `Web Data` (form values) and `Login Data` (passwords), each
 // with its SQLite journal (`-journal`, `-wal`, `-shm`) and `Login Data For Account`.
-fn webview_autofill_file(name: str) -> bool {
+pub fn webview_autofill_file(name: str) -> bool {
     return name.starts_with("Web Data") || name.starts_with("Login Data")
 }

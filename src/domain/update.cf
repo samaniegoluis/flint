@@ -8,23 +8,23 @@ package domain
 
 // The release feed: `releases/latest/download/…` never names a draft or a
 // pre-release, so only a published release is ever offered.
-UPDATE_FEED_URL: str = "https://github.com/samaniegoluis/flint/releases/latest/download/manifest.json"
+pub UPDATE_FEED_URL: str = "https://github.com/samaniegoluis/flint/releases/latest/download/manifest.json"
 // Where a manifest's links may point: this repository's releases, nowhere else.
 UPDATE_RELEASES_PREFIX: str = "https://github.com/samaniegoluis/flint/releases/"
-UPDATE_DOWNLOAD_PREFIX: str = "https://github.com/samaniegoluis/flint/releases/download/"
+pub UPDATE_DOWNLOAD_PREFIX: str = "https://github.com/samaniegoluis/flint/releases/download/"
 // The Ed25519 public key (32 bytes, hex) the manifest's signature must verify against
 // (Principle 15). Its secret is FLINT_UPDATE_SIGNING_KEY in the workflow's `release`
 // environment and the owner's Infisical (/flint), never in this repository.
-UPDATE_PUBLIC_KEY_HEX: str = "81f64a7519190dca92da677e34c26bba996ad684cef43992b28bb52c110f041f"
+pub UPDATE_PUBLIC_KEY_HEX: str = "81f64a7519190dca92da677e34c26bba996ad684cef43992b28bb52c110f041f"
 // The most a manifest or its signature may be.
-UPDATE_MANIFEST_MAX_BYTES: i64 = 65536
+pub UPDATE_MANIFEST_MAX_BYTES: i64 = 65536
 // The automatic check: at launch, then every hour while Flint runs (D-116).
-UPDATE_CHECK_EVERY_MS: i64 = 3600000
+pub UPDATE_CHECK_EVERY_MS: i64 = 3600000
 
 // The assets a release may carry, by system (spec v13).
-UPDATE_ASSET_MACOS: str = "macos-arm64"
+pub UPDATE_ASSET_MACOS: str = "macos-arm64"
 UPDATE_ASSET_WINDOWS: str = "windows-x86_64"
-UPDATE_ASSET_DEB: str = "linux-x86_64-deb"
+pub UPDATE_ASSET_DEB: str = "linux-x86_64-deb"
 UPDATE_ASSET_RPM: str = "linux-x86_64-rpm"
 UPDATE_ASSET_KEYS: []str = ["macos-arm64", "windows-x86_64", "linux-x86_64-deb", "linux-x86_64-rpm"]
 
@@ -33,13 +33,13 @@ UPDATE_ASSET_KEYS: []str = ["macos-arm64", "windows-x86_64", "linux-x86_64-deb",
 // `package:deb` / `package:rpm`) is installed by the system's package manager, from
 // Flint's download when it came from a file (milestone 54); `source`
 // (no file: a build from source) is rebuilt by hand.
-INSTALL_PORTABLE: str = "portable"
+pub INSTALL_PORTABLE: str = "portable"
 INSTALL_PACKAGE: str = "package"
 INSTALL_SOURCE: str = "source"
 
 // What the person can do about a newer version.
-UPDATE_ACTION_DOWNLOAD: str = "download"
-UPDATE_ACTION_HOW: str = "how"
+pub UPDATE_ACTION_DOWNLOAD: str = "download"
+pub UPDATE_ACTION_HOW: str = "how"
 // Why How to update: a package manager's install, a build from source, a folder this
 // process cannot write, or a release with no package for this system.
 UPDATE_HOW_PACKAGE: str = "package"
@@ -48,13 +48,13 @@ UPDATE_HOW_READONLY: str = "readonly"
 UPDATE_HOW_NO_ASSET: str = "no_asset"
 
 // The page's states.
-UPDATE_IDLE: str = "idle"
-UPDATE_CHECKING: str = "checking"
-UPDATE_UP_TO_DATE: str = "up_to_date"
-UPDATE_AVAILABLE: str = "available"
-UPDATE_FAILED: str = "error"
+pub UPDATE_IDLE: str = "idle"
+pub UPDATE_CHECKING: str = "checking"
+pub UPDATE_UP_TO_DATE: str = "up_to_date"
+pub UPDATE_AVAILABLE: str = "available"
+pub UPDATE_FAILED: str = "error"
 
-type UpdateAsset struct {
+pub type UpdateAsset struct {
     key:    str `json:"key"`
     name:   str `json:"name"`
     url:    str `json:"url"`
@@ -63,7 +63,7 @@ type UpdateAsset struct {
 }
 
 // manifest.json, written and signed by scripts/sign-manifest.sh.
-type UpdateManifest struct {
+pub type UpdateManifest struct {
     version: str           `json:"version"`
     date:    str           `json:"date"`
     summary: str           `json:"summary"`
@@ -72,7 +72,7 @@ type UpdateManifest struct {
 }
 
 // This copy of Flint, as the update sees it.
-type UpdateHere struct {
+pub type UpdateHere struct {
     version:  str
     // os_name(): mac, linux, windows; and the CPU (arm64, x86_64).
     os:       str
@@ -87,7 +87,7 @@ type UpdateHere struct {
 }
 
 // What the page shows: the state of the last check and what it found.
-type UpdateStatus struct {
+pub type UpdateStatus struct {
     state:      str  `json:"state"`
     current:    str  `json:"current"`
     // When the last check ended (Unix ms; 0: never in this run).
@@ -121,14 +121,14 @@ type UpdateStatus struct {
     message:    str  `json:"message"`
 }
 
-fn update_status_idle(current: str, auto: bool, checked_at: i64) -> UpdateStatus {
+pub fn update_status_idle(current: str, auto: bool, checked_at: i64) -> UpdateStatus {
     return UpdateStatus{ state: UPDATE_IDLE, current: current, checked_at: checked_at, auto: auto, version: "", date: "", summary: "", page: "", action: "", how: "", command: "", asset_url: "", asset_size: 0, asset_sha256: "", received: 0, toast: false, outcome: "", code: "", message: "" }
 }
 
 // Only a build from source may check another feed and key, its tests' local feed on
 // this machine (D-116): a package always checks UPDATE_FEED_URL against
 // UPDATE_PUBLIC_KEY_HEX (Principle 15).
-fn update_override_allowed(kind: str, feed_url: str) -> bool {
+pub fn update_override_allowed(kind: str, feed_url: str) -> bool {
     if kind != INSTALL_SOURCE {
         return false
     }
@@ -139,7 +139,7 @@ fn update_override_allowed(kind: str, feed_url: str) -> bool {
 // Flint's repository and its site, over HTTPS.
 OPEN_URL_PREFIXES: []str = ["https://github.com/samaniegoluis/flint/", "https://flint-2xk.pages.dev/"]
 
-fn url_open_allowed(url: str) -> bool {
+pub fn url_open_allowed(url: str) -> bool {
     for p in OPEN_URL_PREFIXES {
         if plain_url(url, p) {
             return true
@@ -168,7 +168,7 @@ fn bad_version() -> FlintVersion {
     return FlintVersion{ ok: false, major: 0, minor: 0, patch: 0, rc: 0, ahead: 0 }
 }
 
-fn digits(text: str) -> i64? {
+pub fn digits(text: str) -> i64? {
     if text.len() == 0 || text.len() > 9 {
         return none
     }
@@ -249,7 +249,7 @@ fn compare_flint_versions(a: FlintVersion, b: FlintVersion) -> i64 {
 // Whether `candidate` is newer than `current`: newer, not merely different (D-116),
 // so a build from source ahead of the latest release is never offered an older one.
 // Nothing that does not read as a version is newer.
-fn version_is_newer(candidate: str, current: str) -> bool {
+pub fn version_is_newer(candidate: str, current: str) -> bool {
     c := parse_flint_version(candidate)
     h := parse_flint_version(current)
     if !c.ok {
@@ -263,7 +263,7 @@ fn version_is_newer(candidate: str, current: str) -> bool {
 
 // ---- The manifest -----------------------------------------------------------------
 
-fn is_hex64(text: str) -> bool {
+pub fn is_hex64(text: str) -> bool {
     if text.len() != 64 {
         return false
     }
@@ -284,17 +284,9 @@ fn plain_url(url: str, prefix: str) -> bool {
     return !rest.contains("..") && !rest.contains("?") && !rest.contains("#") && !rest.contains(" ") && !rest.contains("\\")
 }
 
-// Checks a manifest whose signature already verified: its version reads as a release
-// (never a pre-release), its page and every asset point into this repository's
-// releases, each asset has a known key, a size and a SHA-256.
-fn check_update_manifest(m: UpdateManifest) -> void! {
-    try check_update_manifest_from(m, UPDATE_DOWNLOAD_PREFIX)
-    return
-}
-
 // Where a manifest's packages may be: Flint's releases, or, for the local feed only a
 // build from source may check (update_override_allowed), the feed's own folder.
-fn update_download_prefix(manifest_url: str) -> str {
+pub fn update_download_prefix(manifest_url: str) -> str {
     if update_override_allowed(INSTALL_SOURCE, manifest_url) {
         i := manifest_url.last_index_of("/") or 0
         if i > 0 {
@@ -304,7 +296,7 @@ fn update_download_prefix(manifest_url: str) -> str {
     return UPDATE_DOWNLOAD_PREFIX
 }
 
-fn check_update_manifest_from(m: UpdateManifest, download_prefix: str) -> void! {
+pub fn check_update_manifest_from(m: UpdateManifest, download_prefix: str) -> void! {
     v := parse_flint_version(m.version)
     if !v.ok || v.rc != 0 || v.ahead != 0 || m.version.contains("-") {
         return error(coded(ERR_INVALID, "the update manifest names a version that is not a release ('{m.version}')"))
@@ -343,7 +335,7 @@ fn update_asset_key(os: str, arch: str, kind: str) -> str {
 }
 
 // The install-kind file's text as one of INSTALL_* (a package keeps its format).
-fn install_kind_of(text: str) -> str {
+pub fn install_kind_of(text: str) -> str {
     lines := text.trim().lines()
     if lines.len() == 0 {
         return INSTALL_SOURCE
@@ -358,7 +350,7 @@ fn install_kind_of(text: str) -> str {
 // What a verified manifest means for this copy: up to date, or a newer version with
 // Download (a portable copy that can replace its folder, with a package for its
 // system) or How to update (anything else, and why).
-fn update_offer(m: UpdateManifest, here: UpdateHere, auto: bool, checked_at: i64) -> UpdateStatus {
+pub fn update_offer(m: UpdateManifest, here: UpdateHere, auto: bool, checked_at: i64) -> UpdateStatus {
     mut s := update_status_idle(here.version, auto, checked_at)
     if !version_is_newer(m.version, here.version) {
         s.state = UPDATE_UP_TO_DATE
@@ -406,19 +398,19 @@ fn update_offer(m: UpdateManifest, here: UpdateHere, auto: bool, checked_at: i64
 // ---- What's new ---------------------------------------------------------------------
 
 // One line of a version's notes: "- **ui:** Toasts as one component".
-type ChangeItem struct {
+pub type ChangeItem struct {
     scope: str `json:"scope"`
     text:  str `json:"text"`
 }
 
 // A group of a version's notes: Added, Fixed, Faster.
-type ChangeGroup struct {
+pub type ChangeGroup struct {
     title: str          `json:"title"`
     items: []ChangeItem `json:"items"`
 }
 
 // One version's section of CHANGELOG.md: "## 0.16.0 — 2026-11-20", a summary, groups.
-type ChangeVersion struct {
+pub type ChangeVersion struct {
     version: str           `json:"version"`
     date:    str           `json:"date"`
     summary: str           `json:"summary"`
@@ -442,7 +434,7 @@ fn change_item(line: str) -> ChangeItem {
 CHANGELOG_DATE_SEP: str = " — "
 
 // The versions in CHANGELOG.md, newest first, as written by scripts/release.sh.
-fn parse_changelog(text: str) -> []ChangeVersion {
+pub fn parse_changelog(text: str) -> []ChangeVersion {
     mut out: []ChangeVersion = []
     mut on := false
     mut cur := ChangeVersion{ version: "", date: "", summary: "", groups: [] }
@@ -492,7 +484,7 @@ fn parse_changelog(text: str) -> []ChangeVersion {
 // What's new after an update: every version newer than `last_seen` and not newer than
 // `current`, newest first. Nothing on the first launch (no `last_seen`) or when the
 // version did not move forward.
-fn whats_new_since(changes: []ChangeVersion, last_seen: str, current: str) -> []ChangeVersion {
+pub fn whats_new_since(changes: []ChangeVersion, last_seen: str, current: str) -> []ChangeVersion {
     mut out: []ChangeVersion = []
     if last_seen.len() == 0 || !version_is_newer(current, last_seen) {
         return out

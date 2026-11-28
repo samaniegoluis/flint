@@ -11,8 +11,8 @@
 #
 # cfire comes from its release archive and nfpm from its own, each checked against a
 # SHA-256 kept here (Principle 16: no secret, nothing unpinned).
-ARG CFIRE_VERSION=0.12.7
-ARG CFIRE_SHA256=7e2711ee16b4c6333a3e8635d0ebcd8709b14ac7f1fd9b113f4ef6a46392d0d7
+ARG CFIRE_VERSION=0.13.1
+ARG CFIRE_SHA256=815fe2cb05b0ed247de8a7a4769caa3e0d69d45e21bfc81b011b103b1d46012c
 ARG NFPM_VERSION=2.49.0
 ARG NFPM_SHA256=2afaa5ffb5e3493402e31e7c67a5a1fb42133e3f66fc315ca0051934125561c7
 

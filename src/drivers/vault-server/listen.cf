@@ -88,7 +88,7 @@ fn to_http_response(r: vaultserver.ServerReply) -> http.Response {
     }
     resp.set_header("Cache-Control", "no-store")
     if r.version > 0 {
-        resp.set_header("ETag", version_tag(r.version))
+        resp.set_header("ETag", domain.version_tag(r.version))
     }
     if r.vault_id.len() > 0 {
         resp.set_header("X-Flint-Vault-Id", r.vault_id)
@@ -111,7 +111,7 @@ fn early_reply(status: i32, note: str) -> vaultserver.ServerReply {
     if status == 411 {
         message = "send the upload with Content-Length"
     }
-    return json_reply(status, note, message)
+    return vaultserver.json_reply(status, note, message)
 }
 
 // A path as the log shows it: printable ASCII, at most 80 characters.
@@ -153,7 +153,7 @@ fn handle_request[C: ports.Crypto](crypto: C, cfg: vaultserver.ServerConfig, tru
     if req.method != "PUT" || req.header("content-length").len() > 0 || req.body.len() > 0 {
         sreq := to_server_request(req, client)
         reply = state.with_lock(|mut st: ServerState| -> vaultserver.ServerReply {
-            return serve_vault_request(crypto, mut st.store, mut st.gate, cfg, sreq, time.now_ms(), time.now().unix_millis())
+            return vaultserver.serve_vault_request(crypto, mut st.store, mut st.gate, cfg, sreq, time.now_ms(), time.now().unix_millis())
         })
     }
     mut tail := ""
@@ -168,15 +168,15 @@ fn handle_request[C: ports.Crypto](crypto: C, cfg: vaultserver.ServerConfig, tru
 // captures live in this frame: cfire captures them by reference even in a closure the
 // server's threads keep (CF-212), so the server never outlives this call.
 fn serve_while[C: ports.Crypto](crypto: C, cfg: vaultserver.ServerConfig, opts: ServeOptions, body: fn(u16) -> void!) -> void! {
-    store := try new_file_blob_store(opts.data_dir)
+    store := try serverfs.new_file_blob_store(opts.data_dir)
     if opts.port > 0 {
-        refused := listen_refusal(opts.host, opts.port)
+        refused := serverfs.listen_refusal(opts.host, opts.port)
         if refused.len() > 0 {
-            return error(coded(ERR_PORT_IN_USE, "cannot listen on {opts.host}:{opts.port}: {refused}"))
+            return error(domain.coded(domain.ERR_PORT_IN_USE, "cannot listen on {opts.host}:{opts.port}: {refused}"))
         }
     }
-    mut srv := make(http.Server, opts.port, host: opts.host) or err {
-        return error(coded(ERR_PORT_IN_USE, "cannot listen on {opts.host}:{opts.port}"))
+    mut srv := make(http.Server, opts.port, host: opts.host) or {
+        return error(domain.coded(domain.ERR_PORT_IN_USE, "cannot listen on {opts.host}:{opts.port}"))
     }
     mut limits := server_limits(cfg.max_body)
     limits.header_timeout_ms = opts.header_ms
@@ -186,7 +186,7 @@ fn serve_while[C: ports.Crypto](crypto: C, cfg: vaultserver.ServerConfig, opts: 
         log_line("moved the vault {store.moved} into {opts.data_dir}/vaults/{store.moved} (one folder per vault since 0.12)")
     }
     vaults := try store.blob_vaults()
-    state := make(sync.Mutex[ServerState], ServerState{ store: store, gate: new_server_gate() })
+    state := make(sync.Mutex[ServerState], ServerState{ store: store, gate: domain.new_server_gate() })
     trust := opts.trust_proxy
     srv.serve_in_background(|req: http.Request| -> http.Response {
         return handle_request(crypto, cfg, trust, state, req)
@@ -199,7 +199,7 @@ fn serve_while[C: ports.Crypto](crypto: C, cfg: vaultserver.ServerConfig, opts: 
     srv.stop()
 }
 
-fn forever(port: u16) -> void! {
+fn forever(_port: u16) -> void! {
     for {
         time.sleep_ms(60000)
     }

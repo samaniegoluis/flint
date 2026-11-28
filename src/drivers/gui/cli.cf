@@ -23,10 +23,10 @@ fn self_cli() -> str {
     if o.len() > 0 && (os.getenv("FLINT_GUI_E2E") or "").len() > 0 {
         return o
     }
-    if os_name() == "windows" {
-        return windows_cli_dir(executable_dir()) + "/flint.exe"
+    if process.os_name() == "windows" {
+        return domain.windows_cli_dir(process.executable_dir()) + "/flint.exe"
     }
-    return bundle_cli_path(executable_dir())
+    return domain.bundle_cli_path(process.executable_dir())
 }
 
 // Windows (milestone 50, D-121): the package's bin folder, offered for the user's Path.
@@ -38,9 +38,9 @@ fn cli_bin_dir() -> str {
 fn cli_path_env() -> clilink.OsCliPath {
     o := (os.getenv("FLINT_CLI_PATH_KEY") or "")
     if o.len() > 0 && (os.getenv("FLINT_GUI_E2E") or "").len() > 0 {
-        return new_os_cli_path(o)
+        return clilink.new_os_cli_path(o)
     }
-    return new_os_cli_path(CLI_PATH_KEY)
+    return clilink.new_os_cli_path(clilink.CLI_PATH_KEY)
 }
 
 // FLINT_CLI_SYSTEM_DIR stands in for /usr/local/bin in gui-e2e, so a run never sees the
@@ -51,7 +51,7 @@ fn cli_system_dir() -> str {
     if o.len() > 0 && (os.getenv("FLINT_GUI_E2E") or "").len() > 0 {
         return o
     }
-    return CLI_SYSTEM_DIR
+    return application.CLI_SYSTEM_DIR
 }
 
 fn cli_home() -> str {
@@ -64,36 +64,36 @@ fn cli_home() -> str {
 
 fn rpc_cli_status(params: str, mut store: config.JsonSettingsStore) -> str! {
     req := try parse_req[CliFirstReq](params)
-    if os_name() == "windows" {
+    if process.os_name() == "windows" {
         env := cli_path_env()
         if req.first {
-            return json.stringify(try cli_path_first_launch(env, mut store, self_cli(), cli_bin_dir()))
+            return json.stringify(try application.cli_path_first_launch(env, mut store, self_cli(), cli_bin_dir()))
         }
-        return json.stringify(cli_path_status(env, self_cli(), cli_bin_dir(), true))
+        return json.stringify(application.cli_path_status(env, self_cli(), cli_bin_dir(), true))
     }
-    links := new_os_cli_links()
+    links := clilink.new_os_cli_links()
     if req.first {
-        return json.stringify(try cli_link_first_launch(links, mut store, self_cli(), cli_system_dir(), cli_home()))
+        return json.stringify(try application.cli_link_first_launch(links, mut store, self_cli(), cli_system_dir(), cli_home()))
     }
-    return json.stringify(cli_link_status(links, self_cli(), cli_system_dir(), cli_home(), true))
+    return json.stringify(application.cli_link_status(links, self_cli(), cli_system_dir(), cli_home(), true))
 }
 
 fn rpc_cli_install(params: str) -> str! {
     req := try parse_req[PathReq](params)
-    if os_name() == "windows" {
+    if process.os_name() == "windows" {
         mut env := cli_path_env()
-        return json.stringify(try install_cli_path(mut env, self_cli(), cli_bin_dir(), req.path))
+        return json.stringify(try application.install_cli_path(mut env, self_cli(), cli_bin_dir(), req.path))
     }
-    mut links := new_os_cli_links()
-    return json.stringify(try install_cli_link(mut links, self_cli(), cli_system_dir(), cli_home(), req.path))
+    mut links := clilink.new_os_cli_links()
+    return json.stringify(try application.install_cli_link(mut links, self_cli(), cli_system_dir(), cli_home(), req.path))
 }
 
 fn rpc_cli_remove(params: str) -> str! {
     req := try parse_req[PathReq](params)
-    if os_name() == "windows" {
+    if process.os_name() == "windows" {
         mut env := cli_path_env()
-        return json.stringify(try remove_cli_path(mut env, self_cli(), cli_bin_dir(), req.path))
+        return json.stringify(try application.remove_cli_path(mut env, self_cli(), cli_bin_dir(), req.path))
     }
-    mut links := new_os_cli_links()
-    return json.stringify(try remove_cli_link(mut links, self_cli(), cli_system_dir(), cli_home(), req.path))
+    mut links := clilink.new_os_cli_links()
+    return json.stringify(try application.remove_cli_link(mut links, self_cli(), cli_system_dir(), cli_home(), req.path))
 }

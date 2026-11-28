@@ -52,9 +52,9 @@ fn app_menu_labels(lang: str) -> []str {
 fn install_tray(mut app: webui.App, ui_dir: str, lang: str) {
     labels := tray_labels(lang)
     mut icon := ui_dir + "/tray.png"
-    if os_name() == "mac" {
+    if process.os_name() == "mac" {
         icon = ui_dir + "/tray-template.png"
-    } else if os_name() == "windows" {
+    } else if process.os_name() == "windows" {
         icon = ui_dir + "/tray-color.png"
     }
     app.set_tray(icon, "Flint")
@@ -70,24 +70,24 @@ fn install_tray(mut app: webui.App, ui_dir: str, lang: str) {
 // both back to diagnose one. Autofill and password autosave are off in every build.
 fn setup_webview(mut app: webui.App) {
     app.set_autofill(false)
-    if devtools_requested((os.getenv("FLINT_DEVTOOLS") or "")) {
+    if domain.devtools_requested((os.getenv("FLINT_DEVTOOLS") or "")) {
         app.set_devtools(true)
         app.set_context_menu(true)
-        write_stderr("flint-gui: FLINT_DEVTOOLS is set: the web inspector and the browser menu are on\n")
+        process.write_stderr("flint-gui: FLINT_DEVTOOLS is set: the web inspector and the browser menu are on\n")
     }
 }
 
 // What WebView2 stored from the page's fields before milestone 64 goes, once per
 // machine, before the window opens and holds its profile (Windows only).
 fn clear_webview_autofill(config_dir: str) {
-    mut settings := new_json_settings_store(config_dir)
-    mut web := new_os_webview_data()
-    n := clear_webview_autofill_once(mut settings, mut web) or err {
-        write_stderr("flint-gui: the webview's stored form values were left in place: {err.message()}\n")
+    mut settings := config.new_json_settings_store(config_dir)
+    mut web := uievents.new_os_webview_data()
+    n := application.clear_webview_autofill_once(mut settings, mut web) or err {
+        process.write_stderr("flint-gui: the webview's stored form values were left in place: {err.message()}\n")
         return
     }
     if n > 0 {
-        write_stderr("flint-gui: removed {n} files of form values and passwords the webview had stored\n")
+        process.write_stderr("flint-gui: removed {n} files of form values and passwords the webview had stored\n")
     }
 }
 
@@ -97,7 +97,7 @@ fn window_has_tray(e2e: bool) -> bool {
     if e2e {
         return (os.getenv("FLINT_E2E_NO_TRAY") or "") != "1"
     }
-    return has_system_tray()
+    return uievents.has_system_tray()
 }
 
 type E2eTrayReq struct {
@@ -115,13 +115,13 @@ type CloseAsk struct {
 // window already (`set_hide_on_close`), which is what intercepts ✕ at all.
 fn on_window_close(settings_store: config.JsonSettingsStore, st: GuiState, mut app: webui.App, e2e: bool) {
     tray := window_has_tray(e2e)
-    action := window_close_action(settings_store, tray)
-    write_stderr("flint-gui: window closed (tray: {tray}): {action}\n")
-    if action == CLOSE_QUIT {
+    action := application.window_close_action(settings_store, tray)
+    process.write_stderr("flint-gui: window closed (tray: {tray}): {action}\n")
+    if action == domain.CLOSE_QUIT {
         quit_app(mut app)
         return
     }
-    if action == CLOSE_ASK {
+    if action == domain.CLOSE_ASK {
         if !e2e {
             show_window(mut app)
         }
@@ -141,8 +141,8 @@ fn lock_window(st: GuiState, mut app: webui.App) {
     }
     st.holder.set_window_locked(true)
     // A desktop across monitors (milestone 38) leaves nothing on the other screens.
-    monitor_windows_close()
-    write_stderr("flint-gui: window closed to the tray, locked\n")
+    uievents.monitor_windows_close()
+    process.write_stderr("flint-gui: window closed to the tray, locked\n")
     app.emit("window:locked", WindowLocked{ vault: st.vault_session().name })
 }
 
@@ -150,7 +150,7 @@ fn lock_window(st: GuiState, mut app: webui.App) {
 // or a CLI that needs the person (an unlock, an approval).
 fn show_window(mut app: webui.App) {
     app.show_window()
-    bring_window_to_front()
+    uievents.bring_window_to_front()
 }
 
 // Quits Flint: the tray's Quit, ⌘Q, or the palette.
@@ -162,23 +162,23 @@ type CliRunning struct {
 }
 
 fn rpc_cli_running() -> str {
-    return json.stringify(CliRunning{ count: ipc_served_count() })
+    return json.stringify(CliRunning{ count: flint_ipc.ipc_served_count() })
 }
 
 fn end_served_commands() {
     deadline := time.now_ms() + QUIT_SERVED_GRACE_MS
-    for ipc_served_count() > 0 && time.now_ms() < deadline {
+    for flint_ipc.ipc_served_count() > 0 && time.now_ms() < deadline {
         time.sleep_ms(100)
     }
-    n := ipc_served_count()
+    n := flint_ipc.ipc_served_count()
     if n > 0 {
-        write_stderr("flint-gui: quitting: {n} running flint command(s) cut\n")
-        ipc_served_shutdown_all()
+        process.write_stderr("flint-gui: quitting: {n} running flint command(s) cut\n")
+        flint_ipc.ipc_served_shutdown_all()
     }
 }
 
 fn quit_app(mut app: webui.App) {
-    write_stderr("flint-gui: quit\n")
+    process.write_stderr("flint-gui: quit\n")
     app.quit()
 }
 
@@ -187,7 +187,7 @@ fn window_state(st: GuiState, presence: uievents.OsPresence) -> WindowState {
         return WindowState{ locked: false, vault: "", presence: "", waiting: 0 }
     }
     book := st.holder.access_book()
-    waiting := waiting_approvals(book, time.now_ms())
+    waiting := domain.waiting_approvals(book, time.now_ms())
     return WindowState{ locked: true, vault: st.vault_session().name, presence: presence.presence_method(), waiting: i64(waiting.len()) }
 }
 
@@ -202,10 +202,10 @@ fn rpc_window_unlock(req: WindowUnlockReq, c: flint_crypto.Sodium, store: vault.
         return window_state(st, presence)
     }
     try st.require_unlocked_vault()
-    try confirm_window_unlock(c, store, presence, st.vault_session(), req.password)
+    try application.confirm_window_unlock(c, store, presence, st.vault_session(), req.password)
     st.holder.set_window_locked(false)
     st.holder.touch(time.now_ms())
-    write_stderr("flint-gui: window opened\n")
+    process.write_stderr("flint-gui: window opened\n")
     // The approval window shows the callers that waited behind the lock.
     app.emit("access:changed", GrantsChanged{ count: i64(st.holder.access_book().grants.len()) })
     return window_state(st, presence)
@@ -223,9 +223,9 @@ fn rpc_window_fullscreen(params: str, e2e: bool) -> str! {
     req := try parse_req[FullscreenReq](params)
     // The headless run's window is hidden and cannot go full screen (CF-111).
     if e2e && !e2e_native_fullscreen() {
-        window_fullscreen_inject(req.on)
+        uievents.window_fullscreen_inject(req.on)
     } else {
-        window_fullscreen_set(req.on)
+        uievents.window_fullscreen_set(req.on)
     }
-    return json.stringify(FullscreenState{ on: window_fullscreen_on() })
+    return json.stringify(FullscreenState{ on: uievents.window_fullscreen_on() })
 }

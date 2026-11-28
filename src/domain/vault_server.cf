@@ -6,7 +6,7 @@ package domain
 
 
 // The versions the server keeps on disk; older ones are pruned after each upload.
-SERVER_VERSIONS_KEPT: i64 = 10
+pub SERVER_VERSIONS_KEPT: i64 = 10
 // The shortest server token accepted at start (`flint-vault-server token` makes 64).
 SERVER_TOKEN_MIN_LEN: usize = 32
 // A vault id is 128 bits as lowercase hex (D-030, D-095).
@@ -18,12 +18,12 @@ GATE_RATE_MAX: i64 = 120
 // Bad tokens one client may present in a window before it is locked out.
 GATE_BAD_WINDOW_MS: i64 = 600000
 GATE_BAD_MAX: i64 = 10
-GATE_LOCKOUT_MS: i64 = 900000
+pub GATE_LOCKOUT_MS: i64 = 900000
 // Clients remembered at once; the one seen longest ago is forgotten first.
 GATE_CLIENTS_MAX: i64 = 1024
 
 // One stored version of the vault, as `flint-vault-server versions` lists it.
-type BlobVersion struct {
+pub type BlobVersion struct {
     version:    i64 `json:"version"`
     vault_id:   str `json:"vault_id"`
     size:       i64 `json:"size"`
@@ -33,13 +33,13 @@ type BlobVersion struct {
 
 // The vaults one server keeps at most by default (`FLINT_VAULT_MAX_VAULTS`, milestone
 // 45, D-103): a stolen token can add vaults, and this bounds what it fills.
-SERVER_VAULTS_MAX_DEFAULT: i64 = 50
+pub SERVER_VAULTS_MAX_DEFAULT: i64 = 50
 // The longest label a person may give a vault on its server, in bytes.
 VAULT_LABEL_MAX_LEN: usize = 64
 
 // One vault a server keeps (milestone 45): its id, the label the person chose (in
 // clear, optional: the server cannot read the vault's name), and its newest version.
-type ServerVault struct {
+pub type ServerVault struct {
     id:         str `json:"id"`
     label:      str `json:"label"`
     version:    i64 `json:"version"`
@@ -50,7 +50,7 @@ type ServerVault struct {
 
 // A label: at most VAULT_LABEL_MAX_LEN bytes, no control characters, no white space
 // at either end. "" clears it.
-fn check_vault_label(label: str) -> void! {
+pub fn check_vault_label(label: str) -> void! {
     if label.len() > VAULT_LABEL_MAX_LEN {
         return error(coded(ERR_INVALID, "a vault's label is at most {VAULT_LABEL_MAX_LEN} characters"))
     }
@@ -67,7 +67,7 @@ fn check_vault_label(label: str) -> void! {
 
 // The vault among `vaults` whose id is `wanted` or starts with it (at least 4
 // characters, as git's short ids); an unknown or ambiguous prefix is refused.
-fn pick_server_vault(vaults: []ServerVault, wanted: str) -> ServerVault! {
+pub fn pick_server_vault(vaults: []ServerVault, wanted: str) -> ServerVault! {
     w := wanted.trim().to_lower()
     if w.len() < 4 {
         return error(coded(ERR_USAGE, "give at least 4 characters of the vault's id"))
@@ -91,7 +91,7 @@ fn pick_server_vault(vaults: []ServerVault, wanted: str) -> ServerVault! {
 }
 
 // "7", "\"7\"" or "W/\"7\"" -> 7; -1 for anything else (a version is at least 1).
-fn parse_version_tag(tag: str) -> i64 {
+pub fn parse_version_tag(tag: str) -> i64 {
     mut t := tag.trim()
     if t.starts_with("W/") {
         t = t[2..]
@@ -117,11 +117,11 @@ fn parse_version_tag(tag: str) -> i64 {
 }
 
 // The tag a version travels as, in `ETag` and `If-Match`.
-fn version_tag(version: i64) -> str {
+pub fn version_tag(version: i64) -> str {
     return "\"{version}\""
 }
 
-fn valid_vault_id(id: str) -> bool {
+pub fn valid_vault_id(id: str) -> bool {
     if id.len() != VAULT_ID_HEX_LEN {
         return false
     }
@@ -136,7 +136,7 @@ fn valid_vault_id(id: str) -> bool {
 }
 
 // Refuses a server token too short to stand against guessing.
-fn check_server_token(token: str) -> void! {
+pub fn check_server_token(token: str) -> void! {
     if token.len() < SERVER_TOKEN_MIN_LEN {
         return error(coded(ERR_INVALID, "the server token is shorter than {SERVER_TOKEN_MIN_LEN} characters: make one with `flint-vault-server token`"))
     }
@@ -158,11 +158,11 @@ type GateClient struct {
 
 // Per-client rate limit and bad-token lockout. Not thread-safe: the server keeps it
 // behind its lock, with the store (D-156).
-type ServerGate struct {
+pub type ServerGate struct {
     clients: []GateClient
 }
 
-fn new_server_gate() -> ServerGate {
+pub fn new_server_gate() -> ServerGate {
     return ServerGate{ clients: [] }
 }
 

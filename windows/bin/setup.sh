@@ -22,8 +22,8 @@ set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 [[ "${MSYSTEM:-}" == CLANG64 ]] || { echo "setup: run it in MSYS2 CLANG64 (MSYSTEM=${MSYSTEM:-unset})" >&2; exit 2; }
 
-CFIRE_VERSION=0.12.7
-CFIRE_SHA256=b3fe5afe58be37e4c4f5d5dc274ae7d2b2276d514c8e54431cfd006ac0d3aea5
+CFIRE_VERSION=0.13.1
+CFIRE_SHA256=88d0a125a94e3931d7be0594954acba02fc75b324cb3f15634c23d1f120a2bf7
 WV2_VERSION=1.0.4314.35
 WV2_SHA256=90778deb1b77e36292828b4b5833c9255c27533f40e0ddd55891ae718944edc4
 NODE_VERSION=24.22.3
@@ -58,7 +58,7 @@ fi
 
 echo "== cfire $CFIRE_VERSION"
 dest="$OPT/cfire-$CFIRE_VERSION"
-# `cfire --version` prints "cfire 0.12.7 (<commit>, ...)".
+# `cfire --version` prints "cfire 0.13.1 (<commit>, ...)".
 if [[ -x "$dest/cfire.exe" && "$("$dest/cfire.exe" --version 2>/dev/null)" == "cfire $CFIRE_VERSION "* ]]; then
   echo "cfire ready: $dest"
 else

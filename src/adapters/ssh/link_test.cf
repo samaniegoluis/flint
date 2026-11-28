@@ -6,7 +6,7 @@ import "../../domain"
 import "../../ports"
 
 // Compiles only if SshLink satisfies the SshTransport port.
-fn accepts_transport[T: ports.SshTransport](mut t: T) -> bool {
+fn accepts_transport[T: ports.SshTransport](mut _t: T) -> bool {
     return true
 }
 
@@ -41,7 +41,7 @@ test "a link to a closed port fails with network" {
     mut link := new_ssh_link()
     mut r := ""
     link.link_dial("127.0.0.1", 1, "nobody", 2, "") or err { r = "{err.message()}" }
-    assert_eq(error_code_of("{r}"), "network")
+    assert_eq(domain.error_code_of("{r}"), "network")
     link.link_hangup()
 }
 
@@ -59,7 +59,7 @@ test "exec over a link returns stdout, stderr and the exit code" {
     assert(sk.fingerprint.starts_with("SHA256:"))
     mut bad := ""
     link.link_auth_password("not-the-password") or err { bad = "{err.message()}" }
-    assert_eq(error_code_of("{bad}"), "auth")
+    assert_eq(domain.error_code_of("{bad}"), "auth")
     try link.link_auth_key(key_text, "")
     try link.link_exec_start("echo out-$((6*7)); echo err-line >&2; cat; exit 7")
     res := try read_all(mut link)
@@ -126,7 +126,7 @@ test "a jump to an unreachable port fails with network and cleans up" {
     try link.link_auth_key(try fs.read_text(key_path), "")
     mut r := ""
     link.link_dial("127.0.0.1", 1, (os.getenv("USER") or ""), 5, "") or err { r = "{err.message()}" }
-    assert_eq(error_code_of("{r}"), "network")
+    assert_eq(domain.error_code_of("{r}"), "network")
     link.link_hangup()
 }
 
@@ -219,7 +219,7 @@ test "a recorded key type is negotiated first, and only when the server has it" 
     assert_eq((try plain.link_server_key()).key_type, "ssh-ed25519")
     plain.link_hangup()
     known: []domain.KnownHost = [domain.KnownHost{ addr: "[127.0.0.1]:{port}", key_type: "ecdsa-sha2-nistp256", fingerprint: "", host_id: "", added_at: "" }]
-    algos := preferred_host_key_algos(known, known_host_addr("127.0.0.1", i64(port)))
+    algos := domain.preferred_host_key_algos(known, domain.known_host_addr("127.0.0.1", i64(port)))
     mut pinned := new_ssh_link()
     try pinned.link_dial("127.0.0.1", i64(port), (os.getenv("USER") or ""), 5, algos)
     assert_eq((try pinned.link_server_key()).key_type, "ecdsa-sha2-nistp256")

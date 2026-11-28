@@ -8,7 +8,7 @@ package uievents
 // CFIRE-UPSTREAM: CF-189, CF-031
 import cpp "flint_tray.hpp"
 
-fn has_system_tray() -> bool {
+pub fn has_system_tray() -> bool {
     mut on := true
     // CFIRE-UPSTREAM: CF-189
     cpp {

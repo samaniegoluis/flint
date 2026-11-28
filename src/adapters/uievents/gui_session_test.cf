@@ -55,7 +55,7 @@ test "a GUI session mailbox carries input, resizes and close" {
     mut missing := ""
     gui_session_input("t1", "x") or err { missing = "{err.message()}" }
     assert(missing.len() > 0)
-    assert(error_code_of("{missing}") == ERR_NOT_FOUND)
+    assert(domain.error_code_of("{missing}") == domain.ERR_NOT_FOUND)
 }
 
 // The page's side of a prompt: wait for the event, then answer it.

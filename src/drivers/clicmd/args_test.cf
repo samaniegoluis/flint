@@ -14,13 +14,13 @@ test "flags parse anywhere, with values inline or separate" {
 test "unknown flags and missing values are usage errors" {
     mut bad := ""
     parse_cli_args(["host", "list", "--nope"]) or err { bad = "{err.message()}" }
-    assert_eq(error_code_of("{bad}"), "usage")
+    assert_eq(domain.error_code_of("{bad}"), "usage")
     mut missing := ""
     parse_cli_args(["host", "add", "--hostname"]) or err { missing = "{err.message()}" }
-    assert_eq(error_code_of("{missing}"), "usage")
+    assert_eq(domain.error_code_of("{missing}"), "usage")
     mut valued := ""
     parse_cli_args(["--json=1"]) or err { valued = "{err.message()}" }
-    assert_eq(error_code_of("{valued}"), "usage")
+    assert_eq(domain.error_code_of("{valued}"), "usage")
 }
 
 test "everything after -- is kept apart, flags included" {

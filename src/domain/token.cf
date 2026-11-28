@@ -15,23 +15,23 @@ package domain
 
 TOKEN_PREFIX: str = "flint_"
 // Hex characters of a token's id (8 bytes) and secret (32 bytes).
-TOKEN_ID_HEX: usize = 16
-TOKEN_SECRET_HEX: usize = 64
+pub TOKEN_ID_HEX: usize = 16
+pub TOKEN_SECRET_HEX: usize = 64
 // Domain separation for the hash of a token's secret.
 TOKEN_HASH_CONTEXT: str = "flint/token/v1:"
 
-// How long a token lasts. There is no "never": a token on disk somewhere ends.
-TOKEN_TTLS: []str = ["15m", "1h", "4h", "1d", "7d", "30d", "90d"]
-TOKEN_DEFAULT_TTL: str = "1d"
+// How long a token lasts: 15m, 1h, 4h, 1d, 7d, 30d or 90d. There is no "never": a token
+// on disk somewhere ends.
+pub TOKEN_DEFAULT_TTL: str = "1d"
 TOKEN_NAME_MAX: usize = 64
 
-TOKEN_ACTIVE: str = "active"
-TOKEN_EXPIRED: str = "expired"
-TOKEN_REVOKED: str = "revoked"
+pub TOKEN_ACTIVE: str = "active"
+pub TOKEN_EXPIRED: str = "expired"
+pub TOKEN_REVOKED: str = "revoked"
 
 // Times are Unix seconds (the wall clock): a token's expiry must mean the same
 // after the app restarts.
-type Token struct {
+pub type Token struct {
     id:         str         `json:"id"`
     name:       str         `json:"name"`
     // Hex of the BLAKE2b hash of TOKEN_HASH_CONTEXT ‖ id ‖ ":" ‖ secret.
@@ -49,7 +49,7 @@ type Token struct {
 }
 
 // A token's text split in two. `ok` is false for anything not shaped like one.
-type TokenText struct {
+pub type TokenText struct {
     ok:     bool
     id:     str
     secret: str
@@ -67,7 +67,7 @@ fn is_lower_hex(s: str) -> bool {
     return true
 }
 
-fn split_token_text(text: str) -> TokenText {
+pub fn split_token_text(text: str) -> TokenText {
     bad := TokenText{ ok: false, id: "", secret: "" }
     t := text.trim()
     if !t.starts_with(TOKEN_PREFIX) || t.len() != TOKEN_PREFIX.len() + TOKEN_ID_HEX + 1 + TOKEN_SECRET_HEX {
@@ -84,16 +84,16 @@ fn split_token_text(text: str) -> TokenText {
     return TokenText{ ok: true, id: id, secret: secret }
 }
 
-fn token_text(id: str, secret: str) -> str {
+pub fn token_text(id: str, secret: str) -> str {
     return TOKEN_PREFIX + id + "_" + secret
 }
 
 // What the hash is taken over.
-fn token_hash_input(id: str, secret: str) -> str {
+pub fn token_hash_input(id: str, secret: str) -> str {
     return TOKEN_HASH_CONTEXT + id + ":" + secret
 }
 
-fn token_ttl_seconds(ttl: str) -> i64! {
+pub fn token_ttl_seconds(ttl: str) -> i64! {
     if ttl == "15m" {
         return 15 * 60
     }
@@ -118,7 +118,7 @@ fn token_ttl_seconds(ttl: str) -> i64! {
     return error(coded(ERR_INVALID, "--ttl must be one of 15m, 1h, 4h, 1d, 7d, 30d, 90d"))
 }
 
-fn token_status(t: Token, now_s: i64) -> str {
+pub fn token_status(t: Token, now_s: i64) -> str {
     if t.revoked_at > 0 {
         return TOKEN_REVOKED
     }
@@ -129,7 +129,7 @@ fn token_status(t: Token, now_s: i64) -> str {
 }
 
 // A token's name: what `token revoke` and the window call it.
-fn check_token_name(name: str) -> void! {
+pub fn check_token_name(name: str) -> void! {
     n := name.trim()
     if n.len() == 0 {
         return error(coded(ERR_USAGE, "a token needs a name: --name <name>"))
@@ -143,12 +143,12 @@ fn check_token_name(name: str) -> void! {
 }
 
 // The grant a token stands for, so one rule decides what grants and tokens cover.
-fn token_as_grant(t: Token, vault_id: str) -> Grant {
+pub fn token_as_grant(t: Token, vault_id: str) -> Grant {
     return Grant{ id: t.id, vault_id: vault_id, anchor_pid: 0, anchor_started: 0, label: t.name, scope: t.scope, read: t.read, exec: t.exec, write: t.write, created_ms: 0, expires_ms: 0, duration: "" }
 }
 
 // Whether active token `t` allows `need` at `now_s`. A token never creates a token.
-fn token_covers(t: Token, vault_id: str, need: AccessNeed, cat: Catalog, now_s: i64) -> bool {
+pub fn token_covers(t: Token, vault_id: str, need: AccessNeed, cat: Catalog, now_s: i64) -> bool {
     if token_status(t, now_s) != TOKEN_ACTIVE || need.action == ACCESS_TOKEN {
         return false
     }
@@ -156,7 +156,7 @@ fn token_covers(t: Token, vault_id: str, need: AccessNeed, cat: Catalog, now_s: 
 }
 
 // The token with `id`, or the one live token named `name` (case ignored).
-fn find_token(tokens: []Token, key: str, now_s: i64) -> Token? {
+pub fn find_token(tokens: []Token, key: str, now_s: i64) -> Token? {
     for t in tokens {
         if t.id == key {
             return t
@@ -172,14 +172,14 @@ fn find_token(tokens: []Token, key: str, now_s: i64) -> Token? {
 
 // What the approval window shows for `token create`: the token as the owner reads
 // it. `name` is "" for any other request.
-type TokenAsk struct {
+pub type TokenAsk struct {
     name:    str `json:"name"`
     allows:  str `json:"allows"`
     reaches: str `json:"reaches"`
     ttl:     str `json:"ttl"`
 }
 
-fn no_token_ask() -> TokenAsk {
+pub fn no_token_ask() -> TokenAsk {
     return TokenAsk{ name: "", allows: "", reaches: "", ttl: "" }
 }
 
@@ -189,20 +189,20 @@ fn no_token_ask() -> TokenAsk {
 // 30 days, 90 days, 1 year or no limit (0). Older entries are pruned on each write
 // and at unlock.
 ACTIVITY_RETENTION_DAYS: []i64 = [30, 90, 365, 0]
-ACTIVITY_RETENTION_DEFAULT: i64 = 90
+pub ACTIVITY_RETENTION_DEFAULT: i64 = 90
 // A safety net whatever the retention: past this many bytes the oldest entries go.
-ACTIVITY_MAX_BYTES: i64 = 52428800
+pub ACTIVITY_MAX_BYTES: i64 = 52428800
 // What a row costs beyond its text columns, for the size cap.
-ACTIVITY_ROW_BYTES: i64 = 64
+pub ACTIVITY_ROW_BYTES: i64 = 64
 
 // What the log keeps: entries from `since_at` (Unix seconds; 0, every age), up to
 // `max_bytes` in all.
-type ActivityKeep struct {
+pub type ActivityKeep struct {
     since_at:  i64
     max_bytes: i64
 }
 
-fn retention_valid(days: i64) -> bool {
+pub fn retention_valid(days: i64) -> bool {
     for d in ACTIVITY_RETENTION_DAYS {
         if d == days {
             return true
@@ -212,7 +212,7 @@ fn retention_valid(days: i64) -> bool {
 }
 
 // "90 days", "1 year", "no limit".
-fn retention_label(days: i64) -> str {
+pub fn retention_label(days: i64) -> str {
     if days == 0 {
         return "no limit"
     }
@@ -223,7 +223,7 @@ fn retention_label(days: i64) -> str {
 }
 
 // What a vault with `days` of retention keeps at `now_s`.
-fn activity_keep(days: i64, now_s: i64) -> ActivityKeep {
+pub fn activity_keep(days: i64, now_s: i64) -> ActivityKeep {
     mut since := i64(0)
     if days > 0 {
         since = now_s - days * 86400
@@ -240,7 +240,7 @@ COMMAND_SUMMARY_MAX: i64 = 160
 
 // A command as shown and kept: `text`, and how many bytes were cut from its end
 // (0: it is whole).
-type CommandText struct {
+pub type CommandText struct {
     text: str `json:"text"`
     cut:  i64 `json:"cut"`
 }
@@ -259,13 +259,13 @@ fn utf8_prefix(s: str, max: i64) -> str {
 }
 
 // `s` capped at COMMAND_MAX_BYTES.
-fn whole_command(s: str) -> CommandText {
+pub fn whole_command(s: str) -> CommandText {
     t := utf8_prefix(s, COMMAND_MAX_BYTES)
     return CommandText{ text: t, cut: i64(s.len()) - i64(t.len()) }
 }
 
 // `s` cut to one line of COMMAND_SUMMARY_MAX bytes, ending in "..." when cut.
-fn command_summary(s: str) -> str {
+pub fn command_summary(s: str) -> str {
     if i64(s.len()) <= COMMAND_SUMMARY_MAX {
         return s
     }
@@ -273,15 +273,15 @@ fn command_summary(s: str) -> str {
 }
 
 // How the request was allowed (or would have been).
-ACTIVITY_VIA_GRANT: str = "grant"
-ACTIVITY_VIA_TOKEN: str = "token"
-ACTIVITY_VIA_WINDOW: str = "window"
+pub ACTIVITY_VIA_GRANT: str = "grant"
+pub ACTIVITY_VIA_TOKEN: str = "token"
+pub ACTIVITY_VIA_WINDOW: str = "window"
 
-ACTIVITY_ALLOWED: str = "allowed"
-ACTIVITY_DENIED: str = "denied"
-ACTIVITY_TIMEOUT: str = "timeout"
+pub ACTIVITY_ALLOWED: str = "allowed"
+pub ACTIVITY_DENIED: str = "denied"
+pub ACTIVITY_TIMEOUT: str = "timeout"
 
-type ActivityEntry struct {
+pub type ActivityEntry struct {
     id:      i64 `json:"id"`
     // Unix seconds.
     at:      i64 `json:"at"`
@@ -314,11 +314,11 @@ type ActivityEntry struct {
     alerted:     bool `json:"alerted"`
 }
 
-ACTIVITY_RUNNING: str = "running"
-ACTIVITY_ENDED: str = "ended"
+pub ACTIVITY_RUNNING: str = "running"
+pub ACTIVITY_ENDED: str = "ended"
 
 // How a command that ran ended, as the activity entry records it.
-type ActivityEnd struct {
+pub type ActivityEnd struct {
     exit:        i64 `json:"exit"`
     duration_ms: i64 `json:"duration_ms"`
     result:      str `json:"result"`
@@ -326,7 +326,7 @@ type ActivityEnd struct {
 
 // The end of a command whose run returned `exit`, and `error_code` when Flint itself
 // reported an error (the code report_error printed); a negative duration counts as 0.
-fn activity_end(exit: i64, error_code: str, duration_ms: i64) -> ActivityEnd {
+pub fn activity_end(exit: i64, error_code: str, duration_ms: i64) -> ActivityEnd {
     mut d := duration_ms
     if d < 0 {
         d = 0
@@ -336,12 +336,12 @@ fn activity_end(exit: i64, error_code: str, duration_ms: i64) -> ActivityEnd {
 
 // Whether the entry is a command refused before it ran, after it was allowed: sudo
 // said the user is not a sudoer, or refused the password (milestone 56, 26b1).
-fn activity_refused_by_sudo(e: ActivityEntry) -> bool {
+pub fn activity_refused_by_sudo(e: ActivityEntry) -> bool {
     return e.result == ERR_NOT_SUDOER || e.result == ERR_SUDO_PASSWORD
 }
 
 // Whether an allowed request with `need` goes into the log: everything but reading.
 // A refused request always does.
-fn activity_logged(need: AccessNeed) -> bool {
+pub fn activity_logged(need: AccessNeed) -> bool {
     return need.action != ACCESS_READ
 }

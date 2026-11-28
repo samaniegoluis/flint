@@ -1,7 +1,6 @@
 package vault
 
 import "core:fs"
-import "../../ports"
 import "../../domain"
 
 test "LockedVaultStore shares one connection between copies and threads" {
@@ -52,7 +51,7 @@ test "LockedVaultStore shares one connection between copies and threads" {
 
 // "" when the entry was added, else the error.
 fn add_marker_entry(mut w: LockedVaultStore, n: i64) -> str {
-    _ = w.activity_add(marker_entry(n), domain.ActivityKeep{ since_at: 0, max_bytes: ACTIVITY_MAX_BYTES }) or err {
+    _ = w.activity_add(marker_entry(n), domain.ActivityKeep{ since_at: 0, max_bytes: domain.ACTIVITY_MAX_BYTES }) or err {
         return "{err.message()}"
     }
     return ""

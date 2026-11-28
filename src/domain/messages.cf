@@ -15,13 +15,13 @@ package domain
 // catalog and falls back to `message`. A param carries only what the English text
 // already shows, never a secret (Principle 6).
 
-type MessageDef struct {
+pub type MessageDef struct {
     id:   str `json:"id"`
     code: str `json:"code"`
     text: str `json:"text"`
 }
 
-type CoreMessage struct {
+pub type CoreMessage struct {
     code:    str
     id:      str
     params:  []str
@@ -29,65 +29,65 @@ type CoreMessage struct {
 }
 
 // SSH: dialing, authenticating, the host key and the link (connection cards).
-MSG_SSH_DIAL_FAILED: str = "ssh.dial_failed"
-MSG_SSH_JUMP_DIAL_FAILED: str = "ssh.jump_dial_failed"
-MSG_SSH_HOST_KEY_UNREADABLE: str = "ssh.host_key_unreadable"
-MSG_SSH_NO_AGENT: str = "ssh.no_agent"
-MSG_SSH_AUTH_REJECTED: str = "ssh.auth_rejected"
-MSG_SSH_AUTH_FAILED: str = "ssh.auth_failed"
-MSG_SSH_KEY_UNREADABLE: str = "ssh.key_unreadable"
-MSG_SSH_NO_AUTH_ACCEPTED: str = "ssh.no_auth_accepted"
-MSG_SSH_HOST_KEY_CHANGED: str = "ssh.host_key_changed"
-MSG_SSH_HOST_KEY_UNKNOWN: str = "ssh.host_key_unknown"
-MSG_SSH_HOST_KEY_NOT_TRUSTED: str = "ssh.host_key_not_trusted"
-MSG_SSH_CONNECTION_LOST: str = "ssh.connection_lost"
-MSG_SSH_CONNECTION_LOST_REASON: str = "ssh.connection_lost_reason"
+pub MSG_SSH_DIAL_FAILED: str = "ssh.dial_failed"
+pub MSG_SSH_JUMP_DIAL_FAILED: str = "ssh.jump_dial_failed"
+pub MSG_SSH_HOST_KEY_UNREADABLE: str = "ssh.host_key_unreadable"
+pub MSG_SSH_NO_AGENT: str = "ssh.no_agent"
+pub MSG_SSH_AUTH_REJECTED: str = "ssh.auth_rejected"
+pub MSG_SSH_AUTH_FAILED: str = "ssh.auth_failed"
+pub MSG_SSH_KEY_UNREADABLE: str = "ssh.key_unreadable"
+pub MSG_SSH_NO_AUTH_ACCEPTED: str = "ssh.no_auth_accepted"
+pub MSG_SSH_HOST_KEY_CHANGED: str = "ssh.host_key_changed"
+pub MSG_SSH_HOST_KEY_UNKNOWN: str = "ssh.host_key_unknown"
+pub MSG_SSH_HOST_KEY_NOT_TRUSTED: str = "ssh.host_key_not_trusted"
+pub MSG_SSH_CONNECTION_LOST: str = "ssh.connection_lost"
+pub MSG_SSH_CONNECTION_LOST_REASON: str = "ssh.connection_lost_reason"
 // Unlocking: the vault, the window and the keychain.
-MSG_VAULT_WRONG_PASSWORD: str = "vault.wrong_password"
-MSG_VAULT_NOT_UNLOCKED: str = "vault.not_unlocked"
-MSG_VAULT_LOCKED: str = "vault.locked"
-MSG_VAULT_KEYCHAIN_REFUSED: str = "vault.keychain_refused"
-MSG_VAULT_CACHED_KEY_STALE: str = "vault.cached_key_stale"
-MSG_VAULT_RELOCKED: str = "vault.relocked"
-MSG_WINDOW_LOCKED: str = "window.locked"
-MSG_WINDOW_WRONG_PASSWORD: str = "window.wrong_password"
-MSG_KEYCHAIN_OFF: str = "keychain.off"
-MSG_KEYCHAIN_UNAVAILABLE_STORE: str = "keychain.unavailable_store"
-MSG_KEYCHAIN_UNAVAILABLE_READ: str = "keychain.unavailable_read"
-MSG_KEYCHAIN_UNAVAILABLE_REMOVE: str = "keychain.unavailable_remove"
-MSG_KEYCHAIN_REFUSED_STORE: str = "keychain.refused_store"
-MSG_KEYCHAIN_REFUSED_READ: str = "keychain.refused_read"
-MSG_KEYCHAIN_REFUSED_REMOVE: str = "keychain.refused_remove"
+pub MSG_VAULT_WRONG_PASSWORD: str = "vault.wrong_password"
+pub MSG_VAULT_NOT_UNLOCKED: str = "vault.not_unlocked"
+pub MSG_VAULT_LOCKED: str = "vault.locked"
+pub MSG_VAULT_KEYCHAIN_REFUSED: str = "vault.keychain_refused"
+pub MSG_VAULT_CACHED_KEY_STALE: str = "vault.cached_key_stale"
+pub MSG_VAULT_RELOCKED: str = "vault.relocked"
+pub MSG_WINDOW_LOCKED: str = "window.locked"
+pub MSG_WINDOW_WRONG_PASSWORD: str = "window.wrong_password"
+pub MSG_KEYCHAIN_OFF: str = "keychain.off"
+pub MSG_KEYCHAIN_UNAVAILABLE_STORE: str = "keychain.unavailable_store"
+pub MSG_KEYCHAIN_UNAVAILABLE_READ: str = "keychain.unavailable_read"
+pub MSG_KEYCHAIN_UNAVAILABLE_REMOVE: str = "keychain.unavailable_remove"
+pub MSG_KEYCHAIN_REFUSED_STORE: str = "keychain.refused_store"
+pub MSG_KEYCHAIN_REFUSED_READ: str = "keychain.refused_read"
+pub MSG_KEYCHAIN_REFUSED_REMOVE: str = "keychain.refused_remove"
 // RDP: connecting, credentials and the certificate.
-MSG_RDP_AUTH: str = "rdp.auth"
-MSG_RDP_UNREACHABLE: str = "rdp.unreachable"
-MSG_RDP_TIMEOUT: str = "rdp.timeout"
-MSG_RDP_REFUSED: str = "rdp.refused"
-MSG_RDP_TLS_FAILED: str = "rdp.tls_failed"
-MSG_RDP_SESSION_CLOSED: str = "rdp.session_closed"
-MSG_RDP_CERT_MISMATCH: str = "rdp.cert_mismatch"
-MSG_RDP_PORT_CLOSED: str = "rdp.port_closed"
-MSG_RDP_LOST: str = "rdp.lost"
-MSG_RDP_ENDED: str = "rdp.ended"
-MSG_RDP_STANDARD_SECURITY: str = "rdp.standard_security"
-MSG_RDP_SETUP_CLOSED: str = "rdp.setup_closed"
-MSG_RDP_FAILED: str = "rdp.failed"
-MSG_RDP_NO_SAVED_PASSWORD: str = "rdp.no_saved_password"
-MSG_RDP_NO_PASSWORD_GIVEN: str = "rdp.no_password_given"
-MSG_RDP_CERT_CHANGED: str = "rdp.cert_changed"
-MSG_RDP_CERT_UNKNOWN: str = "rdp.cert_unknown"
-MSG_RDP_CERT_NOT_TRUSTED: str = "rdp.cert_not_trusted"
+pub MSG_RDP_AUTH: str = "rdp.auth"
+pub MSG_RDP_UNREACHABLE: str = "rdp.unreachable"
+pub MSG_RDP_TIMEOUT: str = "rdp.timeout"
+pub MSG_RDP_REFUSED: str = "rdp.refused"
+pub MSG_RDP_TLS_FAILED: str = "rdp.tls_failed"
+pub MSG_RDP_SESSION_CLOSED: str = "rdp.session_closed"
+pub MSG_RDP_CERT_MISMATCH: str = "rdp.cert_mismatch"
+pub MSG_RDP_PORT_CLOSED: str = "rdp.port_closed"
+pub MSG_RDP_LOST: str = "rdp.lost"
+pub MSG_RDP_ENDED: str = "rdp.ended"
+pub MSG_RDP_STANDARD_SECURITY: str = "rdp.standard_security"
+pub MSG_RDP_SETUP_CLOSED: str = "rdp.setup_closed"
+pub MSG_RDP_FAILED: str = "rdp.failed"
+pub MSG_RDP_NO_SAVED_PASSWORD: str = "rdp.no_saved_password"
+pub MSG_RDP_NO_PASSWORD_GIVEN: str = "rdp.no_password_given"
+pub MSG_RDP_CERT_CHANGED: str = "rdp.cert_changed"
+pub MSG_RDP_CERT_UNKNOWN: str = "rdp.cert_unknown"
+pub MSG_RDP_CERT_NOT_TRUSTED: str = "rdp.cert_not_trusted"
 // The remote vault's server: a refused token, and its gate asking to wait (milestone 71).
-MSG_REMOTE_TOKEN_REFUSED: str = "remote.token_refused"
-MSG_REMOTE_WAIT_SECONDS: str = "remote.wait_seconds"
-MSG_REMOTE_WAIT_MINUTES: str = "remote.wait_minutes"
-MSG_REMOTE_SLOW_DOWN: str = "remote.slow_down"
+pub MSG_REMOTE_TOKEN_REFUSED: str = "remote.token_refused"
+pub MSG_REMOTE_WAIT_SECONDS: str = "remote.wait_seconds"
+pub MSG_REMOTE_WAIT_MINUTES: str = "remote.wait_minutes"
+pub MSG_REMOTE_SLOW_DOWN: str = "remote.slow_down"
 
 // Every message with an id: its code and English text. `\{name}` is a param; the
 // call site passes them in the order each name first appears, and a name used twice
 // takes the same value. Adjacent params must have text between them.
 // An id changes only when the meaning does (D-084).
-fn message_defs() -> []MessageDef {
+pub fn message_defs() -> []MessageDef {
     return [
         MessageDef{ id: MSG_SSH_DIAL_FAILED, code: ERR_NETWORK, text: "connect to \{host}:\{port} failed: \{reason}" },
         MessageDef{ id: MSG_SSH_JUMP_DIAL_FAILED, code: ERR_NETWORK, text: "the jump host could not reach \{host}:\{port}: \{reason}" },
@@ -216,7 +216,7 @@ fn msg_param_slot(names: []str, name: str) -> usize {
 }
 
 // The core's error for `id`: "code: text", as `coded` builds it.
-fn core_msg(id: str, params: []str) -> str {
+pub fn core_msg(id: str, params: []str) -> str {
     d := message_def(id) or { return coded(ERR_INTERNAL, id) }
     return coded(d.code, message_text(id, params))
 }
@@ -287,7 +287,7 @@ fn match_message_template(template: str, text: str) -> []str? {
 
 // `err` ("code: text") as a core message: its id and params when its code and text
 // match a template here, and an empty id with no params when none does.
-fn core_message_of(err: str) -> CoreMessage {
+pub fn core_message_of(err: str) -> CoreMessage {
     code := error_code_of(err)
     text := error_text_of(err)
     for d in message_defs() {

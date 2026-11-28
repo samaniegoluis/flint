@@ -1,6 +1,5 @@
 package config
 
-import "core:os"
 import "core:fs"
 import "core:crypto/sha256"
 import "../../domain"

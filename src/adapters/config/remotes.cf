@@ -15,11 +15,11 @@ type RemotesFile struct {
     vaults:  []domain.RemoteLink `json:"vaults"`
 }
 
-type JsonRemoteLinkStore struct {
+pub type JsonRemoteLinkStore struct {
     path: str
 }
 
-fn new_json_remote_link_store(dir: str) -> JsonRemoteLinkStore {
+pub fn new_json_remote_link_store(dir: str) -> JsonRemoteLinkStore {
     return JsonRemoteLinkStore{ path: dir + "/remotes.json" }
 }
 
@@ -27,12 +27,12 @@ fn (self: JsonRemoteLinkStore) links_load() -> []domain.RemoteLink! {
     if !fs.exists(self.path) {
         return []
     }
-    text := fs.read_text(self.path) or err {
-        return error(coded(ERR_IO, "cannot read {self.path}"))
+    text := fs.read_text(self.path) or {
+        return error(domain.coded(domain.ERR_IO, "cannot read {self.path}"))
     }
     // CFIRE-UPSTREAM: CF-164 (a labeled argument keeps libstdc++'s chrono::parse out)
-    f := json.parse[RemotesFile](payload: text) or err {
-        return error(coded(ERR_INVALID, "{self.path} is not a remotes file"))
+    f := json.parse[RemotesFile](payload: text) or {
+        return error(domain.coded(domain.ERR_INVALID, "{self.path} is not a remotes file"))
     }
     return f.vaults
 }

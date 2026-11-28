@@ -32,7 +32,7 @@ fn (self: FakePresence) presence_method() -> str {
     return self.method
 }
 
-fn (self: FakePresence) presence_confirm(reason: domain.PresenceReason) -> bool! {
+fn (self: FakePresence) presence_confirm(_reason: domain.PresenceReason) -> bool! {
     return self.answer
 }
 
@@ -40,14 +40,14 @@ test "presence is the OS's check, or the master password where it has none" {
     crypto := FakeCrypto{ derive_calls: 0 }
     mut store := new_fake_store()
     s := try create_vault(crypto, mut store, new_fake_keychain(), new_fake_recents(), "/v/p.flint", "", "correct horse", false)
-    try confirm_presence(crypto, store, FakePresence{ method: "password", answer: false }, s, "correct horse", window_open_reason("r"))
+    try confirm_presence(crypto, store, FakePresence{ method: "password", answer: false }, s, "correct horse", domain.window_open_reason("r"))
     mut wrong := ""
-    confirm_presence(crypto, store, FakePresence{ method: "password", answer: true }, s, "nope", window_open_reason("r")) or err { wrong = "{err.message()}" }
-    assert_eq(error_code_of("{wrong}"), ERR_WRONG_PASSWORD)
-    try confirm_presence(crypto, store, FakePresence{ method: "touchid", answer: true }, s, "", window_open_reason("r"))
+    confirm_presence(crypto, store, FakePresence{ method: "password", answer: true }, s, "nope", domain.window_open_reason("r")) or err { wrong = "{err.message()}" }
+    assert_eq(domain.error_code_of("{wrong}"), domain.ERR_WRONG_PASSWORD)
+    try confirm_presence(crypto, store, FakePresence{ method: "touchid", answer: true }, s, "", domain.window_open_reason("r"))
     mut no := ""
-    confirm_presence(crypto, store, FakePresence{ method: "touchid", answer: false }, s, "correct horse", window_open_reason("r")) or err { no = "{err.message()}" }
-    assert_eq(error_code_of("{no}"), ERR_DENIED)
+    confirm_presence(crypto, store, FakePresence{ method: "touchid", answer: false }, s, "correct horse", domain.window_open_reason("r")) or err { no = "{err.message()}" }
+    assert_eq(domain.error_code_of("{no}"), domain.ERR_DENIED)
 }
 
 test "the window opens again with the master password or the OS's presence check" {
@@ -58,14 +58,14 @@ test "the window opens again with the master password or the OS's presence check
     try confirm_window_unlock(crypto, store, FakePresence{ method: "touchid", answer: true }, s, "")
     mut no := ""
     confirm_window_unlock(crypto, store, FakePresence{ method: "touchid", answer: false }, s, "") or err { no = "{err.message()}" }
-    assert_eq(error_code_of("{no}"), ERR_DENIED)
+    assert_eq(domain.error_code_of("{no}"), domain.ERR_DENIED)
     // The master password works where there is a presence check too, and never a wrong one.
     try confirm_window_unlock(crypto, store, FakePresence{ method: "touchid", answer: false }, s, "correct horse")
     mut wrong := ""
     confirm_window_unlock(crypto, store, FakePresence{ method: "touchid", answer: true }, s, "nope") or err { wrong = "{err.message()}" }
-    assert_eq(error_code_of("{wrong}"), ERR_WRONG_PASSWORD)
+    assert_eq(domain.error_code_of("{wrong}"), domain.ERR_WRONG_PASSWORD)
     // No presence check on this machine: an empty password is not enough.
     mut empty := ""
     confirm_window_unlock(crypto, store, FakePresence{ method: "password", answer: true }, s, "") or err { empty = "{err.message()}" }
-    assert_eq(error_code_of("{empty}"), ERR_WRONG_PASSWORD)
+    assert_eq(domain.error_code_of("{empty}"), domain.ERR_WRONG_PASSWORD)
 }

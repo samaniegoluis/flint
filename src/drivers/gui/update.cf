@@ -18,7 +18,6 @@ import "core:encoding/hex"
 import "core:fs"
 import "core:json"
 import "core:os"
-import "core:sync"
 import "core:time"
 import "../../adapters/config"
 import "../../adapters/crypto" as flint_crypto
@@ -71,7 +70,7 @@ type OpenUrlReq struct {
 BUNDLE_EXE_TAIL: str = "/Contents/MacOS"
 
 fn install_root() -> str {
-    exe := executable_dir()
+    exe := process.executable_dir()
     if exe.ends_with(".app" + BUNDLE_EXE_TAIL) {
         return "{exe[0..exe.len() - BUNDLE_EXE_TAIL.len()]}"
     }
@@ -79,7 +78,7 @@ fn install_root() -> str {
 }
 
 fn install_kind_file() -> str {
-    exe := executable_dir()
+    exe := process.executable_dir()
     if exe.ends_with(".app/Contents/MacOS") {
         return exe + "/../Resources/install-kind"
     }
@@ -88,23 +87,23 @@ fn install_kind_file() -> str {
 
 // The install-kind file as it is (INSTALL_SOURCE when there is none).
 fn real_install_kind() -> str {
-    return install_kind_of(fs.read_text(install_kind_file()) or "")
+    return domain.install_kind_of(fs.read_text(install_kind_file()) or "")
 }
 
 fn update_here() -> domain.UpdateHere {
     kind := real_install_kind()
     root := install_root()
-    writable := folder_writable(root) && folder_writable(fs.dirname(root))
-    mut here := domain.UpdateHere{ version: version.FLINT_VERSION, os: os_name(), arch: cpu_arch(), kind: kind, writable: writable, source: "" }
+    writable := process.folder_writable(root) && process.folder_writable(fs.dirname(root))
+    mut here := domain.UpdateHere{ version: version.FLINT_VERSION, os: process.os_name(), arch: process.cpu_arch(), kind: kind, writable: writable, source: "" }
     // A build from source, under test, may pretend to be a package (FLINT_UPDATE_TEST_KIND).
     test_kind := (os.getenv("FLINT_UPDATE_TEST_KIND") or "")
-    if test_kind.len() > 0 && update_override_allowed(kind, (os.getenv("FLINT_UPDATE_FEED") or "")) {
-        here.kind = install_kind_of(test_kind)
+    if test_kind.len() > 0 && domain.update_override_allowed(kind, (os.getenv("FLINT_UPDATE_FEED") or "")) {
+        here.kind = domain.install_kind_of(test_kind)
         here.writable = true
     }
     // A .deb or .rpm: from a file, or a repository (milestone 54), asked once.
-    if package_format(here.kind).len() > 0 {
-        here.source = package_source(new_os_package_source_probe(), here.kind)
+    if domain.package_format(here.kind).len() > 0 {
+        here.source = application.package_source(process.new_os_package_source_probe(), here.kind)
     }
     return here
 }
@@ -113,33 +112,33 @@ fn update_here() -> domain.UpdateHere {
 // or .rpm in the person's cache (milestone 54; the helper finds it by uid, so the home
 // is the one HOME names when Flint starts).
 fn update_stage_paths(here: domain.UpdateHere, root: str) -> domain.UpdatePaths {
-    format := package_format(here.kind)
+    format := domain.package_format(here.kind)
     if format.len() > 0 {
-        return update_package_paths((os.getenv("HOME") or ""), format, root)
+        return domain.update_package_paths((os.getenv("HOME") or ""), format, root)
     }
-    return update_paths(root, os_name())
+    return domain.update_paths(root, process.os_name())
 }
 
 // The feed and key: always Flint's, except for a build from source checking a local
 // feed with a test key (domain's update_override_allowed, D-116).
 fn update_source(kind: str) -> application.UpdateSource {
-    key := hex.decode(UPDATE_PUBLIC_KEY_HEX) or []
+    key := hex.decode(domain.UPDATE_PUBLIC_KEY_HEX) or []
     // A test package (milestone 54, `package.sh linux --test-feed`): its local feed and
     // key are compiled in, and nothing else is checked. A release has neither.
     if version.UPDATE_TEST_KEY_HEX.len() > 0 {
-        write_stderr("flint-gui: a test package: update check against {version.UPDATE_TEST_FEED}\n")
+        process.write_stderr("flint-gui: a test package: update check against {version.UPDATE_TEST_FEED}\n")
         return application.UpdateSource{ manifest_url: version.UPDATE_TEST_FEED, public_key: hex.decode(version.UPDATE_TEST_KEY_HEX) or [] }
     }
     feed := (os.getenv("FLINT_UPDATE_FEED") or "")
-    if feed.len() > 0 && update_override_allowed(kind, feed) {
+    if feed.len() > 0 && domain.update_override_allowed(kind, feed) {
         test_key := hex.decode((os.getenv("FLINT_UPDATE_TEST_KEY") or "")) or []
-        write_stderr("flint-gui: update check against the test feed {feed}\n")
+        process.write_stderr("flint-gui: update check against the test feed {feed}\n")
         return application.UpdateSource{ manifest_url: feed, public_key: test_key }
     }
     if feed.len() > 0 {
-        write_stderr("flint-gui: FLINT_UPDATE_FEED ignored: only a build from source checks a local feed\n")
+        process.write_stderr("flint-gui: FLINT_UPDATE_FEED ignored: only a build from source checks a local feed\n")
     }
-    return application.UpdateSource{ manifest_url: UPDATE_FEED_URL, public_key: key }
+    return application.UpdateSource{ manifest_url: domain.UPDATE_FEED_URL, public_key: key }
 }
 
 fn rpc_update_hint(params: str, st: GuiState) -> str! {
@@ -152,7 +151,7 @@ fn rpc_update_hint(params: str, st: GuiState) -> str! {
 
 // CHANGELOG.md: inside the package, or the checkout's for a build from source.
 fn find_changelog() -> str {
-    exe := executable_dir()
+    exe := process.executable_dir()
     candidates: []str = [exe + "/../Resources/CHANGELOG.md", exe + "/CHANGELOG.md", exe + "/../../../../../CHANGELOG.md", exe + "/../../CHANGELOG.md", exe + "/../CHANGELOG.md"]
     for path in candidates {
         if fs.exists(path) {
@@ -166,23 +165,23 @@ fn rpc_whats_new(params: str, mut settings: config.JsonSettingsStore) -> str! {
     req := try parse_req[WhatsNewReq](params)
     changes := find_changelog()
     if req.launch {
-        since := (load_settings(settings) or default_settings()).last_seen_version
-        return json.stringify(WhatsNewReply{ current: version.FLINT_VERSION, since: since, versions: try whats_new_at_launch(mut settings, changes, version.FLINT_VERSION) })
+        since := (application.load_settings(settings) or domain.default_settings()).last_seen_version
+        return json.stringify(WhatsNewReply{ current: version.FLINT_VERSION, since: since, versions: try application.whats_new_at_launch(mut settings, changes, version.FLINT_VERSION) })
     }
-    return json.stringify(WhatsNewReply{ current: version.FLINT_VERSION, since: "", versions: whats_new_here(changes, version.FLINT_VERSION) })
+    return json.stringify(WhatsNewReply{ current: version.FLINT_VERSION, since: "", versions: application.whats_new_here(changes, version.FLINT_VERSION) })
 }
 
 fn rpc_open_url(params: str, e2e: bool) -> str! {
     req := try parse_req[OpenUrlReq](params)
-    if !url_open_allowed(req.url) {
-        return error(coded(ERR_INVALID, "Flint opens only its own pages in the browser"))
+    if !domain.url_open_allowed(req.url) {
+        return error(domain.coded(domain.ERR_INVALID, "Flint opens only its own pages in the browser"))
     }
     // The end-to-end run names the page instead of opening a browser on the machine.
     if e2e {
-        write_stderr("flint-gui: e2e: would open {req.url}\n")
+        process.write_stderr("flint-gui: e2e: would open {req.url}\n")
         return ok_json()
     }
-    try open_in_browser(req.url)
+    try process.open_in_browser(req.url)
     return ok_json()
 }
 
@@ -193,12 +192,12 @@ fn with_staged(s: domain.UpdateStatus, staged: str, mut files: process.OsUpdateF
         return (s, staged)
     }
     mut out := s
-    if s.state == UPDATE_AVAILABLE && s.version != staged {
+    if s.state == domain.UPDATE_AVAILABLE && s.version != staged {
         files.upd_remove(p.staging) or {}
         return (out, "")
     }
-    if s.state == UPDATE_AVAILABLE || s.state == UPDATE_FAILED || s.state == UPDATE_UP_TO_DATE || s.state == UPDATE_IDLE {
-        out.state = UPDATE_READY
+    if s.state == domain.UPDATE_AVAILABLE || s.state == domain.UPDATE_FAILED || s.state == domain.UPDATE_UP_TO_DATE || s.state == domain.UPDATE_IDLE {
+        out.state = domain.UPDATE_READY
         out.version = staged
         out.toast = false
     }
@@ -212,7 +211,7 @@ fn run_update_progress(st: GuiState, mut app: webui.App) {
     mut sent: i64 = -1
     for !st.holder.quitting() {
         time.sleep_ms(UPDATE_PROGRESS_MS)
-        got := update_download_received()
+        got := vaultremote.update_download_received()
         if got != sent {
             app.emit("update:progress", UpdateProgress{ received: got })
             sent = got
@@ -221,44 +220,44 @@ fn run_update_progress(st: GuiState, mut app: webui.App) {
 }
 
 fn run_update_loop(c: flint_crypto.Sodium, settings_store: config.JsonSettingsStore, st: GuiState, mut app: webui.App) {
-    feed := new_http_update_feed()
-    mut dl := new_http_update_downloader()
-    mut files := new_os_update_files()
-    mut procs := new_os_update_processes()
-    signer := new_os_update_signer()
-    mut runner := new_os_root_runner()
+    feed := vaultremote.new_http_update_feed()
+    mut dl := vaultremote.new_http_update_downloader()
+    mut files := process.new_os_update_files()
+    mut procs := process.new_os_update_processes()
+    signer := process.new_os_update_signer()
+    mut runner := process.new_os_root_runner()
     here := update_here()
     root := install_root()
     stage := update_stage_paths(here, root)
-    as_package := package_format(here.kind).len() > 0
+    as_package := domain.package_format(here.kind).len() > 0
     // The real kind decides whether a test feed is allowed, never the one a test pretends.
     src := update_source(real_install_kind())
     mut settings := settings_store
-    first := load_settings(settings) or default_settings()
-    mut last := update_status_idle(here.version, first.update_check, 0)
+    first := application.load_settings(settings) or domain.default_settings()
+    mut last := domain.update_status_idle(here.version, first.update_check, 0)
     // What the last update-apply could not do, said once; a package already unpacked.
-    if o := take_apply_outcome_at(mut files, stage) {
-        last.outcome = apply_outcome_text(o)
-        write_stderr("flint-gui: the last update was not applied ({o.step}: {o.message})\n")
+    if o := application.take_apply_outcome_at(mut files, stage) {
+        last.outcome = domain.apply_outcome_text(o)
+        process.write_stderr("flint-gui: the last update was not applied ({o.step}: {o.message})\n")
     }
     mut staged := ""
-    if here.kind == INSTALL_PORTABLE || as_package {
-        staged = staged_update_at(mut files, stage, here.version)
+    if here.kind == domain.INSTALL_PORTABLE || as_package {
+        staged = application.staged_update_at(mut files, stage, here.version)
     }
     if staged.len() > 0 {
-        last.state = UPDATE_READY
+        last.state = domain.UPDATE_READY
         last.version = staged
-        last.action = UPDATE_ACTION_DOWNLOAD
-        write_stderr("flint-gui: Flint {staged} is downloaded and ready\n")
+        last.action = domain.UPDATE_ACTION_DOWNLOAD
+        process.write_stderr("flint-gui: Flint {staged} is downloaded and ready\n")
     }
     mut said_started := false
     mut next_auto := time.now_ms() + UPDATE_FIRST_CHECK_MS
     // An end-to-end run never checks GitHub on its own: only its own feed, or Check now.
     quiet := (os.getenv("FLINT_GUI_E2E") or "").len() > 0 && (os.getenv("FLINT_UPDATE_FEED") or "").len() == 0
-    write_stderr("flint-gui: updates: {here.kind} {here.source} on {here.os}-{here.arch}, automatic check {first.update_check}\n")
+    process.write_stderr("flint-gui: updates: {here.kind} {here.source} on {here.os}-{here.arch}, automatic check {first.update_check}\n")
     for !st.holder.quitting() {
         hint := st.update_hints.recv_timeout(UPDATE_TICK_MS) or ""
-        auto := (load_settings(settings) or default_settings()).update_check
+        auto := (application.load_settings(settings) or domain.default_settings()).update_check
         if hint == UPDATE_HINT_TOAST_SHOWN {
             last.toast = false
             continue
@@ -269,7 +268,7 @@ fn run_update_loop(c: flint_crypto.Sodium, settings_store: config.JsonSettingsSt
         }
         if hint == UPDATE_HINT_STATUS && !said_started {
             // The page is up: an update-apply waiting for this app hears it started.
-            mark_update_started_at(mut files, stage)
+            application.mark_update_started_at(mut files, stage)
             said_started = true
         }
         if hint == UPDATE_HINT_STATUS || auto != last.auto {
@@ -278,64 +277,64 @@ fn run_update_loop(c: flint_crypto.Sodium, settings_store: config.JsonSettingsSt
             continue
         }
         if hint == UPDATE_HINT_DOWNLOAD {
-            if last.state != UPDATE_AVAILABLE || last.action != UPDATE_ACTION_DOWNLOAD {
+            if last.state != domain.UPDATE_AVAILABLE || last.action != domain.UPDATE_ACTION_DOWNLOAD {
                 continue
             }
             mut going := last
-            going.state = UPDATE_DOWNLOADING
+            going.state = domain.UPDATE_DOWNLOADING
             going.toast = false
             going.code = ""
             going.message = ""
             going.received = 0
             app.emit("update:status", going)
-            write_stderr("flint-gui: downloading Flint {last.version}\n")
+            process.write_stderr("flint-gui: downloading Flint {last.version}\n")
             mut fetched := true
             mut why := ""
             if as_package {
-                download_package_update(feed, c, mut dl, c, mut files, src, last, here.kind, stage) or err {
+                application.download_package_update(feed, c, mut dl, c, mut files, src, last, here.kind, stage) or err {
                     fetched = false
                     why = "{err.message()}"
                 }
             } else {
-                download_update(mut dl, c, signer, mut files, last, root, os_name()) or err {
+                application.download_update(mut dl, c, signer, mut files, last, root, process.os_name()) or err {
                     fetched = false
                     why = "{err.message()}"
                 }
             }
             if !fetched {
                 msg := why
-                last.code = error_code_of(msg)
-                last.message = error_text_of(msg)
+                last.code = domain.error_code_of(msg)
+                last.message = domain.error_text_of(msg)
                 last.toast = false
-                write_stderr("flint-gui: the download failed ({last.code}): {last.message}\n")
+                process.write_stderr("flint-gui: the download failed ({last.code}): {last.message}\n")
                 app.emit("update:status", last)
                 continue
             }
             staged = last.version
-            last.state = UPDATE_READY
+            last.state = domain.UPDATE_READY
             last.toast = false
             last.code = ""
             last.message = ""
             last.received = last.asset_size
-            write_stderr("flint-gui: Flint {last.version} is downloaded and ready\n")
+            process.write_stderr("flint-gui: Flint {last.version} is downloaded and ready\n")
             app.emit("update:status", last)
             continue
         }
         if hint == UPDATE_HINT_RELAUNCH {
-            if last.state != UPDATE_READY {
+            if last.state != domain.UPDATE_READY {
                 continue
             }
             temp := "{temp_base()}/flint-update-{current_pid()}"
             if as_package {
                 // The system password through polkit, then apt or dnf as root (D-124).
-                write_stderr("flint-gui: asking for the system password to install Flint {last.version}\n")
+                process.write_stderr("flint-gui: asking for the system password to install Flint {last.version}\n")
                 files.upd_mkdir(temp) or {}
-                r := relaunch_package_update(mut files, mut procs, mut runner, stage, root + "/" + UPDATE_ROOT_HELPER, here.version, current_pid(), temp + "/update-apply.log")
+                r := application.relaunch_package_update(mut files, mut procs, mut runner, stage, root + "/" + domain.UPDATE_ROOT_HELPER, here.version, process.current_pid(), temp + "/update-apply.log")
                 if r.installed {
                     if r.message.len() > 0 {
-                        write_stderr("flint-gui: {r.message}\n")
+                        process.write_stderr("flint-gui: {r.message}\n")
                     }
-                    write_stderr("flint-gui: Flint {last.version} installed; relaunching (log: {temp}/update-apply.log)\n")
+                    process.write_stderr("flint-gui: Flint {last.version} installed; relaunching (log: {temp}/update-apply.log)\n")
                     quit_app(mut app)
                     return
                 }
@@ -343,27 +342,27 @@ fn run_update_loop(c: flint_crypto.Sodium, settings_store: config.JsonSettingsSt
                 last.message = r.message
                 if r.discard {
                     staged = ""
-                    last.state = UPDATE_AVAILABLE
+                    last.state = domain.UPDATE_AVAILABLE
                 }
-                write_stderr("flint-gui: Relaunch did not install ({r.code}): {r.message}\n")
+                process.write_stderr("flint-gui: Relaunch did not install ({r.code}): {r.message}\n")
                 app.emit("update:status", last)
                 continue
             }
-            relaunch_update(mut files, mut procs, signer, root, os_name(), here.version, temp, current_pid()) or err {
+            application.relaunch_update(mut files, mut procs, signer, root, process.os_name(), here.version, temp, process.current_pid()) or err {
                 msg := "{err.message()}"
-                last.code = error_code_of(msg)
-                last.message = error_text_of(msg)
-                if last.code == ERR_INVALID {
+                last.code = domain.error_code_of(msg)
+                last.message = domain.error_text_of(msg)
+                if last.code == domain.ERR_INVALID {
                     // The staged bundle's signature no longer passed (milestone 79): it was
                     // discarded, so the version is offered again, never retried on its own.
                     staged = ""
-                    last.state = UPDATE_AVAILABLE
+                    last.state = domain.UPDATE_AVAILABLE
                 }
-                write_stderr("flint-gui: Relaunch failed ({last.code}): {last.message}\n")
+                process.write_stderr("flint-gui: Relaunch failed ({last.code}): {last.message}\n")
                 app.emit("update:status", last)
                 continue
             }
-            write_stderr("flint-gui: relaunching into Flint {last.version} (log: {temp}/update-apply.log)\n")
+            process.write_stderr("flint-gui: relaunching into Flint {last.version} (log: {temp}/update-apply.log)\n")
             quit_app(mut app)
             return
         }
@@ -372,23 +371,23 @@ fn run_update_loop(c: flint_crypto.Sodium, settings_store: config.JsonSettingsSt
             continue
         }
         mut checking := last
-        checking.state = UPDATE_CHECKING
+        checking.state = domain.UPDATE_CHECKING
         checking.toast = false
         app.emit("update:status", checking)
         pending := last.toast
         outcome := last.outcome
-        last = check_for_update(feed, c, mut settings, src, here, time.unix_seconds() * 1000)
+        last = application.check_for_update(feed, c, mut settings, src, here, time.unix_seconds() * 1000)
         last.outcome = outcome
         // A toast the page has not shown yet stays asked for while the same version waits.
-        if pending && last.state == UPDATE_AVAILABLE {
+        if pending && last.state == domain.UPDATE_AVAILABLE {
             last.toast = true
         }
         (last, staged) = with_staged(last, staged, mut files, stage)
-        next_auto = time.now_ms() + UPDATE_CHECK_EVERY_MS
-        if last.state == UPDATE_FAILED {
-            write_stderr("flint-gui: update check failed ({last.code})\n")
-        } else if last.state == UPDATE_AVAILABLE {
-            write_stderr("flint-gui: Flint {last.version} is available ({last.action})\n")
+        next_auto = time.now_ms() + domain.UPDATE_CHECK_EVERY_MS
+        if last.state == domain.UPDATE_FAILED {
+            process.write_stderr("flint-gui: update check failed ({last.code})\n")
+        } else if last.state == domain.UPDATE_AVAILABLE {
+            process.write_stderr("flint-gui: Flint {last.version} is available ({last.action})\n")
         }
         app.emit("update:status", last)
     }

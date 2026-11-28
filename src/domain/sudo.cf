@@ -10,7 +10,7 @@ package domain
 // it ever be printed.
 
 // What the approval window shows for a sudo request.
-type SudoAsk struct {
+pub type SudoAsk struct {
     host:         str   `json:"host"`
     user:         str   `json:"user"`
     argv:         []str `json:"argv"`
@@ -19,18 +19,18 @@ type SudoAsk struct {
     has_password: bool  `json:"has_password"`
 }
 
-fn no_sudo_ask() -> SudoAsk {
+pub fn no_sudo_ask() -> SudoAsk {
     return SudoAsk{ host: "", user: "", argv: [], has_password: false }
 }
 
 // The prompt sudo is told to print, from a hex nonce. No `%`: sudo expands those.
-fn sudo_prompt(nonce_hex: str) -> str {
+pub fn sudo_prompt(nonce_hex: str) -> str {
     return "[flint-sudo:" + nonce_hex + "]"
 }
 
 // The remote command line: each argument quoted as one shell word, never a shell
 // string, so the command that runs is exactly the argv the owner approved.
-fn sudo_command_line(prompt: str, argv: []str) -> str {
+pub fn sudo_command_line(prompt: str, argv: []str) -> str {
     mut s := "sudo -S -k -p " + shell_single_quote(prompt) + " --"
     for a in argv {
         s = s + " " + shell_single_quote(a)
@@ -54,13 +54,13 @@ type SudoWatch struct {
 
 // What to do after a chunk: `out` goes to the caller; `send_password` types the
 // password once; `refused` means sudo asked again, so the password was wrong.
-type SudoStep struct {
+pub type SudoStep struct {
     output:        str
     send_password: bool
     refused:       bool
 }
 
-fn new_sudo_watch(prompt: str, secret: str) -> SudoWatch {
+pub fn new_sudo_watch(prompt: str, secret: str) -> SudoWatch {
     return SudoWatch{ prompt: prompt, secret: secret, pending: "", prompts: 0, seen: "" }
 }
 
@@ -93,7 +93,7 @@ fn without_secret(s: str, secret: str) -> str {
 // The prompt is found in the raw output first and the secret cut only from what goes
 // to the caller: the prompt's nonce is random hex, so a short hex password can sit
 // inside it, and cutting first would hide the prompt.
-fn sudo_feed(mut w: SudoWatch, data: str) -> SudoStep {
+pub fn sudo_feed(mut w: SudoWatch, data: str) -> SudoStep {
     mut step := SudoStep{ output: "", send_password: false, refused: false }
     mut buf := w.pending + data
     for buf.contains(w.prompt) {
@@ -125,7 +125,7 @@ fn sudo_feed(mut w: SudoWatch, data: str) -> SudoStep {
 }
 
 // What is still held back once the command ended.
-fn sudo_flush(mut w: SudoWatch) -> str {
+pub fn sudo_flush(mut w: SudoWatch) -> str {
     // Typed: inferred from a parameter's field, its methods break once the package is
     // imported (CF-156).
     // CFIRE-UPSTREAM: CF-156
@@ -135,7 +135,7 @@ fn sudo_flush(mut w: SudoWatch) -> str {
 }
 
 // Whether sudo refused because the login user may not use it.
-fn sudo_not_allowed(w: SudoWatch) -> bool {
+pub fn sudo_not_allowed(w: SudoWatch) -> bool {
     for phrase in SUDO_NOT_ALLOWED {
         if w.seen.contains(phrase) {
             return true

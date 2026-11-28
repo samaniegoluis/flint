@@ -18,7 +18,7 @@ fn base_url() -> str {
 }
 
 fn vault_url() -> str {
-    return remote_vault_url(base_url(), VID_A)
+    return domain.remote_vault_url(base_url(), VID_A)
 }
 
 fn token() -> str {
@@ -58,12 +58,12 @@ test "GET, PUT, 304, 409, 412 and 401 over HTTP, with headers both ways" {
     assert_eq(late.version, i64(2))
 
     // A second vault beside the first, with its own versions (milestone 45).
-    b_url := remote_vault_url(base_url(), VID_B)
+    b_url := domain.remote_vault_url(base_url(), VID_B)
     assert(!(try r.remote_get(b_url, token(), 0)).found)
     b := try r.remote_put(b_url, token(), VID_B, 0, bytes_of("other"))
     assert_eq(b.version, i64(1))
-    try r.remote_set_label(remote_label_url(base_url(), VID_B), token(), "Work")
-    list := try r.remote_list(remote_vaults_url(base_url()), token())
+    try r.remote_set_label(domain.remote_label_url(base_url(), VID_B), token(), "Work")
+    list := try r.remote_list(domain.remote_vaults_url(base_url()), token())
     assert_eq(list.len(), usize(2))
     assert_eq(list[0].id, VID_A)
     assert_eq(list[0].version, i64(2))
@@ -73,16 +73,16 @@ test "GET, PUT, 304, 409, 412 and 401 over HTTP, with headers both ways" {
     assert_eq(list[1].size, i64(5))
 
     mut msg := ""
-    r.remote_set_label(remote_label_url(base_url(), "abababababababababababababababab"), token(), "x") or err { msg = "{err.message()}" }
-    assert_eq(error_code_of(msg), ERR_NOT_FOUND)
+    r.remote_set_label(domain.remote_label_url(base_url(), "abababababababababababababababab"), token(), "x") or err { msg = "{err.message()}" }
+    assert_eq(domain.error_code_of(msg), domain.ERR_NOT_FOUND)
 
     msg = ""
     r.remote_get(url, "wrong-token-wrong-token-wrong-token", 0) or err { msg = "{err.message()}" }
-    assert_eq(error_code_of(msg), ERR_AUTH)
+    assert_eq(domain.error_code_of(msg), domain.ERR_AUTH)
     assert(!msg.contains("wrong-token"), "the token is never in a message")
     // A 401 says the token was refused, nothing about a lockout (milestone 71).
-    m := core_message_of(msg)
-    assert_eq(m.id, MSG_REMOTE_TOKEN_REFUSED)
+    m := domain.core_message_of(msg)
+    assert_eq(m.id, domain.MSG_REMOTE_TOKEN_REFUSED)
     assert(!msg.contains("15 minutes"))
 }
 
@@ -104,31 +104,31 @@ test "a 429 says how long the server asks to wait, from its Retry-After" {
     base := "http://127.0.0.1:{srv.port()}"
     mut msg := ""
     r.remote_get(base + "/minutes", token(), 0) or err { msg = "{err.message()}" }
-    assert_eq(error_code_of(msg), ERR_REFUSED)
-    assert_eq(core_message_of(msg).id, MSG_REMOTE_WAIT_MINUTES)
+    assert_eq(domain.error_code_of(msg), domain.ERR_REFUSED)
+    assert_eq(domain.core_message_of(msg).id, domain.MSG_REMOTE_WAIT_MINUTES)
     assert(msg.contains("wait 14 min"), msg)
     msg = ""
     r.remote_get(base + "/seconds", token(), 0) or err { msg = "{err.message()}" }
-    assert_eq(core_message_of(msg).id, MSG_REMOTE_WAIT_SECONDS)
+    assert_eq(domain.core_message_of(msg).id, domain.MSG_REMOTE_WAIT_SECONDS)
     assert(msg.contains("wait 42 s"), msg)
     msg = ""
     r.remote_get(base + "/none", token(), 0) or err { msg = "{err.message()}" }
-    assert_eq(core_message_of(msg).id, MSG_REMOTE_SLOW_DOWN)
+    assert_eq(domain.core_message_of(msg).id, domain.MSG_REMOTE_SLOW_DOWN)
 }
 
 test "an unreachable server is network, a path that is not a vault server is not_found" {
     r := new_http_vault_remote()
     mut msg := ""
     r.remote_get("http://127.0.0.1:9/v1/vault", token(), 0) or err { msg = "{err.message()}" }
-    assert_eq(error_code_of(msg), ERR_NETWORK)
+    assert_eq(domain.error_code_of(msg), domain.ERR_NETWORK)
     base := (os.getenv("FLINT_TEST_VAULT_URL") or "")
     msg = ""
     r.remote_get(base + "/nope", token(), 0) or err { msg = "{err.message()}" }
-    assert_eq(error_code_of(msg), ERR_NOT_FOUND)
+    assert_eq(domain.error_code_of(msg), domain.ERR_NOT_FOUND)
     assert(msg.contains("0.12 or later"))
     msg = ""
     r.remote_list(base + "/nope", token()) or err { msg = "{err.message()}" }
-    assert_eq(error_code_of(msg), ERR_NOT_FOUND)
+    assert_eq(domain.error_code_of(msg), domain.ERR_NOT_FOUND)
 }
 
 test "a server that stalls hits the deadline" {
@@ -138,5 +138,5 @@ test "a server that stalls hits the deadline" {
     l := try net.listen(0, "127.0.0.1")
     mut msg := ""
     r.remote_get("http://127.0.0.1:{l.port()}/v1/vault", token(), 0) or err { msg = "{err.message()}" }
-    assert_eq(error_code_of(msg), ERR_TIMEOUT)
+    assert_eq(domain.error_code_of(msg), domain.ERR_TIMEOUT)
 }

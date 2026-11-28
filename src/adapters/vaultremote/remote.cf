@@ -18,12 +18,12 @@ REMOTE_REQUEST_MS: i64 = 120000
 // The most a download may be: the server's default cap (32 MiB) and room to spare.
 REMOTE_MAX_BYTES: i64 = 67108864
 
-type HttpVaultRemote struct {
+pub type HttpVaultRemote struct {
     connect_ms: i64
     request_ms: i64
 }
 
-fn new_http_vault_remote() -> HttpVaultRemote {
+pub fn new_http_vault_remote() -> HttpVaultRemote {
     return HttpVaultRemote{ connect_ms: REMOTE_CONNECT_MS, request_ms: REMOTE_REQUEST_MS }
 }
 
@@ -52,7 +52,7 @@ type RemoteLabelBody struct {
 // A 404 that is not the server's "empty": no server, or one from before milestone 45
 // that knows only `/v1/vault`.
 fn no_server(url: str) -> str {
-    return coded(ERR_NOT_FOUND, "no Flint vault server of 0.12 or later at {url_host(url)}: check the URL, or update flint-vault-server")
+    return domain.coded(domain.ERR_NOT_FOUND, "no Flint vault server of 0.12 or later at {url_host(url)}: check the URL, or update flint-vault-server")
 }
 
 fn (self: HttpVaultRemote) send(method: str, url: str, headers: str, body: []byte) -> RemoteReply! {
@@ -72,19 +72,19 @@ fn (self: HttpVaultRemote) send(method: str, url: str, headers: str, body: []byt
     }
     host := url_host(url)
     if rc == 2 {
-        return error(coded(ERR_NETWORK, "cannot reach the vault's server at {host}: {reason}"))
+        return error(domain.coded(domain.ERR_NETWORK, "cannot reach the vault's server at {host}: {reason}"))
     }
     if rc == 3 {
-        return error(coded(ERR_TIMEOUT, "the vault's server at {host} did not answer in time"))
+        return error(domain.coded(domain.ERR_TIMEOUT, "the vault's server at {host} did not answer in time"))
     }
     if rc == 4 {
-        return error(coded(ERR_NETWORK, "TLS with the vault's server at {host} failed: {reason}"))
+        return error(domain.coded(domain.ERR_NETWORK, "TLS with the vault's server at {host} failed: {reason}"))
     }
     if rc == 5 {
-        return error(coded(ERR_REFUSED, "the vault's server at {host} sent more than a vault may be"))
+        return error(domain.coded(domain.ERR_REFUSED, "the vault's server at {host} sent more than a vault may be"))
     }
     if rc != 0 {
-        return error(coded(ERR_NETWORK, "the request to the vault's server at {host} failed: {reason}"))
+        return error(domain.coded(domain.ERR_NETWORK, "the request to the vault's server at {host} failed: {reason}"))
     }
     return RemoteReply{ status: status, etag: etag, vault_id: vault_id, retry_after: retry_after, body: got }
 }
@@ -108,14 +108,14 @@ fn auth_header(token: str) -> str {
 // A 429: the server's gate asks this address to wait (its rate limit, or a lockout
 // after too many wrong tokens), for the seconds of its `Retry-After` when it sent one.
 fn wait_refusal(host: str, retry_after: str) -> str {
-    secs := parse_version_tag(retry_after.trim())
+    secs := domain.parse_version_tag(retry_after.trim())
     if secs < 1 {
-        return core_msg(MSG_REMOTE_SLOW_DOWN, [host])
+        return domain.core_msg(domain.MSG_REMOTE_SLOW_DOWN, [host])
     }
     if secs < 60 {
-        return core_msg(MSG_REMOTE_WAIT_SECONDS, [host, "{secs}"])
+        return domain.core_msg(domain.MSG_REMOTE_WAIT_SECONDS, [host, "{secs}"])
     }
-    return core_msg(MSG_REMOTE_WAIT_MINUTES, [host, "{(secs + 59) / 60}"])
+    return domain.core_msg(domain.MSG_REMOTE_WAIT_MINUTES, [host, "{(secs + 59) / 60}"])
 }
 
 // The error a refusal maps to, with the server's own message when it sent one.
@@ -127,24 +127,24 @@ fn refusal(r: RemoteReply, host: str) -> str {
         why = ": " + parsed.message
     }
     if r.status == 401 {
-        return core_msg(MSG_REMOTE_TOKEN_REFUSED, [host])
+        return domain.core_msg(domain.MSG_REMOTE_TOKEN_REFUSED, [host])
     }
     if r.status == 412 {
-        return coded(ERR_CONFLICT, "the vault's server at {host} holds another vault")
+        return domain.coded(domain.ERR_CONFLICT, "the vault's server at {host} holds another vault")
     }
     if r.status == 429 {
         return wait_refusal(host, r.retry_after)
     }
     if r.status == 413 {
-        return coded(ERR_REFUSED, "the vault is over the server's size cap (FLINT_VAULT_MAX_BYTES at {host})")
+        return domain.coded(domain.ERR_REFUSED, "the vault is over the server's size cap (FLINT_VAULT_MAX_BYTES at {host})")
     }
-    return coded(ERR_REFUSED, "the vault's server at {host} answered {r.status}{why}")
+    return domain.coded(domain.ERR_REFUSED, "the vault's server at {host} answered {r.status}{why}")
 }
 
 fn (self: HttpVaultRemote) remote_get(url: str, token: str, known_version: i64) -> domain.RemoteVault! {
     mut headers := auth_header(token)
     if known_version > 0 {
-        headers = headers + "If-None-Match: " + version_tag(known_version) + "\n"
+        headers = headers + "If-None-Match: " + domain.version_tag(known_version) + "\n"
     }
     r := try self.send("GET", url, headers, [])
     host := url_host(url)
@@ -162,9 +162,9 @@ fn (self: HttpVaultRemote) remote_get(url: str, token: str, known_version: i64) 
     if r.status != 200 {
         return error(refusal(r, host))
     }
-    version := parse_version_tag(r.etag)
-    if version < 1 || !valid_vault_id(r.vault_id) || r.body.len() == 0 {
-        return error(coded(ERR_INVALID, "{host} did not answer as a Flint vault server"))
+    version := domain.parse_version_tag(r.etag)
+    if version < 1 || !domain.valid_vault_id(r.vault_id) || r.body.len() == 0 {
+        return error(domain.coded(domain.ERR_INVALID, "{host} did not answer as a Flint vault server"))
     }
     return domain.RemoteVault{ found: true, changed: true, version: version, vault_id: r.vault_id, data: r.body }
 }
@@ -174,19 +174,19 @@ fn (self: HttpVaultRemote) remote_put(url: str, token: str, vault_id: str, base_
     if base_version == 0 {
         headers = headers + "If-None-Match: *\n"
     } else {
-        headers = headers + "If-Match: " + version_tag(base_version) + "\n"
+        headers = headers + "If-Match: " + domain.version_tag(base_version) + "\n"
     }
     r := try self.send("PUT", url, headers, data)
     host := url_host(url)
     if r.status == 409 {
-        return domain.RemoteStored{ stored: false, version: parse_version_tag(r.etag) }
+        return domain.RemoteStored{ stored: false, version: domain.parse_version_tag(r.etag) }
     }
     if r.status != 200 {
         return error(refusal(r, host))
     }
-    version := parse_version_tag(r.etag)
+    version := domain.parse_version_tag(r.etag)
     if version < 1 {
-        return error(coded(ERR_INVALID, "{host} did not answer as a Flint vault server"))
+        return error(domain.coded(domain.ERR_INVALID, "{host} did not answer as a Flint vault server"))
     }
     return domain.RemoteStored{ stored: true, version: version }
 }
@@ -200,12 +200,12 @@ fn (self: HttpVaultRemote) remote_list(url: str, token: str) -> []domain.ServerV
         return error(refusal(r, url_host(url)))
     }
     // CFIRE-UPSTREAM: CF-164 (a labeled argument keeps libstdc++'s chrono::parse out)
-    got := json.parse[RemoteVaultsBody](payload: str(r.body)) or err {
-        return error(coded(ERR_INVALID, "{url_host(url)} did not answer as a Flint vault server"))
+    got := json.parse[RemoteVaultsBody](payload: str(r.body)) or {
+        return error(domain.coded(domain.ERR_INVALID, "{url_host(url)} did not answer as a Flint vault server"))
     }
     for v in got.vaults {
-        if !valid_vault_id(v.id) || v.version < 1 {
-            return error(coded(ERR_INVALID, "{url_host(url)} did not answer as a Flint vault server"))
+        if !domain.valid_vault_id(v.id) || v.version < 1 {
+            return error(domain.coded(domain.ERR_INVALID, "{url_host(url)} did not answer as a Flint vault server"))
         }
     }
     return got.vaults
@@ -218,7 +218,7 @@ fn (self: HttpVaultRemote) remote_set_label(url: str, token: str, label: str) ->
         // CFIRE-UPSTREAM: CF-164 (a labeled argument keeps libstdc++'s chrono::parse out)
         parsed := json.parse[RemoteErrorBody](payload: str(r.body)) or RemoteErrorBody{ error: "", message: "" }
         if parsed.error == "empty" {
-            return error(coded(ERR_NOT_FOUND, "the server at {url_host(url)} holds no such vault"))
+            return error(domain.coded(domain.ERR_NOT_FOUND, "the server at {url_host(url)} holds no such vault"))
         }
         return error(no_server(url))
     }

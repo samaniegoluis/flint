@@ -68,7 +68,7 @@ fn marker_host() -> domain.Host {
 
 // Compiles only if SqlVaultStore satisfies the VaultStore port.
 fn store_port_check[S: ports.VaultStore](mut s: S) -> bool {
-    hosts := s.hosts_all() or err { return false }
+    hosts := s.hosts_all() or { return false }
     return hosts.len() >= 0
 }
 
@@ -150,8 +150,8 @@ test "the pinned SQLCipher parameters are in force and recorded" {
     assert_eq(try store.conn().query_text("PRAGMA cipher_kdf_algorithm;"), CIPHER_KDF_ALGORITHM)
     assert_eq(try store.vault_get_meta("cipher_compatibility"), CIPHER_COMPATIBILITY)
     assert_eq(try store.vault_get_meta("cipher_page_size"), CIPHER_PAGE_SIZE)
-    assert_eq(try store.vault_get_meta("kdf_ops"), "{VAULT_ARGON2_OPS}")
-    assert_eq(try store.vault_get_meta("kdf_mem_bytes"), "{VAULT_ARGON2_MEM}")
+    assert_eq(try store.vault_get_meta("kdf_ops"), "{domain.VAULT_ARGON2_OPS}")
+    assert_eq(try store.vault_get_meta("kdf_mem_bytes"), "{domain.VAULT_ARGON2_MEM}")
     assert_eq(try store.conn().query_text("PRAGMA foreign_keys;"), "1")
     store.vault_detach()
     try fs.remove(fs.dirname(path))
@@ -166,7 +166,7 @@ test "a wrong key or salt is reported as wrong_password" {
     mut bad := ""
     store.vault_attach(path, test_key(8), test_salt_bytes()) or err { bad = "{err.message()}" }
     assert(bad.len() > 0)
-    assert_eq(error_code_of("{bad}"), "wrong_password")
+    assert_eq(domain.error_code_of("{bad}"), "wrong_password")
     mut other_salt := test_salt_bytes()
     other_salt[0] = byte(1)
     store.vault_attach(path, test_key(7), other_salt) or { refused += 1 }
@@ -181,10 +181,10 @@ test "create refuses an existing file and attach a missing one" {
     store.vault_detach()
     mut dup := ""
     store.vault_create(path, test_key(7), test_salt_bytes()) or err { dup = "{err.message()}" }
-    assert_eq(error_code_of("{dup}"), "conflict")
+    assert_eq(domain.error_code_of("{dup}"), "conflict")
     mut missing := ""
     store.vault_attach(path + ".nope", test_key(7), test_salt_bytes()) or err { missing = "{err.message()}" }
-    assert_eq(error_code_of("{missing}"), "not_found")
+    assert_eq(domain.error_code_of("{missing}"), "not_found")
     try fs.remove(fs.dirname(path))
 }
 
@@ -196,14 +196,14 @@ test "foreign keys and unique names are enforced" {
     h.group_id = "missing"
     mut dangling := ""
     store.host_put(h) or err { dangling = "{err.message()}" }
-    assert_eq(error_code_of("{dangling}"), "conflict")
+    assert_eq(domain.error_code_of("{dangling}"), "conflict")
     try store.host_put(marker_host())
     mut twin := marker_host()
     twin.id = "h2"
     twin.alias = "FLINT-ALIAS-MARKER"
     mut clash := ""
     store.host_put(twin) or err { clash = "{err.message()}" }
-    assert_eq(error_code_of("{clash}"), "conflict")
+    assert_eq(domain.error_code_of("{clash}"), "conflict")
     store.vault_detach()
     try fs.remove(fs.dirname(path))
 }
@@ -212,7 +212,7 @@ test "operations on a detached store report locked" {
     store := new_sql_vault_store()
     mut r := ""
     store.hosts_all() or err { r = "{err.message()}" }
-    assert_eq(error_code_of("{r}"), "locked")
+    assert_eq(domain.error_code_of("{r}"), "locked")
 }
 
 test "SqlVaultStore satisfies the VaultStore port" {
@@ -297,7 +297,7 @@ test "a vault at schema 11 gains an RDP audio that plays here and a microphone t
     assert_eq(try store.conn().query_text("SELECT max(version) FROM schema_migrations;"), "{vault_migrations().len()}")
     mut hosts := try store.hosts_all()
     assert_eq(hosts[0].rdp_audio, "")
-    assert_eq(rdp_audio_of(hosts[0]), "local")
+    assert_eq(domain.rdp_audio_of(hosts[0]), "local")
     assert(!hosts[0].rdp_microphone)
     mut h := hosts[0]
     h.rdp_audio = "remote"
@@ -420,7 +420,7 @@ fn marker_token(id: str, name: str, revoked_at: i64) -> domain.Token {
 }
 
 fn marker_entry(n: i64) -> domain.ActivityEntry {
-    return domain.ActivityEntry{ id: 0, at: 1000 + n, caller: "flint-caller-marker", via: ACTIVITY_VIA_GRANT, token: "", action: ACCESS_EXEC, host: "flint-activity-host-marker", command: "flint exec web -- flint-activity-command-marker {n}", outcome: ACTIVITY_ALLOWED, cut: 0 }
+    return domain.ActivityEntry{ id: 0, at: 1000 + n, caller: "flint-caller-marker", via: domain.ACTIVITY_VIA_GRANT, token: "", action: domain.ACCESS_EXEC, host: "flint-activity-host-marker", command: "flint exec web -- flint-activity-command-marker {n}", outcome: domain.ACTIVITY_ALLOWED, cut: 0 }
 }
 
 test "tokens and activity round-trip, stay encrypted, and the log keeps by age" {
@@ -445,14 +445,14 @@ test "tokens and activity round-trip, stay encrypted, and the log keeps by age" 
 
     // Kept from 1002 on: the two oldest go as the later ones arrive.
     for n in 0..5 {
-        _ = try store.activity_add(marker_entry(n), domain.ActivityKeep{ since_at: 1002, max_bytes: ACTIVITY_MAX_BYTES })
+        _ = try store.activity_add(marker_entry(n), domain.ActivityKeep{ since_at: 1002, max_bytes: domain.ACTIVITY_MAX_BYTES })
     }
     page := try store.activity_page(0, 10)
     assert_eq(page.len(), 3)
     assert_eq(page[0].at, 1004)
     assert_eq(page[2].at, 1002)
     assert_eq(page[0].host, "flint-activity-host-marker")
-    assert_eq(page[0].outcome, ACTIVITY_ALLOWED)
+    assert_eq(page[0].outcome, domain.ACTIVITY_ALLOWED)
     older := try store.activity_page(page[0].id, 1)
     assert_eq(older.len(), 1)
     assert_eq(older[0].at, 1003)
@@ -559,7 +559,7 @@ test "the activity log keeps a cut, its retention, and stays under its size cap"
     try attach_test_activity(mut store, path, 8)
     mut e := marker_entry(0)
     e.cut = 42
-    _ = try store.activity_add(e, domain.ActivityKeep{ since_at: 0, max_bytes: ACTIVITY_MAX_BYTES })
+    _ = try store.activity_add(e, domain.ActivityKeep{ since_at: 0, max_bytes: domain.ACTIVITY_MAX_BYTES })
     assert_eq((try store.activity_page(0, 1))[0].cut, 42)
 
     try store.set_activity_retention(365)
@@ -670,7 +670,7 @@ test "an older vault's activity moves to the machine's file, whole, and leaves t
     assert(!(try has_table(store, "activity_moving")))
     assert_eq(try store.vault_get_meta("activity_retention_days"), "")
     // New entries follow the moved ones.
-    _ = try store.activity_add(marker_entry(9), domain.ActivityKeep{ since_at: 0, max_bytes: ACTIVITY_MAX_BYTES })
+    _ = try store.activity_add(marker_entry(9), domain.ActivityKeep{ since_at: 0, max_bytes: domain.ACTIVITY_MAX_BYTES })
     assert_eq((try store.activity_page(0, 10)).len(), 4)
     store.vault_detach()
     raw := try fs.read_text(path)
@@ -715,7 +715,7 @@ test "the activity file is private, closes with the vault, and a key it refuses 
     store.activity_attach("../escape", test_key(8), test_salt_bytes()) or err { bad = "{err.message()}" }
     assert(bad.contains("bad vault id"), bad)
     try store.activity_attach(TEST_VAULT_ID, test_key(8), test_salt_bytes())
-    _ = try store.activity_add(marker_entry(1), domain.ActivityKeep{ since_at: 0, max_bytes: ACTIVITY_MAX_BYTES })
+    _ = try store.activity_add(marker_entry(1), domain.ActivityKeep{ since_at: 0, max_bytes: domain.ACTIVITY_MAX_BYTES })
     mut mode: i64 = 0
     mut dir_mode: i64 = 0
     mut windows := false
@@ -736,7 +736,7 @@ test "the activity file is private, closes with the vault, and a key it refuses 
     store.vault_detach()
     mut closed := ""
     store.activity_page(0, 1) or err { closed = "{err.message()}" }
-    assert_eq(error_code_of(closed), ERR_LOCKED)
+    assert_eq(domain.error_code_of(closed), domain.ERR_LOCKED)
     // Another key: the old file is kept aside and a new, empty log begins.
     try store.vault_attach(path, test_key(7), test_salt_bytes())
     try store.activity_attach(TEST_VAULT_ID, test_key(9), test_salt_bytes())
@@ -751,12 +751,12 @@ test "an activity backup is the encrypted file, opened only with its key" {
     mut store := new_sql_vault_store()
     try store.vault_create(path, test_key(7), test_salt_bytes())
     try attach_test_activity(mut store, path, 8)
-    _ = try store.activity_add(marker_entry(1), domain.ActivityKeep{ since_at: 0, max_bytes: ACTIVITY_MAX_BYTES })
+    _ = try store.activity_add(marker_entry(1), domain.ActivityKeep{ since_at: 0, max_bytes: domain.ACTIVITY_MAX_BYTES })
     dest := fs.dirname(path) + "/backup.db"
     try store.activity_backup(dest)
     mut inside := ""
     store.activity_backup(activity_file(path)) or err { inside = "{err.message()}" }
-    assert_eq(error_code_of(inside), ERR_INVALID)
+    assert_eq(domain.error_code_of(inside), domain.ERR_INVALID)
     store.vault_detach()
     raw := try fs.read_text(dest)
     assert(!raw.contains("flint-activity-command-marker"), "a backup stays encrypted")
@@ -765,7 +765,7 @@ test "an activity backup is the encrypted file, opened only with its key" {
     db.close_db()
     mut wrong := ""
     open_cipher_db(dest, test_key(9), test_salt_bytes(), false) or err { wrong = "{err.message()}" }
-    assert_eq(error_code_of(wrong), ERR_WRONG_PASSWORD)
+    assert_eq(domain.error_code_of(wrong), domain.ERR_WRONG_PASSWORD)
     try fs.remove(fs.dirname(path))
 }
 
@@ -796,8 +796,8 @@ test "a re-key writes a copy under the new key, and its rename is the commit poi
     try store.vault_create(path, test_key(7), test_salt_bytes())
     try attach_test_activity(mut store, path, 8)
     try store.host_put(marker_host())
-    try store.vault_set_meta(VAULT_META_ID, TEST_VAULT_ID)
-    _ = try store.activity_add(marker_entry(1), domain.ActivityKeep{ since_at: 0, max_bytes: ACTIVITY_MAX_BYTES })
+    try store.vault_set_meta(domain.VAULT_META_ID, TEST_VAULT_ID)
+    _ = try store.activity_add(marker_entry(1), domain.ActivityKeep{ since_at: 0, max_bytes: domain.ACTIVITY_MAX_BYTES })
     secrets := try resealed(store)
 
     try store.vault_rekey_prepare(path, test_key(17), other_salt(), secrets)
@@ -818,14 +818,14 @@ test "a re-key writes a copy under the new key, and its rename is the commit poi
     hosts := try store.hosts_all()
     assert_eq(hosts[0].alias, "flint-alias-marker")
     assert(hosts[0].password == [byte(9), byte(9)])
-    assert_eq(try store.vault_get_meta(VAULT_META_ID), TEST_VAULT_ID)
+    assert_eq(try store.vault_get_meta(domain.VAULT_META_ID), TEST_VAULT_ID)
     assert_eq((try store.activity_page(0, 10)).len(), 1)
     store.vault_detach()
 
     // The old key opens neither file; the new keys open both.
     mut wrong := ""
     store.vault_attach(path, test_key(7), test_salt_bytes()) or err { wrong = "{err.message()}" }
-    assert_eq(error_code_of(wrong), ERR_WRONG_PASSWORD)
+    assert_eq(domain.error_code_of(wrong), domain.ERR_WRONG_PASSWORD)
     try store.vault_attach(path, test_key(17), other_salt())
     try store.activity_attach(TEST_VAULT_ID, test_key(18), test_salt_bytes())
     assert_eq((try store.activity_page(0, 10)).len(), 1, "the log came through")
@@ -849,7 +849,7 @@ test "a re-key refuses a vault that changed after its prepare, and an abort remo
     try store.host_put(h)
     mut got := ""
     store.vault_rekey_commit(path, test_key(17), other_salt()) or err { got = "{err.message()}" }
-    assert_eq(error_code_of(got), ERR_CONFLICT)
+    assert_eq(domain.error_code_of(got), domain.ERR_CONFLICT)
     store.vault_rekey_abort(path)
     assert(!fs.exists(path + REKEY_SUFFIX))
     assert(!fs.exists(activity_file(path) + ACTIVITY_REKEY_SUFFIX))
@@ -859,7 +859,7 @@ test "a re-key refuses a vault that changed after its prepare, and an abort remo
     // Secrets for fewer rows than the vault holds are refused at prepare.
     mut short := ""
     store.vault_rekey_prepare(path, test_key(17), other_salt(), secrets) or err { short = "{err.message()}" }
-    assert_eq(error_code_of(short), ERR_CONFLICT)
+    assert_eq(domain.error_code_of(short), domain.ERR_CONFLICT)
     assert(!fs.exists(path + REKEY_SUFFIX))
     store.vault_detach()
     try fs.remove(fs.dirname(path))
@@ -871,7 +871,7 @@ test "a change cut short leaves files that open: a stale copy goes, a pending ac
     try store.vault_create(path, test_key(7), test_salt_bytes())
     try attach_test_activity(mut store, path, 8)
     try store.host_put(marker_host())
-    _ = try store.activity_add(marker_entry(1), domain.ActivityKeep{ since_at: 0, max_bytes: ACTIVITY_MAX_BYTES })
+    _ = try store.activity_add(marker_entry(1), domain.ActivityKeep{ since_at: 0, max_bytes: domain.ACTIVITY_MAX_BYTES })
     secrets := try resealed(store)
 
     // Cut before the vault's rename: the old vault opens and the copies go.
@@ -903,11 +903,11 @@ test "migration 010 leaves an empty vault id for the first unlock to write" {
     path := temp_vault_path("v.flint")
     mut store := new_sql_vault_store()
     try store.vault_create(path, test_key(7), test_salt_bytes())
-    assert_eq(try store.vault_get_meta(VAULT_META_ID), "")
-    try store.vault_set_meta(VAULT_META_ID, TEST_VAULT_ID)
+    assert_eq(try store.vault_get_meta(domain.VAULT_META_ID), "")
+    try store.vault_set_meta(domain.VAULT_META_ID, TEST_VAULT_ID)
     store.vault_detach()
     try store.vault_attach(path, test_key(7), test_salt_bytes())
-    assert_eq(try store.vault_get_meta(VAULT_META_ID), TEST_VAULT_ID, "a migration never overwrites it")
+    assert_eq(try store.vault_get_meta(domain.VAULT_META_ID), TEST_VAULT_ID, "a migration never overwrites it")
     store.vault_detach()
     try fs.remove(fs.dirname(path))
 }
@@ -932,26 +932,26 @@ test "an activity file at version 1 gains results, and an entry ends once (miles
 
     mut e := marker_entry(1)
     e.grant = "g1"
-    e.state = ACTIVITY_RUNNING
-    id := try store.activity_add(e, domain.ActivityKeep{ since_at: 0, max_bytes: ACTIVITY_MAX_BYTES })
+    e.state = domain.ACTIVITY_RUNNING
+    id := try store.activity_add(e, domain.ActivityKeep{ since_at: 0, max_bytes: domain.ACTIVITY_MAX_BYTES })
     assert(id > before[0].id)
     mut e2 := marker_entry(2)
     e2.grant = "g2"
-    e2.state = ACTIVITY_RUNNING
-    _ = try store.activity_add(e2, domain.ActivityKeep{ since_at: 0, max_bytes: ACTIVITY_MAX_BYTES })
+    e2.state = domain.ACTIVITY_RUNNING
+    _ = try store.activity_add(e2, domain.ActivityKeep{ since_at: 0, max_bytes: domain.ACTIVITY_MAX_BYTES })
     running := try store.activity_of_grant("g1", 10)
     assert_eq(running.len(), 1)
     assert_eq(running[0].id, id)
-    assert_eq(running[0].state, ACTIVITY_RUNNING)
+    assert_eq(running[0].state, domain.ACTIVITY_RUNNING)
 
-    assert(try store.activity_finish(id, activity_end(18, ERR_SUDO_PASSWORD, 1234)))
-    assert(!(try store.activity_finish(id, activity_end(0, "", 1))), "an entry ends once")
-    assert(!(try store.activity_finish(before[0].id, activity_end(0, "", 1))), "an entry that never ran stays as it is")
+    assert(try store.activity_finish(id, domain.activity_end(18, domain.ERR_SUDO_PASSWORD, 1234)))
+    assert(!(try store.activity_finish(id, domain.activity_end(0, "", 1))), "an entry ends once")
+    assert(!(try store.activity_finish(before[0].id, domain.activity_end(0, "", 1))), "an entry that never ran stays as it is")
     done := try store.activity_of_grant("g1", 10)
-    assert_eq(done[0].state, ACTIVITY_ENDED)
+    assert_eq(done[0].state, domain.ACTIVITY_ENDED)
     assert_eq(done[0].exit, 18)
     assert_eq(done[0].duration_ms, 1234)
-    assert_eq(done[0].result, ERR_SUDO_PASSWORD)
+    assert_eq(done[0].result, domain.ERR_SUDO_PASSWORD)
     assert_eq((try store.activity_page(0, 1))[0].grant, "g2")
     assert_eq((try store.activity_of_grant("", 10)).len(), 0)
     store.vault_detach()
@@ -977,16 +977,16 @@ test "an activity file at version 2 gains alerted, older rows read false (milest
     assert(!before[0].alerted, "an older entry was never alerted")
 
     mut e := marker_entry(1)
-    e.via = ACTIVITY_VIA_WINDOW
-    e.outcome = ACTIVITY_TIMEOUT
+    e.via = domain.ACTIVITY_VIA_WINDOW
+    e.outcome = domain.ACTIVITY_TIMEOUT
     e.alerted = true
-    _ = try store.activity_add(e, domain.ActivityKeep{ since_at: 0, max_bytes: ACTIVITY_MAX_BYTES })
-    _ = try store.activity_add(marker_entry(2), domain.ActivityKeep{ since_at: 0, max_bytes: ACTIVITY_MAX_BYTES })
+    _ = try store.activity_add(e, domain.ActivityKeep{ since_at: 0, max_bytes: domain.ACTIVITY_MAX_BYTES })
+    _ = try store.activity_add(marker_entry(2), domain.ActivityKeep{ since_at: 0, max_bytes: domain.ACTIVITY_MAX_BYTES })
     page := try store.activity_page(0, 10)
     assert_eq(page.len(), 3)
     assert(!page[0].alerted)
     assert(page[1].alerted)
-    assert_eq(page[1].outcome, ACTIVITY_TIMEOUT)
+    assert_eq(page[1].outcome, domain.ACTIVITY_TIMEOUT)
     store.vault_detach()
     try fs.remove(fs.dirname(path))
 }

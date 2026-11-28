@@ -5,52 +5,52 @@ package domain
 // travels as a prefix; drivers map it to an exit code and a JSON `code` field
 // (Principle 7). Messages never contain secret values (Principle 6).
 
-ERR_USAGE: str = "usage"
-ERR_INVALID: str = "invalid"
-ERR_NOT_FOUND: str = "not_found"
-ERR_CONFLICT: str = "conflict"
-ERR_LOCKED: str = "locked"
-ERR_WRONG_PASSWORD: str = "wrong_password"
-ERR_UNSUPPORTED: str = "unsupported"
-ERR_KEYCHAIN: str = "keychain"
-ERR_IO: str = "io"
-ERR_INTERNAL: str = "internal"
+pub ERR_USAGE: str = "usage"
+pub ERR_INVALID: str = "invalid"
+pub ERR_NOT_FOUND: str = "not_found"
+pub ERR_CONFLICT: str = "conflict"
+pub ERR_LOCKED: str = "locked"
+pub ERR_WRONG_PASSWORD: str = "wrong_password"
+pub ERR_UNSUPPORTED: str = "unsupported"
+pub ERR_KEYCHAIN: str = "keychain"
+pub ERR_IO: str = "io"
+pub ERR_INTERNAL: str = "internal"
 // SSH codes (D-019), appended after the vault codes so exit codes 1-10 never move.
-ERR_HOST_KEY: str = "host_key"
-ERR_AUTH: str = "auth"
-ERR_NETWORK: str = "network"
-ERR_TIMEOUT: str = "timeout"
+pub ERR_HOST_KEY: str = "host_key"
+pub ERR_AUTH: str = "auth"
+pub ERR_NETWORK: str = "network"
+pub ERR_TIMEOUT: str = "timeout"
 // Caller approval codes (milestone 12), appended so earlier exit codes never move.
-ERR_DENIED: str = "denied"
-ERR_APPROVAL_TIMEOUT: str = "approval_timeout"
+pub ERR_DENIED: str = "denied"
+pub ERR_APPROVAL_TIMEOUT: str = "approval_timeout"
 // `flint exec --sudo` codes (milestone 13), appended likewise.
-ERR_NOT_SUDOER: str = "not_sudoer"
-ERR_SUDO_PASSWORD: str = "sudo_password"
+pub ERR_NOT_SUDOER: str = "not_sudoer"
+pub ERR_SUDO_PASSWORD: str = "sudo_password"
 // File copy codes (milestone 16), appended so earlier exit codes never move.
-ERR_PERMISSION: str = "permission_denied"
-ERR_EXISTS: str = "exists"
-ERR_NOT_DIR: str = "not_a_directory"
+pub ERR_PERMISSION: str = "permission_denied"
+pub ERR_EXISTS: str = "exists"
+pub ERR_NOT_DIR: str = "not_a_directory"
 // Tunnel codes (milestone 22), appended likewise.
-ERR_PORT_IN_USE: str = "port_in_use"
+pub ERR_PORT_IN_USE: str = "port_in_use"
 // Host type code (milestone 29): an RDP host given to a command that only SSH does.
-ERR_HOST_TYPE: str = "wrong_host_type"
+pub ERR_HOST_TYPE: str = "wrong_host_type"
 // Remote desktop code (milestone 30): the server answered and refused the connection
 // (Remote Desktop off, no free session), apart from `network` (not reached at all).
-ERR_REFUSED: str = "refused"
+pub ERR_REFUSED: str = "refused"
 
 // Builds an error message carrying a stable code.
-fn coded(code: str, msg: str) -> str {
+pub fn coded(code: str, msg: str) -> str {
     return code + ": " + msg
 }
 
 // Every code a driver may see, in exit-code order (exit code = index + 1, except
 // that `internal` is 1).
-fn known_error_codes() -> []str {
+pub fn known_error_codes() -> []str {
     return [ERR_INTERNAL, ERR_USAGE, ERR_NOT_FOUND, ERR_CONFLICT, ERR_LOCKED, ERR_WRONG_PASSWORD, ERR_INVALID, ERR_UNSUPPORTED, ERR_KEYCHAIN, ERR_IO, ERR_HOST_KEY, ERR_AUTH, ERR_NETWORK, ERR_TIMEOUT, ERR_DENIED, ERR_APPROVAL_TIMEOUT, ERR_NOT_SUDOER, ERR_SUDO_PASSWORD, ERR_PERMISSION, ERR_EXISTS, ERR_NOT_DIR, ERR_PORT_IN_USE, ERR_HOST_TYPE, ERR_REFUSED]
 }
 
 // The code an error message starts with, or `internal` when it carries none.
-fn error_code_of(msg: str) -> str {
+pub fn error_code_of(msg: str) -> str {
     for code in known_error_codes() {
         if msg.len() > code.len() + 1 && msg.starts_with(code + ": ") {
             return code
@@ -60,7 +60,7 @@ fn error_code_of(msg: str) -> str {
 }
 
 // The message without its code prefix.
-fn error_text_of(msg: str) -> str {
+pub fn error_text_of(msg: str) -> str {
     code := error_code_of(msg)
     prefix := code + ": "
     if msg.starts_with(prefix) {
@@ -70,7 +70,7 @@ fn error_text_of(msg: str) -> str {
 }
 
 // The process exit code for an error code. Stable: scripts rely on it.
-fn exit_code_for(code: str) -> i32 {
+pub fn exit_code_for(code: str) -> i32 {
     codes := known_error_codes()
     for i, c in codes {
         if c == code {

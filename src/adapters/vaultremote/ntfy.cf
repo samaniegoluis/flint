@@ -16,34 +16,34 @@ NTFY_REQUEST_MS: i64 = 15000
 // ntfy answers with a short JSON of the message; anything larger is cut off.
 NTFY_REPLY_MAX: i64 = 65536
 
-type NtfyNotifier struct {
+pub type NtfyNotifier struct {
     connect_ms: i64
     request_ms: i64
 }
 
-fn new_ntfy_notifier() -> NtfyNotifier {
+pub fn new_ntfy_notifier() -> NtfyNotifier {
     return NtfyNotifier{ connect_ms: NTFY_CONNECT_MS, request_ms: NTFY_REQUEST_MS }
 }
 
 // The headers of a publish: ntfy's title and priority, and the body's type.
 fn ntfy_headers(kind: str) -> str {
-    return "Title: {ALERT_TITLE}\nPriority: {alert_priority(kind)}\nContent-Type: text/plain; charset=utf-8"
+    return "Title: {domain.ALERT_TITLE}\nPriority: {alert_priority(kind)}\nContent-Type: text/plain; charset=utf-8"
 }
 
 fn (self: NtfyNotifier) alert_publish(server: str, topic: str, kind: str) -> void! {
-    if !alert_kind_valid(kind) {
-        return error(coded(ERR_INVALID, "unknown alert"))
+    if !domain.alert_kind_valid(kind) {
+        return error(domain.coded(domain.ERR_INVALID, "unknown alert"))
     }
-    if !ntfy_topic_valid(topic) {
-        return error(coded(ERR_INVALID, "the ntfy topic is not valid"))
+    if !domain.ntfy_topic_valid(topic) {
+        return error(domain.coded(domain.ERR_INVALID, "the ntfy topic is not valid"))
     }
-    try check_ntfy_server(server)
-    url := ntfy_topic_url(server, topic)
+    try domain.check_ntfy_server(server)
+    url := domain.ntfy_topic_url(server, topic)
     host := url_host(server)
     method := "POST"
     headers := ntfy_headers(kind)
     // Named first: `.bytes()` of a temporary is a view of a destroyed string (CF-185).
-    text := alert_text(kind)
+    text := domain.alert_text(kind)
     body := text.bytes()
     mut rc: i32 = 0
     mut status: i64 = 0
@@ -60,18 +60,18 @@ fn (self: NtfyNotifier) alert_publish(server: str, topic: str, kind: str) -> voi
     }
     // Settings shows these on one line (27a4): no libcurl wording.
     if rc == 2 {
-        return error(coded(ERR_NETWORK, "couldn't reach {host}"))
+        return error(domain.coded(domain.ERR_NETWORK, "couldn't reach {host}"))
     }
     if rc == 4 {
-        return error(coded(ERR_NETWORK, "couldn't reach {host} (TLS failed)"))
+        return error(domain.coded(domain.ERR_NETWORK, "couldn't reach {host} (TLS failed)"))
     }
     if rc == 3 {
-        return error(coded(ERR_TIMEOUT, "couldn't reach {host} (timed out)"))
+        return error(domain.coded(domain.ERR_TIMEOUT, "couldn't reach {host} (timed out)"))
     }
     if rc != 0 && rc != 5 {
-        return error(coded(ERR_NETWORK, "couldn't reach {host}"))
+        return error(domain.coded(domain.ERR_NETWORK, "couldn't reach {host}"))
     }
     if status < 200 || status > 299 {
-        return error(coded(ERR_REFUSED, "the server answered {status}"))
+        return error(domain.coded(domain.ERR_REFUSED, "the server answered {status}"))
     }
 }

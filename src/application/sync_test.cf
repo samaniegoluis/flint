@@ -71,7 +71,7 @@ test "connect uploads to an empty server; a second sync finds nothing to do" {
     assert_eq(remote.state().version, 1)
     assert_eq(remote.state().id, a.session.id)
     // The token went to the keychain, trimmed; the link to the links file.
-    assert_eq(str(try a.kc.keychain_load(remote_token_account(a.session.id))), "tok")
+    assert_eq(str(try a.kc.keychain_load(domain.remote_token_account(a.session.id))), "tok")
     st := try remote_status(crypto, a.store, a.links, a.session.path)
     assert(st.connected)
     assert(!st.pending)
@@ -92,25 +92,25 @@ test "connect refuses a weak password, plain http, a wrong password, a bad token
     mut weak := try create_vault(crypto, mut store, kc, new_fake_recents(), "/w/W.flint", "", "password1", false)
     mut msg := ""
     connect_remote(crypto, mut store, links, remote, kc, kc, mut weak, SERVER, "tok", "password1", "", 1) or err { msg = "{err.message()}" }
-    assert_eq(error_code_of(msg), ERR_INVALID)
+    assert_eq(domain.error_code_of(msg), domain.ERR_INVALID)
     assert(msg.contains("flint vault passwd"))
 
     mut a := try machine_a(crypto)
     msg = ""
     connect_remote(crypto, mut a.store, a.links, remote, a.kc, a.kc, mut a.session, "http://vault.example.com", "tok", STRONG_PW, "", 1) or err { msg = "{err.message()}" }
-    assert_eq(error_code_of(msg), ERR_INVALID)
+    assert_eq(domain.error_code_of(msg), domain.ERR_INVALID)
     msg = ""
     connect_remote(crypto, mut a.store, a.links, remote, a.kc, a.kc, mut a.session, SERVER, "tok", NEW_PW, "", 1) or err { msg = "{err.message()}" }
-    assert_eq(error_code_of(msg), ERR_WRONG_PASSWORD)
+    assert_eq(domain.error_code_of(msg), domain.ERR_WRONG_PASSWORD)
     msg = ""
     connect_remote(crypto, mut a.store, a.links, remote, a.kc, a.kc, mut a.session, SERVER, "bad", STRONG_PW, "", 1) or err { msg = "{err.message()}" }
-    assert_eq(error_code_of(msg), ERR_AUTH)
+    assert_eq(domain.error_code_of(msg), domain.ERR_AUTH)
     assert_eq((try a.links.links_load()).len(), 0)
-    assert_eq((try a.kc.keychain_load(remote_token_account(a.session.id))).len(), 0)
+    assert_eq((try a.kc.keychain_load(domain.remote_token_account(a.session.id))).len(), 0)
 
     msg = ""
     connect_remote(crypto, mut a.store, a.links, remote, a.kc, a.kc, mut a.session, SERVER, "tok", STRONG_PW, " Work", 1) or err { msg = "{err.message()}" }
-    assert_eq(error_code_of(msg), ERR_INVALID)
+    assert_eq(domain.error_code_of(msg), domain.ERR_INVALID)
     assert_eq((try a.links.links_load()).len(), 0)
     assert_eq(remote.state().puts, 0)
 }
@@ -157,18 +157,18 @@ test "a download takes the only vault, or the one an id or a prefix names" {
     kc := new_fake_keychain()
     mut msg := ""
     download_remote(crypto, mut store, new_fake_links(), remote, kc, kc, new_fake_recents(), SERVER, "tok", "", STRONG_PW, "/c/X.flint", false, 1) or err { msg = "{err.message()}" }
-    assert_eq(error_code_of(msg), ERR_NOT_FOUND)
+    assert_eq(domain.error_code_of(msg), domain.ERR_NOT_FOUND)
     _ = try connect_remote(crypto, mut a.store, a.links, remote, a.kc, a.kc, mut a.session, SERVER, "tok", STRONG_PW, "", 1000)
     mut w := try machine_other(crypto, "/a/Work.flint")
     _ = try connect_remote(crypto, mut w.store, w.links, remote, w.kc, w.kc, mut w.session, SERVER, "tok", NEW_PW, "Work", 1000)
     // Two vaults and no id: the person must choose.
     msg = ""
     download_remote(crypto, mut store, new_fake_links(), remote, kc, kc, new_fake_recents(), SERVER, "tok", "", NEW_PW, "/c/Work.flint", false, 1) or err { msg = "{err.message()}" }
-    assert_eq(error_code_of(msg), ERR_USAGE)
+    assert_eq(domain.error_code_of(msg), domain.ERR_USAGE)
     assert(msg.contains("--list"))
     msg = ""
     download_remote(crypto, mut store, new_fake_links(), remote, kc, kc, new_fake_recents(), SERVER, "tok", "0000", NEW_PW, "/c/Work.flint", false, 1) or err { msg = "{err.message()}" }
-    assert_eq(error_code_of(msg), ERR_NOT_FOUND)
+    assert_eq(domain.error_code_of(msg), domain.ERR_NOT_FOUND)
     // Work, by a prefix of its id, on a machine that never had it.
     store.bank = w.store.bank
     links := new_fake_links()
@@ -197,10 +197,10 @@ test "two machines edit apart, offline, and both end with every change" {
     try add_stamped(crypto, mut b, "db", 400)
     mut msg := ""
     sync_of(crypto, mut a, remote, "") or err { msg = "{err.message()}" }
-    assert_eq(error_code_of(msg), ERR_NETWORK)
+    assert_eq(domain.error_code_of(msg), domain.ERR_NETWORK)
     sta := try remote_status(crypto, a.store, a.links, a.session.path)
     assert(sta.pending, "the change waits")
-    assert_eq(error_code_of(sta.last_error), ERR_NETWORK)
+    assert_eq(domain.error_code_of(sta.last_error), domain.ERR_NETWORK)
 
     // Back online: A first, then B (merges A's and uploads its own), then A again.
     remote.set_offline(false)
@@ -256,12 +256,12 @@ test "a master password changed on another machine is asked for, then adopted" {
 
     mut msg := ""
     sync_of(crypto, mut a, remote, "") or err { msg = "{err.message()}" }
-    assert_eq(error_code_of(msg), ERR_WRONG_PASSWORD)
+    assert_eq(domain.error_code_of(msg), domain.ERR_WRONG_PASSWORD)
     assert(msg.contains("changed on another machine"))
     assert(!has_alias(a.store, "db"), "nothing changed here")
     msg = ""
     sync_of(crypto, mut a, remote, "not-it-at-all-1234") or err { msg = "{err.message()}" }
-    assert_eq(error_code_of(msg), ERR_WRONG_PASSWORD)
+    assert_eq(domain.error_code_of(msg), domain.ERR_WRONG_PASSWORD)
 
     got := try sync_of(crypto, mut a, remote, NEW_PW)
     assert(got.rekeyed)
@@ -286,17 +286,17 @@ test "download refuses an empty server, a wrong password and a path taken" {
     links := new_fake_links()
     mut msg := ""
     download_remote(crypto, mut store, links, remote, kc, kc, new_fake_recents(), SERVER, "tok", "", STRONG_PW, "/b/Lab.flint", false, 1) or err { msg = "{err.message()}" }
-    assert_eq(error_code_of(msg), ERR_NOT_FOUND)
+    assert_eq(domain.error_code_of(msg), domain.ERR_NOT_FOUND)
 
     _ = try connect_remote(crypto, mut a.store, a.links, remote, a.kc, a.kc, mut a.session, SERVER, "tok", STRONG_PW, "", 1000)
     msg = ""
     download_remote(crypto, mut store, links, remote, kc, kc, new_fake_recents(), SERVER, "tok", "", NEW_PW, "/b/Lab.flint", false, 1) or err { msg = "{err.message()}" }
-    assert_eq(error_code_of(msg), ERR_WRONG_PASSWORD)
+    assert_eq(domain.error_code_of(msg), domain.ERR_WRONG_PASSWORD)
     assert_eq(store.file_path, "", "nothing written")
     assert_eq((try links.links_load()).len(), 0)
     msg = ""
     download_remote(crypto, mut a.store, links, remote, kc, kc, new_fake_recents(), SERVER, "tok", "", STRONG_PW, "/a/Lab.flint", false, 1) or err { msg = "{err.message()}" }
-    assert_eq(error_code_of(msg), ERR_EXISTS)
+    assert_eq(domain.error_code_of(msg), domain.ERR_EXISTS)
 }
 
 test "disconnect forgets the server and its token, and keeps the vault" {
@@ -307,14 +307,14 @@ test "disconnect forgets the server and its token, and keeps the vault" {
     gone := try disconnect_remote(a.links, a.kc, a.session.path)
     assert_eq(gone.url, SERVER)
     assert(!remote_connected(a.links, a.session.path))
-    assert_eq((try a.kc.keychain_load(remote_token_account(a.session.id))).len(), 0)
+    assert_eq((try a.kc.keychain_load(domain.remote_token_account(a.session.id))).len(), 0)
     assert(has_alias(a.store, "web"))
     mut msg := ""
     sync_of(crypto, mut a, remote, "") or err { msg = "{err.message()}" }
-    assert_eq(error_code_of(msg), ERR_NOT_FOUND)
+    assert_eq(domain.error_code_of(msg), domain.ERR_NOT_FOUND)
     msg = ""
     disconnect_remote(a.links, a.kc, a.session.path) or err { msg = "{err.message()}" }
-    assert_eq(error_code_of(msg), ERR_NOT_FOUND)
+    assert_eq(domain.error_code_of(msg), domain.ERR_NOT_FOUND)
 }
 
 test "a server that lost its data gets this vault again" {
@@ -352,7 +352,7 @@ test "a connected vault changes its master password in step with its server, nev
     remote.set_offline(true)
     mut msg := ""
     change_master_password_synced(crypto, mut a.store, a.kc, a.links, remote, a.kc, a.session, STRONG_PW, NEW_PW, 3000) or err { msg = "{err.message()}" }
-    assert_eq(error_code_of(msg), ERR_NETWORK)
+    assert_eq(domain.error_code_of(msg), domain.ERR_NETWORK)
     assert(try verify_master_password(crypto, a.store, a.session, STRONG_PW))
     remote.set_offline(false)
     next := try change_master_password_synced(crypto, mut a.store, a.kc, a.links, remote, a.kc, a.session, STRONG_PW, NEW_PW, 3000)
@@ -360,7 +360,7 @@ test "a connected vault changes its master password in step with its server, nev
     // The re-keyed vault went up: B is asked for the new password, then has it.
     msg = ""
     sync_of(crypto, mut b, remote, "") or err { msg = "{err.message()}" }
-    assert_eq(error_code_of(msg), ERR_WRONG_PASSWORD)
+    assert_eq(domain.error_code_of(msg), domain.ERR_WRONG_PASSWORD)
     got := try sync_of(crypto, mut b, remote, NEW_PW)
     assert(got.rekeyed)
     assert_eq(next.id, a.session.id)
@@ -384,13 +384,13 @@ test "a probe tells what the server holds, without a password, and keeps nothing
     assert_eq(remote.state().gets, gets)
     mut msg := ""
     probe_remote(remote, "http://vault.example.com", "tok") or err { msg = "{err.message()}" }
-    assert_eq(error_code_of(msg), ERR_INVALID)
+    assert_eq(domain.error_code_of(msg), domain.ERR_INVALID)
     msg = ""
     probe_remote(remote, SERVER, "bad") or err { msg = "{err.message()}" }
-    assert_eq(error_code_of(msg), ERR_AUTH)
+    assert_eq(domain.error_code_of(msg), domain.ERR_AUTH)
     msg = ""
     probe_remote(remote, SERVER, "  ") or err { msg = "{err.message()}" }
-    assert_eq(error_code_of(msg), ERR_USAGE)
+    assert_eq(domain.error_code_of(msg), domain.ERR_USAGE)
 }
 
 test "a download can remember its key, as an unlock would" {
@@ -410,10 +410,10 @@ test "a new token replaces the old one only once the server takes it" {
     mut a := try machine_a(crypto)
     remote := new_fake_remote()
     _ = try connect_remote(crypto, mut a.store, a.links, remote, a.kc, a.kc, mut a.session, SERVER, "tok", STRONG_PW, "", 1000)
-    account := remote_token_account(a.session.id)
+    account := domain.remote_token_account(a.session.id)
     mut msg := ""
     replace_remote_token(a.links, remote, a.kc, a.session.path, "bad") or err { msg = "{err.message()}" }
-    assert_eq(error_code_of(msg), ERR_AUTH)
+    assert_eq(domain.error_code_of(msg), domain.ERR_AUTH)
     assert_eq(str(try a.kc.keychain_load(account)), "tok")
     try a.kc.keychain_save(account, []byte("old"))
     link := try replace_remote_token(a.links, remote, a.kc, a.session.path, " tok\n")
@@ -421,7 +421,7 @@ test "a new token replaces the old one only once the server takes it" {
     assert_eq(str(try a.kc.keychain_load(account)), "tok")
     msg = ""
     replace_remote_token(a.links, remote, a.kc, "/nowhere.flint", "tok") or err { msg = "{err.message()}" }
-    assert_eq(error_code_of(msg), ERR_NOT_FOUND)
+    assert_eq(domain.error_code_of(msg), domain.ERR_NOT_FOUND)
 }
 
 test "the connected vaults are listed by path and server, nothing more" {
@@ -489,21 +489,21 @@ type FailingAfterDisconnect struct {
     path: str
 }
 
-fn (self: FailingAfterDisconnect) remote_get(url: str, token: str, known_version: i64) -> domain.RemoteVault! {
+fn (self: FailingAfterDisconnect) remote_get(_url: str, _token: str, _known_version: i64) -> domain.RemoteVault! {
     _ = try disconnect_remote(self.links, self.kc, self.path)
-    return error(coded(ERR_NETWORK, "cannot reach the server"))
+    return error(domain.coded(domain.ERR_NETWORK, "cannot reach the server"))
 }
 
-fn (self: FailingAfterDisconnect) remote_put(url: str, token: str, vault_id: str, base_version: i64, data: []byte) -> domain.RemoteStored! {
-    return error(coded(ERR_NETWORK, "cannot reach the server"))
+fn (self: FailingAfterDisconnect) remote_put(_url: str, _token: str, _vault_id: str, _base_version: i64, _data: []byte) -> domain.RemoteStored! {
+    return error(domain.coded(domain.ERR_NETWORK, "cannot reach the server"))
 }
 
-fn (self: FailingAfterDisconnect) remote_list(url: str, token: str) -> []domain.ServerVault! {
-    return error(coded(ERR_NETWORK, "cannot reach the server"))
+fn (self: FailingAfterDisconnect) remote_list(_url: str, _token: str) -> []domain.ServerVault! {
+    return error(domain.coded(domain.ERR_NETWORK, "cannot reach the server"))
 }
 
-fn (self: FailingAfterDisconnect) remote_set_label(url: str, token: str, label: str) -> void! {
-    return error(coded(ERR_NETWORK, "cannot reach the server"))
+fn (self: FailingAfterDisconnect) remote_set_label(_url: str, _token: str, _label: str) -> void! {
+    return error(domain.coded(domain.ERR_NETWORK, "cannot reach the server"))
 }
 
 // A server whose GET returns only after this machine disconnected the vault and
@@ -560,8 +560,8 @@ test "a token replaced while its vault is disconnected is not kept" {
     slow := DisconnectingRemote{ inner: remote, links: a.links, kc: a.kc, path: a.session.path }
     mut msg := ""
     replace_remote_token(a.links, slow, a.kc, a.session.path, "tok") or err { msg = "{err.message()}" }
-    assert_eq(error_code_of(msg), ERR_NOT_FOUND)
-    assert_eq((try a.kc.keychain_load(remote_token_account(a.session.id))).len(), usize(0))
+    assert_eq(domain.error_code_of(msg), domain.ERR_NOT_FOUND)
+    assert_eq((try a.kc.keychain_load(domain.remote_token_account(a.session.id))).len(), usize(0))
 }
 
 test "a write made while a sync finds nothing new is left to upload" {

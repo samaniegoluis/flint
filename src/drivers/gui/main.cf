@@ -11,7 +11,6 @@ package main
 import "ext:webui"
 import "core:fs"
 import "core:os"
-import "../../adapters/clilink"
 import "../../adapters/config"
 import "../../adapters/crypto" as flint_crypto
 import "../../adapters/fonts"
@@ -31,7 +30,7 @@ fn find_ui_dir() -> str {
     if override.len() > 0 {
         return override
     }
-    exe := executable_dir()
+    exe := process.executable_dir()
     dirs: []str = [exe + "/../Resources/ui", exe + "/ui", exe + "/../../ui/dist", "ui/dist"]
     for dir in dirs {
         if fs.exists(dir + "/index.html") {
@@ -44,12 +43,12 @@ fn find_ui_dir() -> str {
 // Once per machine, the keys earlier Flints cached on every unlock go (D-048); says
 // on stderr what happened.
 fn report_forget_cached_keys(mut settings_store: config.JsonSettingsStore, store: vault.LockedVaultStore, kc: flint_keychain.OsKeychain, recents: config.JsonRecentStore) {
-    removed := forget_cached_keys_once(mut settings_store, store, kc, recents) or err {
-        write_stderr("flint-gui: cached vault keys left in place: {err.message()}\n")
+    removed := application.forget_cached_keys_once(mut settings_store, store, kc, recents) or err {
+        process.write_stderr("flint-gui: cached vault keys left in place: {err.message()}\n")
         return
     }
     if removed > 0 {
-        write_stderr("flint-gui: removed {removed} vault keys an earlier Flint cached; Remember on this computer brings one back\n")
+        process.write_stderr("flint-gui: removed {removed} vault keys an earlier Flint cached; Remember on this computer brings one back\n")
     }
 }
 
@@ -60,37 +59,37 @@ fn main() {
 
     // Before any SSH session: libssh copies a terminal stdin's modes into each PTY
     // request, and a launch from a raw-mode terminal left bash with no echo (CF-194).
-    if !detach_stdin() {
-        write_stderr("flint-gui: stdin is a terminal and could not be detached; sessions may start without echo\n")
+    if !process.detach_stdin() {
+        process.write_stderr("flint-gui: stdin is a terminal and could not be detached; sessions may start without echo\n")
     }
 
     // One Flint per config folder: a second launch shows the running one's window
     // (closed to the tray, it comes back locked) and exits.
-    if !e2e && show_running_app() {
-        write_stderr("flint-gui: Flint is already running; showed its window\n")
+    if !e2e && clicmd.show_running_app() {
+        process.write_stderr("flint-gui: Flint is already running; showed its window\n")
         return
     }
 
     // Windows (milestone 50): without the WebView2 Runtime the window would open empty;
     // say so, with Microsoft's download page, and stop. FLINT_WEBVIEW_CHECK=quiet only
     // prints it (the Windows check runs it with no runtime to be found).
-    rt := webview_runtime()
+    rt := uievents.webview_runtime()
     if rt.state != "ok" {
-        write_stderr("flint-gui: {webview_missing_text(rt.state)}\n")
+        process.write_stderr("flint-gui: {webview_missing_text(rt.state)}\n")
         if (os.getenv("FLINT_WEBVIEW_CHECK") or "") != "quiet" {
-            tell_webview_missing(rt.state)
+            uievents.tell_webview_missing(rt.state)
         }
         os.exit(3)
     }
 
-    clear_webview_autofill(flint_config_dir())
+    clear_webview_autofill(config.flint_config_dir())
     mut app := make(webui.App, "Flint", 1280, 800)
     defer app.close()
     setup_webview(mut app)
     app.set_min_size(900, 600)
     if !fs.exists(ui_dir + "/index.html") {
-        write_stderr("flint-gui: no page at {ui_dir}/index.html; build it with scripts/build-gui.sh\n")
-        exit_process(1)
+        process.write_stderr("flint-gui: no page at {ui_dir}/index.html; build it with scripts/build-gui.sh\n")
+        process.exit_process(1)
         return
     }
     app.serve_dir(ui_dir)
@@ -99,49 +98,49 @@ fn main() {
         app.embed_asset("/e2e.js", script, "text/javascript")
     }
 
-    sodium_ok := new_sodium() or err {
-        write_stderr("flint-gui: libsodium failed to start\n")
-        exit_process(1)
+    sodium_ok := flint_crypto.new_sodium() or {
+        process.write_stderr("flint-gui: libsodium failed to start\n")
+        process.exit_process(1)
         return
     }
     c := sodium_ok
-    config_dir := flint_config_dir()
-    mut store := new_locked_vault_store(config_dir + "/activity")
-    kc := new_os_keychain((os.getenv("FLINT_KEYCHAIN") or "") != "off")
-    recents := new_json_recent_store(config_dir)
-    mut settings_store := new_json_settings_store(config_dir)
-    mut ui_state_store := new_json_ui_state_store(config_dir)
-    inspector := new_libssh_key_inspector()
-    font_catalog := new_os_font_catalog()
-    mut clipboard := new_os_clipboard()
+    config_dir := config.flint_config_dir()
+    mut store := vault.new_locked_vault_store(config_dir + "/activity")
+    kc := flint_keychain.new_os_keychain((os.getenv("FLINT_KEYCHAIN") or "") != "off")
+    recents := config.new_json_recent_store(config_dir)
+    mut settings_store := config.new_json_settings_store(config_dir)
+    mut ui_state_store := config.new_json_ui_state_store(config_dir)
+    inspector := flint_ssh.new_libssh_key_inspector()
+    font_catalog := fonts.new_os_font_catalog()
+    mut clipboard := uievents.new_os_clipboard()
     if e2e {
         // The headless run copies a marker password: keep it off the real clipboard
         // (macOS; on Linux the run has its own X display).
         clipboard.board = "net.flint.gui-e2e"
     }
     mut st := new_gui_state()
-    first_settings := load_settings(settings_store) or default_settings()
+    first_settings := application.load_settings(settings_store) or domain.default_settings()
     // The window's language (milestone 68): the tray's items and the reason an OS
     // presence check shows. The page follows its own setting live; the tray, at start.
     sys_lang := system_language(e2e)
-    lang := app_language(first_settings.language, sys_lang)
-    write_stderr("flint-gui: language: the system reads \"{os_language_tag()}\" ({sys_lang}); setting {first_settings.language} → {lang}\n")
-    presence := new_os_presence()
+    lang := domain.app_language(first_settings.language, sys_lang)
+    process.write_stderr("flint-gui: language: the system reads \"{os_language_tag()}\" ({sys_lang}); setting {first_settings.language} → {lang}\n")
+    presence := uievents.new_os_presence()
     presence.set_language(lang)
     st.holder.set_lock_after(first_settings.lock_after)
     st.holder.set_notify_grants(first_settings.notify_grants)
     st.holder.set_sudo_periods(first_settings.sudo_periods)
-    st.holder.set_approval_wait(approval_wait_ms(first_settings.approval_wait, approval_wait_override_ms()))
-    st.holder.set_alerts(alert_target(first_settings))
+    st.holder.set_approval_wait(domain.approval_wait_ms(first_settings.approval_wait, approval_wait_override_ms()))
+    st.holder.set_alerts(domain.alert_target(first_settings))
     // Once per machine: the keys earlier Flints cached on every unlock go (D-048).
     if (os.getenv("FLINT_KEYCHAIN") or "") != "off" {
         report_forget_cached_keys(mut settings_store, store, kc, recents)
     }
 
-    app.bind_raw("app_info") |params| { return rpc_app_info(e2e) }
+    app.bind_raw("app_info") |_params| { return rpc_app_info(e2e) }
     // The page's answer to *Keep Flint running in the background?* was saved: ✕ again
     // (milestone 65).
-    app.bind_raw("window_close") |params| {
+    app.bind_raw("window_close") |_params| {
         mut a := app
         on_window_close(settings_store, st, mut a, e2e)
         return ok_json()
@@ -151,9 +150,9 @@ fn main() {
     app.bind_raw("rdp_resize") |params| { return rpc_rdp_resize(params) }
     // Milestone 38: a desktop across monitors (design 22f).
     app.bind_raw("rdp_span") |params| { return rpc_rdp_span(params, mut ui_state_store, st) }
-    app.bind_raw("monitors_list") |params| { return rpc_monitors_list(ui_state_store) }
+    app.bind_raw("monitors_list") |_params| { return rpc_monitors_list(ui_state_store) }
     app.bind_raw("monitors_open") |params| { return rpc_monitors_open(params, st) }
-    app.bind_raw("monitors_close") |params| { return rpc_monitors_close() }
+    app.bind_raw("monitors_close") |_params| { return rpc_monitors_close() }
     app.bind_raw("monitors_send") |params| { return rpc_monitors_send(params) }
     app.bind_raw("rdp_close") |params| { return rpc_rdp_close(params, st) }
     app.bind_raw("rdp_stats") |params| { return rpc_rdp_stats(params) }
@@ -166,29 +165,29 @@ fn main() {
     app.bind_raw("window_theme") |params| { return rpc_window_theme(params, mut app) }
     app.bind_raw("dialog_open") |params| { return rpc_dialog_open(params, app) }
     app.bind_raw("dialog_save") |params| { return rpc_dialog_save(params, app) }
-    app.bind_raw("settings_get") |params| { return rpc_settings_get(settings_store) }
+    app.bind_raw("settings_get") |_params| { return rpc_settings_get(settings_store) }
     // Phone alerts (alerts.cf, milestone 63).
     app.bind_raw("window_attention") |params| { return rpc_window_attention(params, st) }
-    app.bind_raw("alerts_status") |params| { return rpc_alerts_status(st) }
-    app.bind_raw("alerts_test") |params| { return rpc_alerts_test(st) }
-    app.bind_raw("alerts_new_topic") |params| { return rpc_alerts_new_topic(c, mut settings_store, st) }
+    app.bind_raw("alerts_status") |_params| { return rpc_alerts_status(st) }
+    app.bind_raw("alerts_test") |_params| { return rpc_alerts_test(st) }
+    app.bind_raw("alerts_new_topic") |_params| { return rpc_alerts_new_topic(c, mut settings_store, st) }
     app.bind_raw("settings_set") |params| { return rpc_settings_set(params, c, mut settings_store, st, presence, sys_lang, mut app) }
     // Milestone 48: the flint command from a packaged app.
     app.bind_raw("cli_status") |params| { return rpc_cli_status(params, mut settings_store) }
     // The update notice (update.cf, milestone 52).
     app.bind_raw("update_hint") |params| { return rpc_update_hint(params, st) }
     // Relaunch's 24d counts the CLI's running commands too (milestone 50).
-    app.bind_raw("cli_running") |params| { return rpc_cli_running() }
+    app.bind_raw("cli_running") |_params| { return rpc_cli_running() }
     app.bind_raw("whats_new") |params| { return rpc_whats_new(params, mut settings_store) }
     app.bind_raw("open_url") |params| { return rpc_open_url(params, e2e) }
     app.bind_raw("cli_install") |params| { return rpc_cli_install(params) }
     app.bind_raw("cli_remove") |params| { return rpc_cli_remove(params) }
     app.bind_raw("vault_sync_hint") |params| { return rpc_vault_sync_hint(params, st) }
-    app.bind_raw("fonts_mono") |params| { return rpc_fonts_mono(font_catalog) }
-    app.bind_raw("ui_state_get") |params| { return rpc_ui_state_get(ui_state_store, store, st) }
+    app.bind_raw("fonts_mono") |_params| { return rpc_fonts_mono(font_catalog) }
+    app.bind_raw("ui_state_get") |_params| { return rpc_ui_state_get(ui_state_store, store, st) }
     app.bind_raw("ui_state_set") |params| { return rpc_ui_state_set(params, mut ui_state_store, store, st) }
 
-    app.bind_raw("vault_recents") |params| { return rpc_vault_recents(store, recents) }
+    app.bind_raw("vault_recents") |_params| { return rpc_vault_recents(store, recents) }
     // On a worker: captures are read-only there, and the copies share the store's
     // connection and the state's holder.
     app.bind_async[UnlockReq]("vault_unlock") |req| {
@@ -208,8 +207,8 @@ fn main() {
     }
     // Milestone 44: Connect remote vault and the sync's state (remote.cf, design 23*).
     app.bind_raw("vault_remote_status") |params| { return rpc_vault_remote_status(params, c, store) }
-    app.bind_raw("vault_remotes") |params| { return rpc_vault_remotes() }
-    app.bind_raw("vault_remote_disconnect") |params| { return rpc_vault_remote_disconnect(c, st, kc) }
+    app.bind_raw("vault_remotes") |_params| { return rpc_vault_remotes() }
+    app.bind_raw("vault_remote_disconnect") |_params| { return rpc_vault_remote_disconnect(c, st, kc) }
     app.bind_async[RemoteServerReq]("vault_remote_probe") |req| { return rpc_vault_remote_probe(req, c) }
     app.bind_async[RemoteDownloadReq]("vault_remote_download") |req| {
         mut s := store
@@ -229,19 +228,19 @@ fn main() {
     }
     app.bind_async[RemoteTokenReq]("vault_remote_token") |req| { return rpc_vault_remote_token(req, c, st, kc) }
     app.bind_raw("password_strength") |params| { return rpc_password_strength(params, st) }
-    app.bind_raw("vault_close") |params| { return rpc_vault_close(mut store, mut st) }
-    app.bind_raw("vault_lock") |params| { return rpc_vault_lock(mut store, st, mut app) }
-    app.bind_raw("activity") |params| { return rpc_activity(st) }
-    app.bind_raw("unlock_request") |params| { return rpc_unlock_request(st, recents) }
-    app.bind_raw("unlock_request_dismiss") |params| { return rpc_unlock_request_dismiss(st) }
-    app.bind_raw("access_state") |params| { return rpc_access_state(st, store, presence) }
+    app.bind_raw("vault_close") |_params| { return rpc_vault_close(mut store, mut st) }
+    app.bind_raw("vault_lock") |_params| { return rpc_vault_lock(mut store, st, mut app) }
+    app.bind_raw("activity") |_params| { return rpc_activity(st) }
+    app.bind_raw("unlock_request") |_params| { return rpc_unlock_request(st, recents) }
+    app.bind_raw("unlock_request_dismiss") |_params| { return rpc_unlock_request_dismiss(st) }
+    app.bind_raw("access_state") |_params| { return rpc_access_state(st, store, presence) }
     app.bind_raw("access_revoke") |params| { return rpc_access_revoke(params, st, store, presence, mut app) }
     app.bind_raw("access_notify") |params| { return rpc_access_notify(params, st, store, presence, mut app) }
     app.bind_raw("grant_activity") |params| { return rpc_grant_activity(params, st, store) }
-    app.bind_raw("tokens_list") |params| { return rpc_tokens_list(st, store) }
+    app.bind_raw("tokens_list") |_params| { return rpc_tokens_list(st, store) }
     app.bind_raw("token_revoke") |params| { return rpc_token_revoke(params, st, store, mut app) }
     app.bind_raw("activity_log") |params| { return rpc_activity_log(params, st, store) }
-    app.bind_raw("activity_retention") |params| { return rpc_activity_retention(st, store) }
+    app.bind_raw("activity_retention") |_params| { return rpc_activity_retention(st, store) }
     app.bind_raw("activity_retention_preview") |params| { return rpc_activity_retention_preview(params, st, store) }
     app.bind_raw("activity_retention_set") |params| { return rpc_activity_retention_set(params, st, store, mut app) }
     app.bind_raw("activity_backup") |params| { return rpc_activity_backup(params, st, store) }
@@ -251,23 +250,23 @@ fn main() {
         return rpc_access_answer(req, c, store, presence, st, mut a)
     }
     app.bind_raw("vault_remembered") |params| { return rpc_vault_remembered(params, st) }
-    app.bind_raw("window_state") |params| { return rpc_window_state(st, presence) }
+    app.bind_raw("window_state") |_params| { return rpc_window_state(st, presence) }
     // On a worker: Touch ID and polkit block until the person answers.
     app.bind_async[WindowUnlockReq]("window_unlock") |req| {
         mut a := app
         return rpc_window_unlock(req, c, store, presence, st, mut a)
     }
     app.bind_raw("window_fullscreen") |params| { return rpc_window_fullscreen(params, e2e) }
-    app.bind_raw("app_quit") |params| {
+    app.bind_raw("app_quit") |_params| {
         mut a := app
         return rpc_app_quit(mut a)
     }
     app.bind_raw("vault_forget_key") |params| { return rpc_vault_forget_key(params, mut store, kc, mut st) }
     app.bind_raw("vault_forget") |params| { return rpc_vault_forget(params, mut store, kc, recents, mut st) }
-    app.bind_raw("vault_status") |params| { return rpc_vault_status(mut store, st) }
+    app.bind_raw("vault_status") |_params| { return rpc_vault_status(mut store, st) }
     app.bind_raw("vault_rename") |params| { return rpc_vault_rename(params, mut store, recents, mut st) }
 
-    app.bind_raw("catalog") |params| { return rpc_catalog(store, st) }
+    app.bind_raw("catalog") |_params| { return rpc_catalog(store, st) }
     app.bind_raw("group_add") |params| { return rpc_group_add(params, c, mut store, st) }
     app.bind_raw("group_rename") |params| { return rpc_group_rename(params, mut store, st) }
     app.bind_raw("group_rm") |params| { return rpc_group_rm(params, mut store, st) }
@@ -282,7 +281,7 @@ fn main() {
     app.bind_raw("cred_rm") |params| { return rpc_cred_rm(params, mut store, st) }
     app.bind_raw("known_host_rm") |params| { return rpc_known_host_rm(params, mut store, st) }
     // Tunnels (milestone 23, tunnels.cf).
-    app.bind_raw("tunnels_list") |params| { return rpc_tunnels_list(store, st) }
+    app.bind_raw("tunnels_list") |_params| { return rpc_tunnels_list(store, st) }
     app.bind_raw("tunnel_save") |params| {
         mut a := app
         return rpc_tunnel_save(params, c, store, st, mut a)
@@ -299,7 +298,7 @@ fn main() {
     app.bind_raw("secret_copy") |params| { return rpc_secret_copy(params, c, store, mut clipboard, st) }
 
     app.bind_raw("terminal_clipboard") |params| { return rpc_terminal_clipboard(params, mut clipboard) }
-    app.bind_raw("field_clipboard_read") |params| { return rpc_field_clipboard_read(mut clipboard) }
+    app.bind_raw("field_clipboard_read") |_params| { return rpc_field_clipboard_read(mut clipboard) }
     app.bind_raw("field_clipboard_copy") |params| { return rpc_field_clipboard_copy(params, mut clipboard) }
     app.bind_raw("session_input") |params| { return rpc_session_input(params, st) }
     app.bind_raw("session_resize") |params| { return rpc_session_resize(params) }
@@ -313,7 +312,7 @@ fn main() {
     app.bind_async[FilesPathReq]("files_mkdir") |req| { return rpc_files_mkdir(req, st) }
     app.bind_async[FilesTransferReq]("files_transfer") |req| { return rpc_files_transfer(req, app, st) }
     app.bind_async[FilesRelayReq]("files_relay") |req| { return rpc_files_relay(req, app, st) }
-    mut drops := new_fs_drop_stage(config_dir)
+    mut drops := process.new_fs_drop_stage(config_dir)
     drops.stage_clear_all()
     // The page awaits each chunk before it sends the next, so a drop is appended in order.
     app.bind_async[FilesStageReq]("files_stage") |req| {
@@ -341,7 +340,7 @@ fn main() {
     app.bind_raw("e2e_report") |params| { return rpc_e2e_report(params, mut app) }
     app.bind_raw("e2e_log") |params| { return rpc_e2e_log(params, mut app) }
     if e2e {
-        app.bind_raw("e2e_clipboard") |params| { return rpc_e2e_clipboard(clipboard) }
+        app.bind_raw("e2e_clipboard") |_params| { return rpc_e2e_clipboard(clipboard) }
         app.bind_raw("e2e_clipboard_png") |params| { return rpc_e2e_clipboard_png(params, clipboard) }
         app.bind_raw("e2e_clipboard_set") |params| { return rpc_e2e_clipboard_set(params, clipboard) }
         // Stands in for the window's close button with the tray (milestone 14).
@@ -351,7 +350,7 @@ fn main() {
             os.setenv("FLINT_E2E_NO_TRAY", if req.tray { "0" } else { "1" })
             return ok_json()
         }
-        app.bind_raw("e2e_close_window") |params| {
+        app.bind_raw("e2e_close_window") |_params| {
             mut a := app
             on_window_close(settings_store, st, mut a, e2e)
             return ok_json()
@@ -362,16 +361,16 @@ fn main() {
             req := try parse_req[FullscreenReq](params)
             // With the real full screen, the window itself moves, as the green button does.
             if e2e_native_fullscreen() {
-                window_fullscreen_set(req.on)
+                uievents.window_fullscreen_set(req.on)
             } else {
-                window_fullscreen_inject(req.on)
+                uievents.window_fullscreen_inject(req.on)
             }
             return ok_json()
         }
         // Stands in for the OS's screen lock and sleep (D-042).
         app.bind_raw("e2e_system_event") |params| {
             req := try parse_req[NameReq](params)
-            system_events_inject(req.name)
+            uievents.system_events_inject(req.name)
             return ok_json()
         }
     }
@@ -386,7 +385,7 @@ fn main() {
             worker_app := app
             worker_store := store
             vs := st.vault_session()
-            emit_session_state(mut app, r.session, "connecting", "", "", 0)
+            uievents.emit_session_state(mut app, r.session, "connecting", "", "", 0)
             scope.spawn || {
                 // Captures are read-only inside the task: take mutable copies.
                 mut a := worker_app
@@ -448,7 +447,7 @@ fn main() {
             req := host_test_check(params, st) or err {
                 return error("{err.message()}")
             }
-            patch := parse_req[application.HostPatch](params) or empty_host_patch()
+            patch := parse_req[application.HostPatch](params) or application.empty_host_patch()
             worker_app := app
             worker_store := store
             vs := st.vault_session()
@@ -486,7 +485,7 @@ fn main() {
         // accept loops on one listener, since a `flint connect` keeps its connection.
         mut listener := start_serving(config_dir)
         if listener.open {
-            for i in 0..SERVE_ACCEPTORS {
+            for _ in 0..SERVE_ACCEPTORS {
                 loop_listener := listener
                 loop_store := store
                 loop_app := app
@@ -531,7 +530,7 @@ fn main() {
             run_update_progress(progress_st, mut a)
         }
         // Auto-lock: idle time, screen lock and sleep.
-        write_stderr("flint-gui: locks on idle, {system_events_start()}\n")
+        process.write_stderr("flint-gui: locks on idle, {system_events_start()}\n")
         timer_store := store
         timer_app := app
         timer_st := st
@@ -540,30 +539,30 @@ fn main() {
             mut a := timer_app
             run_lock_timer(mut s, timer_st, mut a)
         }
-        install_menu_bar("Flint", app_menu_labels(lang))
+        uievents.install_menu_bar("Flint", app_menu_labels(lang))
         // Full screen (milestone 37): the page hears every change as `window:fullscreen`.
-        window_fullscreen_install(app)
+        uievents.window_fullscreen_install(app)
         // The extra monitors' windows (milestone 38) load the same page folder.
-        monitors_install(app, ui_dir)
+        uievents.monitors_install(app, ui_dir)
         // The tray (milestone 14): closing the window keeps Flint serving, with the
         // window locked. The headless end-to-end run keeps the old close.
         if !e2e {
             install_tray(mut app, ui_dir, lang)
         }
-        app.on("window:close_requested") |data| {
+        app.on("window:close_requested") |_data| {
             mut a := app
             on_window_close(settings_store, st, mut a, e2e)
         }
-        app.on(TRAY_OPEN) |data| {
+        app.on(TRAY_OPEN) |_data| {
             mut a := app
             show_window(mut a)
         }
-        app.on(TRAY_LOCK) |data| {
+        app.on(TRAY_LOCK) |_data| {
             mut s := store
             mut a := app
             _ = lock_now(mut s, st, mut a, "manual")
         }
-        app.on(TRAY_QUIT) |data| {
+        app.on(TRAY_QUIT) |_data| {
             mut a := app
             quit_app(mut a)
         }
@@ -571,7 +570,7 @@ fn main() {
         // (scripts/linux), and the page quits when done. On macOS it runs in cfire's
         // offscreen window, or in the real one when asked (milestone 27), with a
         // worker that keeps the run's cap.
-        visible_e2e := e2e && os_name() == "mac" && e2e_visible()
+        visible_e2e := e2e && process.os_name() == "mac" && e2e_visible()
         if visible_e2e {
             cap_app := app
             cap_st := st
@@ -580,17 +579,17 @@ fn main() {
                 run_e2e_cap(cap_st, mut a)
             }
         }
-        if e2e && os_name() == "mac" && !visible_e2e {
+        if e2e && process.os_name() == "mac" && !visible_e2e {
             _ = app.run_webview_test(e2e_timeout_ms()) or false
         } else {
             app.run()
         }
         st.holder.set_quitting()
-        gui_session_close_all()
+        uievents.gui_session_close_all()
         // Remote desktops too (milestone 30).
-        close_all_desktops()
+        rdp.close_all_desktops()
         // Tunnels run in this process only: quitting closes them (D-062).
-        release_all_tunnels()
+        flint_ssh.release_all_tunnels()
         listener.ipc_close()
         // Commands the CLI runs through this app (`flint exec`, `connect`) hold their
         // connection while they run: a moment to finish, then they are cut, so quitting
@@ -601,7 +600,7 @@ fn main() {
     // Waits for an unlock or create still running on a worker, then closes.
     st.hold()
     st.forget()
-    close_vault(mut store)
+    application.close_vault(mut store)
     st.release()
 
     if e2e {
@@ -611,9 +610,9 @@ fn main() {
         if verdict.len() == 0 {
             verdict = "fail: no verdict in {e2e_timeout_ms() / 1000} s; last page line: {app.get_state("e2e_last")}"
         }
-        write_stdout("e2e: {verdict}\n")
+        process.write_stdout("e2e: {verdict}\n")
         if verdict != "pass" {
-            exit_process(1)
+            process.exit_process(1)
         }
     }
 }

@@ -102,7 +102,7 @@ type RdpState struct {
 }
 
 fn emit_rdp_state(mut app: webui.App, tab: str, state: str, code: str, message: str) {
-    m := event_message(code, message)
+    m := uievents.event_message(code, message)
     app.emit("rdp:state", RdpState{ tab: tab, state: state, code: code, message: message, id: m.id, params: m.params })
 }
 
@@ -113,23 +113,23 @@ fn rdp_open_check(params: str, st: GuiState) -> RdpOpenReq! {
     // cannot be returned (CFIRE-UPSTREAM: CF-162).
     // CFIRE-UPSTREAM: CF-164 (a labeled argument keeps libstdc++'s chrono::parse out)
     req := json.parse[RdpOpenReq](payload: params) or {
-        return error(coded(ERR_INVALID, "malformed request"))
+        return error(domain.coded(domain.ERR_INVALID, "malformed request"))
     }
     if req.tab.len() == 0 || req.alias.len() == 0 {
-        return error(coded(ERR_INVALID, "a remote desktop needs a tab id and a host alias"))
+        return error(domain.coded(domain.ERR_INVALID, "a remote desktop needs a tab id and a host alias"))
     }
-    if gui_session_count() >= MAX_SESSIONS {
-        return error(coded(ERR_CONFLICT, "{MAX_SESSIONS} sessions are open; close one first"))
+    if uievents.gui_session_count() >= MAX_SESSIONS {
+        return error(domain.coded(domain.ERR_CONFLICT, "{MAX_SESSIONS} sessions are open; close one first"))
     }
-    if !gui_session_open(req.tab, 0, 0) {
-        return error(coded(ERR_CONFLICT, "tab '{req.tab}' already exists"))
+    if !uievents.gui_session_open(req.tab, 0, 0) {
+        return error(domain.coded(domain.ERR_CONFLICT, "tab '{req.tab}' already exists"))
     }
     return req
 }
 
 // The page's events for the tab, and whether the window is open to act through
 // (a locked window answers no clipboard request, milestone 31).
-type RdpTabSink struct {
+pub type RdpTabSink struct {
     events: uievents.GuiDesktopSink
     holder: vault.SessionHolder
 }
@@ -152,42 +152,42 @@ fn (mut self: RdpTabSink) desktop_cursor(tab: str, c: domain.RdpCursor) {
 
 // The connection, on a worker, until the tab ends.
 fn run_gui_rdp(mut app: webui.App, c: flint_crypto.Sodium, mut store: vault.LockedVaultStore, vs: application.VaultSession, holder: vault.SessionHolder, board: uievents.OsClipboard, ui_store: config.JsonUiStateStore, req: RdpOpenReq) {
-    mut rd := new_freerdp_desktop()
-    prompter := new_gui_prompter(app, req.tab)
-    mut sink := RdpTabSink{ events: new_gui_desktop_sink(app), holder: holder }
+    mut rd := rdp.new_freerdp_desktop()
+    prompter := uievents.new_gui_prompter(app, req.tab)
+    mut sink := RdpTabSink{ events: uievents.new_gui_desktop_sink(app), holder: holder }
     mut clip := board
     mut ui := ui_store
-    open := application.RdpOpenRequest{ tab: req.tab, alias: req.alias, width: req.width, height: req.height, timeout_ms: RDP_CONNECT_TIMEOUT_MS, graphics: req.graphics }
-    run_remote_desktop(c, mut store, vs, mut rd, prompter, mut sink, mut clip, mut ui, open) or err {
+    open := application.RdpOpenRequest{ tab: req.tab, alias: req.alias, width: req.width, height: req.height, timeout_ms: application.RDP_CONNECT_TIMEOUT_MS, graphics: req.graphics }
+    application.run_remote_desktop(c, mut store, vs, mut rd, prompter, mut sink, mut clip, mut ui, open) or err {
         msg := "{err.message()}"
-        emit_rdp_state(mut app, req.tab, "ended", error_code_of(msg), error_text_of(msg))
-        gui_session_drop(req.tab)
+        emit_rdp_state(mut app, req.tab, "ended", domain.error_code_of(msg), domain.error_text_of(msg))
+        uievents.gui_session_drop(req.tab)
         return
     }
     emit_rdp_state(mut app, req.tab, "ended", "", "")
-    gui_session_drop(req.tab)
+    uievents.gui_session_drop(req.tab)
 }
 
 fn rpc_rdp_key(params: str, st: GuiState) -> str! {
     try st.require_open_window()
     req := try parse_req[RdpKeyReq](params)
-    mut rd := new_freerdp_desktop()
-    try send_desktop_key(mut rd, req.tab, req.code, req.down)
+    mut rd := rdp.new_freerdp_desktop()
+    try application.send_desktop_key(mut rd, req.tab, req.code, req.down)
     return ok_json()
 }
 
 fn rpc_rdp_pointer(params: str, st: GuiState) -> str! {
     try st.require_open_window()
     req := try parse_req[RdpPointerReq](params)
-    mut rd := new_freerdp_desktop()
-    try send_desktop_pointer(mut rd, req.tab, domain.RdpPointer{ kind: req.kind, button: req.button, x: req.x, y: req.y, delta: req.delta })
+    mut rd := rdp.new_freerdp_desktop()
+    try application.send_desktop_pointer(mut rd, req.tab, domain.RdpPointer{ kind: req.kind, button: req.button, x: req.x, y: req.y, delta: req.delta })
     return ok_json()
 }
 
 fn rpc_rdp_resize(params: str) -> str! {
     req := try parse_req[RdpResizeReq](params)
-    mut rd := new_freerdp_desktop()
-    try resize_remote_desktop(mut rd, req.tab, req.width, req.height)
+    mut rd := rdp.new_freerdp_desktop()
+    try application.resize_remote_desktop(mut rd, req.tab, req.width, req.height)
     return ok_json()
 }
 
@@ -195,9 +195,9 @@ fn rpc_rdp_resize(params: str) -> str! {
 fn rpc_rdp_close(params: str, st: GuiState) -> str! {
     try st.require_open_window()
     req := try parse_req[RdpTabReq](params)
-    mut rd := new_freerdp_desktop()
-    close_remote_desktop(mut rd, req.tab)
-    _ = gui_session_close(req.tab)
+    mut rd := rdp.new_freerdp_desktop()
+    application.close_remote_desktop(mut rd, req.tab)
+    _ = uievents.gui_session_close(req.tab)
     return ok_json()
 }
 
@@ -208,16 +208,16 @@ fn rpc_rdp_graphics(params: str, st: GuiState) -> str! {
     try st.require_open_window()
     try st.require_unlocked()
     req := try parse_req[RdpGraphicsReq](params)
-    mut rd := new_freerdp_desktop()
-    try switch_desktop_graphics(mut rd, req.tab, req.graphics)
+    mut rd := rdp.new_freerdp_desktop()
+    try application.switch_desktop_graphics(mut rd, req.tab, req.graphics)
     return ok_json()
 }
 
 // The tab's counters (milestone 34): the statistics overlay and the benchmark.
 fn rpc_rdp_stats(params: str) -> str! {
     req := try parse_req[RdpTabReq](params)
-    rd := new_freerdp_desktop()
-    return json.stringify(try remote_desktop_stats(rd, req.tab))
+    rd := rdp.new_freerdp_desktop()
+    return json.stringify(try application.remote_desktop_stats(rd, req.tab))
 }
 
 // The tab took the focus: the server learns whether this machine's clipboard holds
@@ -225,8 +225,8 @@ fn rpc_rdp_stats(params: str) -> str! {
 fn rpc_rdp_clipboard_announce(params: str, mut clip: uievents.OsClipboard, st: GuiState) -> str! {
     try st.require_open_window()
     req := try parse_req[RdpTabReq](params)
-    mut rd := new_freerdp_desktop()
-    try announce_desktop_clipboard(mut rd, mut clip, req.tab)
+    mut rd := rdp.new_freerdp_desktop()
+    try application.announce_desktop_clipboard(mut rd, mut clip, req.tab)
     return ok_json()
 }
 
@@ -235,8 +235,8 @@ fn rpc_rdp_clipboard_announce(params: str, mut clip: uievents.OsClipboard, st: G
 fn rpc_rdp_locks(params: str, st: GuiState) -> str! {
     try st.require_open_window()
     req := try parse_req[RdpLocksReq](params)
-    mut rd := new_freerdp_desktop()
-    try sync_desktop_locks(mut rd, req.tab, req.flags)
+    mut rd := rdp.new_freerdp_desktop()
+    try application.sync_desktop_locks(mut rd, req.tab, req.flags)
     return ok_json()
 }
 
@@ -250,11 +250,11 @@ type RdpTextReq struct {
 fn rpc_rdp_text(params: str, st: GuiState) -> str! {
     try st.require_open_window()
     req := try parse_req[RdpTextReq](params)
-    if rdp_type_count(req.text) > 8 {
-        return error(coded(ERR_INVALID, "a key event carries a character or two, not text"))
+    if domain.rdp_type_count(req.text) > 8 {
+        return error(domain.coded(domain.ERR_INVALID, "a key event carries a character or two, not text"))
     }
-    mut rd := new_freerdp_desktop()
-    _ = try type_into_desktop(mut rd, req.tab, req.text)
+    mut rd := rdp.new_freerdp_desktop()
+    _ = try application.type_into_desktop(mut rd, req.tab, req.text)
     return ok_json()
 }
 
@@ -264,7 +264,7 @@ fn rpc_rdp_type_info(params: str, store: vault.LockedVaultStore, mut clip: uieve
     try st.require_open_window()
     try st.require_unlocked()
     req := try parse_req[RdpTypeReq](params)
-    i := try desktop_type_info(store, mut clip, req.alias)
+    i := try application.desktop_type_info(store, mut clip, req.alias)
     return json.stringify(RdpTypeMenu{ clipboard_chars: i.clipboard_chars, has_password: i.has_password, presence: presence.presence_method() })
 }
 
@@ -273,18 +273,18 @@ fn rdp_type_check(params: str, st: GuiState) -> RdpTypeReq! {
     try st.require_open_window()
     // parse_req's own body (CFIRE-UPSTREAM: CF-162, CF-164), as rdp_open_check.
     req := json.parse[RdpTypeReq](payload: params) or {
-        return error(coded(ERR_INVALID, "malformed request"))
+        return error(domain.coded(domain.ERR_INVALID, "malformed request"))
     }
     if req.tab.len() == 0 {
-        return error(coded(ERR_INVALID, "Type needs a tab"))
+        return error(domain.coded(domain.ERR_INVALID, "Type needs a tab"))
     }
     if req.what == "password" {
         try st.require_unlocked()
         if req.alias.len() == 0 {
-            return error(coded(ERR_INVALID, "Type password needs the host"))
+            return error(domain.coded(domain.ERR_INVALID, "Type password needs the host"))
         }
     } else if req.what != "clipboard" {
-        return error(coded(ERR_INVALID, "Type takes the clipboard or the host's password"))
+        return error(domain.coded(domain.ERR_INVALID, "Type takes the clipboard or the host's password"))
     }
     return req
 }
@@ -292,22 +292,22 @@ fn rdp_type_check(params: str, st: GuiState) -> RdpTypeReq! {
 // Types, then tells the page how many characters went ("rdp:typed").
 // Type password waits here for the person's presence check (Touch ID, polkit): a worker.
 fn run_gui_rdp_type(mut app: webui.App, c: flint_crypto.Sodium, store: vault.LockedVaultStore, vs: application.VaultSession, board: uievents.OsClipboard, presence: uievents.OsPresence, req: RdpTypeReq) {
-    mut rd := new_freerdp_desktop()
+    mut rd := rdp.new_freerdp_desktop()
     mut clip := board
     mut out := RdpTyped{ tab: req.tab, what: req.what, count: 0, code: "", message: "" }
     if req.what == "password" {
-        out.count = type_host_password_into_desktop(c, store, vs, mut rd, presence, req.password, req.tab, req.alias) or err {
+        out.count = application.type_host_password_into_desktop(c, store, vs, mut rd, presence, req.password, req.tab, req.alias) or err {
             msg := "{err.message()}"
-            out.code = error_code_of(msg)
-            out.message = error_text_of(msg)
+            out.code = domain.error_code_of(msg)
+            out.message = domain.error_text_of(msg)
             app.emit("rdp:typed", out)
             return
         }
     } else {
-        out.count = type_clipboard_into_desktop(mut rd, mut clip, req.tab) or err {
+        out.count = application.type_clipboard_into_desktop(mut rd, mut clip, req.tab) or err {
             msg := "{err.message()}"
-            out.code = error_code_of(msg)
-            out.message = error_text_of(msg)
+            out.code = domain.error_code_of(msg)
+            out.message = domain.error_text_of(msg)
             app.emit("rdp:typed", out)
             return
         }

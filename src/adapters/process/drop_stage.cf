@@ -10,11 +10,11 @@ import cpp "flint_fs.hpp"
 import "core:fs"
 import "../../domain"
 
-type FsDropStage struct {
+pub type FsDropStage struct {
     root: str
 }
 
-fn new_fs_drop_stage(config_dir: str) -> FsDropStage {
+pub fn new_fs_drop_stage(config_dir: str) -> FsDropStage {
     return FsDropStage{ root: config_dir + "/drops" }
 }
 
@@ -24,7 +24,7 @@ fn (self: FsDropStage) stage_folder(drop_id: str) -> str {
 
 fn (mut self: FsDropStage) stage_append(drop_id: str, rel: str, data: str) -> void! {
     path := self.stage_folder(drop_id) + "/" + rel
-    folder := remote_dir(path)
+    folder := domain.remote_dir(path)
     mut rc: i32 = 0
     mut reason := ""
     // CFIRE-UPSTREAM: CF-099

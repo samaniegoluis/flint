@@ -7,12 +7,12 @@ import "../ports"
 
 // Stored settings that no longer validate (an edited file, a field from a newer
 // version) fall back to the defaults field by field rather than failing the app.
-fn load_settings[T: ports.SettingsStore](store: T) -> domain.Settings! {
+pub fn load_settings[T: ports.SettingsStore](store: T) -> domain.Settings! {
     s := try store.settings_load()
-    if settings_valid(s) {
+    if domain.settings_valid(s) {
         return s
     }
-    d := default_settings()
+    d := domain.default_settings()
     mut fixed := d
     fixed.follow_motion = s.follow_motion
     fixed.reopen_last_vault = s.reopen_last_vault
@@ -28,92 +28,92 @@ fn load_settings[T: ports.SettingsStore](store: T) -> domain.Settings! {
     fixed.dim_unfocused = s.dim_unfocused
     fixed.notify_grants = s.notify_grants
     fixed.sudo_periods = s.sudo_periods
-    if approval_wait_valid(s.approval_wait) {
+    if domain.approval_wait_valid(s.approval_wait) {
         fixed.approval_wait = s.approval_wait
     }
     fixed.ntfy_on = s.ntfy_on
-    if one_of(s.ntfy_phone, NTFY_PHONES) {
+    if domain.one_of(s.ntfy_phone, domain.NTFY_PHONES) {
         fixed.ntfy_phone = s.ntfy_phone
     }
-    if one_of(s.close_action, CLOSE_ACTIONS) {
+    if domain.one_of(s.close_action, domain.CLOSE_ACTIONS) {
         fixed.close_action = s.close_action
     }
-    if one_of(s.language, LANGUAGES) {
+    if domain.one_of(s.language, domain.LANGUAGES) {
         fixed.language = s.language
     }
     mut probe := d
     probe.ntfy_server = s.ntfy_server
-    if settings_valid(probe) {
+    if domain.settings_valid(probe) {
         fixed.ntfy_server = s.ntfy_server
     }
     probe = d
     probe.ntfy_topic = s.ntfy_topic
-    if settings_valid(probe) {
+    if domain.settings_valid(probe) {
         fixed.ntfy_topic = s.ntfy_topic
     }
     probe = d
     probe.theme = s.theme
-    if settings_valid(probe) {
+    if domain.settings_valid(probe) {
         fixed.theme = s.theme
     }
     probe = d
     probe.accent = s.accent
-    if settings_valid(probe) {
+    if domain.settings_valid(probe) {
         fixed.accent = s.accent
     }
     probe = d
     probe.density = s.density
-    if settings_valid(probe) {
+    if domain.settings_valid(probe) {
         fixed.density = s.density
     }
     probe = d
     probe.term_font = s.term_font
-    if settings_valid(probe) {
+    if domain.settings_valid(probe) {
         fixed.term_font = s.term_font
     }
     probe = d
     probe.term_font_size = s.term_font_size
-    if settings_valid(probe) {
+    if domain.settings_valid(probe) {
         fixed.term_font_size = s.term_font_size
     }
     probe = d
     probe.term_line_height = s.term_line_height
-    if settings_valid(probe) {
+    if domain.settings_valid(probe) {
         fixed.term_line_height = s.term_line_height
     }
     probe = d
     probe.term_cursor = s.term_cursor
-    if settings_valid(probe) {
+    if domain.settings_valid(probe) {
         fixed.term_cursor = s.term_cursor
     }
     probe = d
     probe.term_theme = s.term_theme
-    if settings_valid(probe) {
+    if domain.settings_valid(probe) {
         fixed.term_theme = s.term_theme
     }
     probe = d
     probe.lock_after = s.lock_after
-    if settings_valid(probe) {
+    if domain.settings_valid(probe) {
         fixed.lock_after = s.lock_after
     }
     probe = d
     probe.paste_limit_mb = s.paste_limit_mb
-    if settings_valid(probe) {
+    if domain.settings_valid(probe) {
         fixed.paste_limit_mb = s.paste_limit_mb
     }
     probe = d
     probe.rdp_graphics = s.rdp_graphics
-    if settings_valid(probe) {
+    if domain.settings_valid(probe) {
         fixed.rdp_graphics = s.rdp_graphics
     }
     probe = d
     probe.sync_interval = s.sync_interval
-    if settings_valid(probe) {
+    if domain.settings_valid(probe) {
         fixed.sync_interval = s.sync_interval
     }
     probe = d
     probe.toast_corner = s.toast_corner
-    if settings_valid(probe) {
+    if domain.settings_valid(probe) {
         fixed.toast_corner = s.toast_corner
     }
     return fixed
@@ -122,8 +122,8 @@ fn load_settings[T: ports.SettingsStore](store: T) -> domain.Settings! {
 // `keys_cleared`, `webview_cleared`, `cli_offer_shown`, `update_toast_version` and `last_seen_version`
 // are the app's own records, not preferences:
 // the stored values are kept whatever the page sends.
-fn save_settings[T: ports.SettingsStore](mut store: T, s: domain.Settings) -> domain.Settings! {
-    try check_settings(s)
+pub fn save_settings[T: ports.SettingsStore](mut store: T, s: domain.Settings) -> domain.Settings! {
+    try domain.check_settings(s)
     mut saved := s
     stored := try load_settings(store)
     saved.keys_cleared = stored.keys_cleared
@@ -140,7 +140,7 @@ fn save_settings[T: ports.SettingsStore](mut store: T, s: domain.Settings) -> do
 // Runs forget_cached_keys the first time a milestone-14 Flint starts on this
 // machine, and records that it did. Returns how many keys it removed (0 when it had
 // already run). A keychain that cannot be reached leaves it for the next start.
-fn forget_cached_keys_once[T: ports.SettingsStore, S: ports.VaultStore, K: ports.Keychain, R: ports.RecentStore](mut settings: T, store: S, keychain: K, recents: R) -> i64! {
+pub fn forget_cached_keys_once[T: ports.SettingsStore, S: ports.VaultStore, K: ports.Keychain, R: ports.RecentStore](mut settings: T, store: S, keychain: K, recents: R) -> i64! {
     mut s := try load_settings(settings)
     if s.keys_cleared {
         return 0
@@ -155,7 +155,7 @@ fn forget_cached_keys_once[T: ports.SettingsStore, S: ports.VaultStore, K: ports
 // the first time a Flint that turns autofill off starts on this machine, and records
 // that it did. Returns how many files it removed (0 when it had already run). A file it
 // cannot remove leaves it for the next start.
-fn clear_webview_autofill_once[T: ports.SettingsStore, W: ports.WebviewData](mut settings: T, mut webview: W) -> i64! {
+pub fn clear_webview_autofill_once[T: ports.SettingsStore, W: ports.WebviewData](mut settings: T, mut webview: W) -> i64! {
     mut s := try load_settings(settings)
     if s.webview_cleared {
         return 0
@@ -167,11 +167,11 @@ fn clear_webview_autofill_once[T: ports.SettingsStore, W: ports.WebviewData](mut
 }
 
 // Installed monospaced families, sorted and without duplicates.
-fn list_mono_fonts[F: ports.FontCatalog](fonts: F) -> []str! {
+pub fn list_mono_fonts[F: ports.FontCatalog](fonts: F) -> []str! {
     raw := try fonts.mono_font_families()
     mut names: []str = []
     for name in raw {
-        if name.len() == 0 || !text_valid("font", name, 128, false) {
+        if name.len() == 0 || !domain.text_valid("font", name, 128, false) {
             continue
         }
         mut seen := false
@@ -199,7 +199,7 @@ fn list_mono_fonts[F: ports.FontCatalog](fonts: F) -> []str! {
 
 // What ✕ does now (milestone 65, D-138 (3)): CLOSE_HIDE, CLOSE_QUIT or CLOSE_ASK, by
 // the tray and the person's answer kept in this machine's settings.
-fn window_close_action[T: ports.SettingsStore](store: T, has_tray: bool) -> str {
-    s := load_settings(store) or default_settings()
-    return close_decision(has_tray, s.close_action)
+pub fn window_close_action[T: ports.SettingsStore](store: T, has_tray: bool) -> str {
+    s := load_settings(store) or domain.default_settings()
+    return domain.close_decision(has_tray, s.close_action)
 }

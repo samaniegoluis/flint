@@ -116,34 +116,34 @@ type ExitCodeDoc struct {
 }
 
 fn exit_code_doc(code: str, meaning: str) -> ExitCodeDoc {
-    return ExitCodeDoc{ exit: i64(exit_code_for(code)), code: code, meaning: meaning }
+    return ExitCodeDoc{ exit: i64(domain.exit_code_for(code)), code: code, meaning: meaning }
 }
 
 fn exit_code_docs() -> []ExitCodeDoc {
     return [
-        exit_code_doc(ERR_INTERNAL, "An unexpected failure. Report it to the person."),
-        exit_code_doc(ERR_USAGE, "Bad command line: unknown command or flag, a missing argument. Fix the command; see this guide."),
-        exit_code_doc(ERR_NOT_FOUND, "No such vault, host, group, key, credential or tunnel. List them; never guess."),
-        exit_code_doc(ERR_CONFLICT, "Already exists, or still in use."),
-        exit_code_doc(ERR_LOCKED, "Nobody unlocked the vault within the approval wait, or Flint could not start. Run `flint vault unlock` (it waits for the person), then retry once."),
-        exit_code_doc(ERR_WRONG_PASSWORD, "The master password is wrong. Only a person types it."),
-        exit_code_doc(ERR_INVALID, "A value breaks a rule (alias, port, colour, key format)."),
-        exit_code_doc(ERR_UNSUPPORTED, "The vault was written by a newer Flint. Tell the person to update."),
-        exit_code_doc(ERR_KEYCHAIN, "The OS keychain refused (`vault lock`, `vault forget`, `vault connect`). Tell the person."),
-        exit_code_doc(ERR_IO, "The vault or a config file could not be read or written."),
-        exit_code_doc(ERR_HOST_KEY, "A server key is unknown and could not be confirmed, or it changed. Stop and ask the person to check it; never pass `--accept-new-host-key` on your own."),
-        exit_code_doc(ERR_AUTH, "The server accepted no login method in the vault. Tell the person."),
-        exit_code_doc(ERR_NETWORK, "The host could not be reached, or the connection dropped: VPN, address, firewall."),
-        exit_code_doc(ERR_TIMEOUT, "The command ran past `--exec-timeout`, or a server did not answer in time."),
-        exit_code_doc(ERR_DENIED, "The person said no, or the grant or token does not cover this command. Never retry without asking."),
-        exit_code_doc(ERR_APPROVAL_TIMEOUT, "Nobody answered Flint's window within the approval wait. One retry is fair, then ask."),
-        exit_code_doc(ERR_NOT_SUDOER, "`exec --sudo`: the host's login user may not use sudo. Tell the person."),
-        exit_code_doc(ERR_SUDO_PASSWORD, "`exec --sudo`: sudo refused the password Flint typed, or Flint has none for that host. Tell the person."),
-        exit_code_doc(ERR_PERMISSION, "`cp`: the user may not read that file or write in that folder, here or on the host."),
-        exit_code_doc(ERR_EXISTS, "`cp`: the file is already there. Ask before passing `--force`."),
-        exit_code_doc(ERR_NOT_DIR, "`cp`: a path that has to be a folder is a file."),
-        exit_code_doc(ERR_PORT_IN_USE, "`tunnel up`: another program holds that local port. Tell the person."),
-        exit_code_doc(ERR_HOST_TYPE, "A remote desktop host given to something only SSH does (`exec`, `cp`, `host test`, a tunnel)."),
-        exit_code_doc(ERR_REFUSED, "A remote desktop server or a vault server answered and refused."),
+        exit_code_doc(domain.ERR_INTERNAL, "An unexpected failure. Report it to the person."),
+        exit_code_doc(domain.ERR_USAGE, "Bad command line: unknown command or flag, a missing argument. Fix the command; see this guide."),
+        exit_code_doc(domain.ERR_NOT_FOUND, "No such vault, host, group, key, credential or tunnel. List them; never guess."),
+        exit_code_doc(domain.ERR_CONFLICT, "Already exists, or still in use."),
+        exit_code_doc(domain.ERR_LOCKED, "Nobody unlocked the vault within the approval wait, or Flint could not start. Run `flint vault unlock` (it waits for the person), then retry once."),
+        exit_code_doc(domain.ERR_WRONG_PASSWORD, "The master password is wrong. Only a person types it."),
+        exit_code_doc(domain.ERR_INVALID, "A value breaks a rule (alias, port, colour, key format)."),
+        exit_code_doc(domain.ERR_UNSUPPORTED, "The vault was written by a newer Flint. Tell the person to update."),
+        exit_code_doc(domain.ERR_KEYCHAIN, "The OS keychain refused (`vault lock`, `vault forget`, `vault connect`). Tell the person."),
+        exit_code_doc(domain.ERR_IO, "The vault or a config file could not be read or written."),
+        exit_code_doc(domain.ERR_HOST_KEY, "A server key is unknown and could not be confirmed, or it changed. Stop and ask the person to check it; never pass `--accept-new-host-key` on your own."),
+        exit_code_doc(domain.ERR_AUTH, "The server accepted no login method in the vault. Tell the person."),
+        exit_code_doc(domain.ERR_NETWORK, "The host could not be reached, or the connection dropped: VPN, address, firewall."),
+        exit_code_doc(domain.ERR_TIMEOUT, "The command ran past `--exec-timeout`, or a server did not answer in time."),
+        exit_code_doc(domain.ERR_DENIED, "The person said no, or the grant or token does not cover this command. Never retry without asking."),
+        exit_code_doc(domain.ERR_APPROVAL_TIMEOUT, "Nobody answered Flint's window within the approval wait. One retry is fair, then ask."),
+        exit_code_doc(domain.ERR_NOT_SUDOER, "`exec --sudo`: the host's login user may not use sudo. Tell the person."),
+        exit_code_doc(domain.ERR_SUDO_PASSWORD, "`exec --sudo`: sudo refused the password Flint typed, or Flint has none for that host. Tell the person."),
+        exit_code_doc(domain.ERR_PERMISSION, "`cp`: the user may not read that file or write in that folder, here or on the host."),
+        exit_code_doc(domain.ERR_EXISTS, "`cp`: the file is already there. Ask before passing `--force`."),
+        exit_code_doc(domain.ERR_NOT_DIR, "`cp`: a path that has to be a folder is a file."),
+        exit_code_doc(domain.ERR_PORT_IN_USE, "`tunnel up`: another program holds that local port. Tell the person."),
+        exit_code_doc(domain.ERR_HOST_TYPE, "A remote desktop host given to something only SSH does (`exec`, `cp`, `host test`, a tunnel)."),
+        exit_code_doc(domain.ERR_REFUSED, "A remote desktop server or a vault server answered and refused."),
     ]
 }

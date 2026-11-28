@@ -69,14 +69,14 @@ type ApprovalResolved struct {
 // a socket that cannot be made, the app runs without serving: the CLI then asks for
 // the master password. Returns a listener with `open` false in that case.
 fn start_serving(config_dir: str) -> flint_ipc.IpcListener {
-    path := ipc_socket_path(config_dir)
+    path := flint_ipc.ipc_socket_path(config_dir)
     // On a first launch nothing has written to the config folder yet.
-    fs.mkdir_all(config_dir) or err {
-        write_stderr("flint-gui: not serving the CLI: cannot create {config_dir}\n")
+    fs.mkdir_all(config_dir) or {
+        process.write_stderr("flint-gui: not serving the CLI: cannot create {config_dir}\n")
         return flint_ipc.IpcListener{ fd: 0, open: false, path: path, allowed_uid: -1 }
     }
-    l := ipc_listen(path) or err {
-        write_stderr("flint-gui: not serving the CLI: {err.message()}\n")
+    l := flint_ipc.ipc_listen(path) or err {
+        process.write_stderr("flint-gui: not serving the CLI: {err.message()}\n")
         return flint_ipc.IpcListener{ fd: 0, open: false, path: path, allowed_uid: -1 }
     }
     return l
@@ -98,9 +98,9 @@ fn lock_now(mut store: vault.LockedVaultStore, st: GuiState, mut app: webui.App,
     // The vault's lock screen replaces the window's.
     st.holder.set_window_locked(false)
     st.forget()
-    close_vault(mut store)
+    application.close_vault(mut store)
     st.release()
-    write_stderr("flint-gui: vault locked ({reason})\n")
+    process.write_stderr("flint-gui: vault locked ({reason})\n")
     app.emit("vault:locked", VaultLocked{ path: s.path, name: s.name, reason: reason })
     return true
 }
@@ -110,10 +110,10 @@ fn lock_now(mut store: vault.LockedVaultStore, st: GuiState, mut app: webui.App,
 fn run_lock_timer(mut store: vault.LockedVaultStore, st: GuiState, mut app: webui.App) {
     for !st.holder.quitting() {
         time.sleep_ms(LOCK_TICK_MS)
-        event := system_events_take()
+        event := uievents.system_events_take()
         if event.len() > 0 {
             _ = lock_now(mut store, st, mut app, event)
-        } else if st.unlocked() && idle_lock_due(time.now_ms(), st.holder.last_activity(), st.holder.lock_after()) {
+        } else if st.unlocked() && domain.idle_lock_due(time.now_ms(), st.holder.last_activity(), st.holder.lock_after()) {
             _ = lock_now(mut store, st, mut app, "idle")
         }
     }
@@ -122,7 +122,7 @@ fn run_lock_timer(mut store: vault.LockedVaultStore, st: GuiState, mut app: webu
 // One accept loop. Several run on the same listener (SERVE_ACCEPTORS).
 fn run_accept_loop(listener: flint_ipc.IpcListener, c: flint_crypto.Sodium, mut store: vault.LockedVaultStore, kc: flint_keychain.OsKeychain, recents: config.JsonRecentStore, st: GuiState, mut app: webui.App) {
     for !listener.stopped() {
-        got := listener.accept_wait(SERVE_ACCEPT_WAIT_MS) or err {
+        got := listener.accept_wait(SERVE_ACCEPT_WAIT_MS) or {
             break
         }
         conn := got
@@ -139,30 +139,30 @@ fn app_state_for(st: GuiState, path: str) -> clicmd.AppState {
     if st.unlocked() {
         s := st.vault_session()
         if s.path == path {
-            return clicmd.AppState{ state: APP_UNLOCKED, name: s.name }
+            return clicmd.AppState{ state: clicmd.APP_UNLOCKED, name: s.name }
         }
-        return clicmd.AppState{ state: APP_OTHER, name: s.name }
+        return clicmd.AppState{ state: clicmd.APP_OTHER, name: s.name }
     }
-    (asked, caller) := st.holder.ask()
+    (asked, _caller) := st.holder.ask()
     if asked == path {
-        return clicmd.AppState{ state: APP_ASKING, name: "" }
+        return clicmd.AppState{ state: clicmd.APP_ASKING, name: "" }
     }
-    return clicmd.AppState{ state: APP_LOCKED, name: "" }
+    return clicmd.AppState{ state: clicmd.APP_LOCKED, name: "" }
 }
 
 // Answers one client's request.
 fn serve_client(mut conn: flint_ipc.IpcConn, c: flint_crypto.Sodium, mut store: vault.LockedVaultStore, kc: flint_keychain.OsKeychain, recents: config.JsonRecentStore, st: GuiState, mut app: webui.App) {
     defer conn.ipc_close()
-    text := conn.recv(SERVE_SEND_MS) or {
+    text := conn.recv(clicmd.SERVE_SEND_MS) or {
         return
     }
-    mut req := parse_serve_request(text) or {
+    mut req := clicmd.parse_serve_request(text) or {
         return
     }
     // The vault the app holds, named through a symbolic link (`/tmp` for
     // `/private/tmp`, a linked cloud folder) is the vault the app holds: every check
     // below compares paths as text.
-    if st.unlocked() && same_file_path(req.vault, st.vault_session().path) {
+    if st.unlocked() && process.same_file_path(req.vault, st.vault_session().path) {
         req.vault = st.vault_session().path
     }
     // A command from the CLI is someone using the vault.
@@ -173,24 +173,24 @@ fn serve_client(mut conn: flint_ipc.IpcConn, c: flint_crypto.Sodium, mut store: 
         serve_session(mut conn, req, c, mut store, kc, recents, st, mut app)
     } else if req.kind == "status" {
         mut now := app_state_for(st, req.vault)
-        if now.state == APP_LOCKED || now.state == APP_ASKING {
+        if now.state == clicmd.APP_LOCKED || now.state == clicmd.APP_ASKING {
             // Why (milestone 61): nothing from inside the vault (Principle 5).
             now.reason = st.holder.lock_reason()
-            now.detail = lock_reason_text(now.reason, st.holder.lock_after())
+            now.detail = domain.lock_reason_text(now.reason, st.holder.lock_after())
         }
         now.wait_ms = st.holder.approval_wait()
-        _ = conn.send(app_state_full_json(now), SERVE_SEND_MS) or {}
+        _ = conn.send(clicmd.app_state_full_json(now), clicmd.SERVE_SEND_MS) or {}
     } else if req.kind == "unlock" {
         now := app_state_for(st, req.vault)
-        if now.state == APP_LOCKED || now.state == APP_ASKING {
+        if now.state == clicmd.APP_LOCKED || now.state == clicmd.APP_ASKING {
             name := recent_name(recents, req.vault)
             st.holder.set_ask(req.vault, req.caller)
             // Who asks, kept until the unlock: the unlock screen may allow it at once.
-            caller := ipc_caller(conn.peer)
-            mut ap := new_approval(hex.encode(c.random_bytes(8)), "", caller, req.caller, req.need, time.now_ms())
+            caller := flint_ipc.ipc_caller(conn.peer)
+            mut ap := domain.new_approval(hex.encode(c.random_bytes(8)), "", caller, req.caller, req.need, time.now_ms())
             ap.deadline_ms = ap.created_ms + st.holder.approval_wait()
             if req.command.len() > 0 {
-                ap.command = whole_command(req.command)
+                ap.command = domain.whole_command(req.command)
             }
             st.holder.access_hold()
             mut book := st.holder.access_book()
@@ -200,43 +200,43 @@ fn serve_client(mut conn: flint_ipc.IpcConn, c: flint_crypto.Sodium, mut store: 
             app.emit("vault:unlock-request", UnlockRequest{ path: req.vault, name: name, caller: req.caller, label: ap.label, command: ap.command })
             // A phone alert (milestone 63), decided before the window comes to the front;
             // a second command while Flint already asks adds none.
-            _ = queue_alert(st, ALERT_LOCKED, now.state == APP_ASKING)
+            _ = queue_alert(st, domain.ALERT_LOCKED, now.state == clicmd.APP_ASKING)
             show_window(mut app)
             // How long the client may wait for the person (milestone 61).
-            _ = conn.send(app_state_full_json(clicmd.AppState{ state: APP_ASKING, name: "", wait_ms: st.holder.approval_wait() }), SERVE_SEND_MS) or {}
+            _ = conn.send(clicmd.app_state_full_json(clicmd.AppState{ state: clicmd.APP_ASKING, name: "", wait_ms: st.holder.approval_wait() }), clicmd.SERVE_SEND_MS) or {}
         } else {
-            _ = conn.send(app_state_full_json(clicmd.AppState{ state: now.state, name: now.name, wait_ms: st.holder.approval_wait() }), SERVE_SEND_MS) or {}
+            _ = conn.send(clicmd.app_state_full_json(clicmd.AppState{ state: now.state, name: now.name, wait_ms: st.holder.approval_wait() }), clicmd.SERVE_SEND_MS) or {}
         }
     } else if req.kind == "show" {
         // A second launch of Flint (milestone 14): this one shows its window, locked
         // if it was closed to the tray, and the new one exits. Nothing of the vault
         // travels, so no grant is checked (as for status, unlock and lock).
         show_window(mut app)
-        _ = conn.send(app_state_json(app_state_for(st, req.vault).state, ""), SERVE_SEND_MS) or {}
+        _ = conn.send(clicmd.app_state_json(app_state_for(st, req.vault).state, ""), clicmd.SERVE_SEND_MS) or {}
     } else if req.kind == "lock" {
         now := app_state_for(st, req.vault)
         mut locked := false
-        if now.state == APP_UNLOCKED {
+        if now.state == clicmd.APP_UNLOCKED {
             locked = lock_now(mut store, st, mut app, "cli")
         }
         // CFIRE-UPSTREAM: CF-196 (`mut x := CONST` of another package infers no type)
-        mut answer: str = APP_LOCKED
+        mut answer: str = clicmd.APP_LOCKED
         if locked {
-            answer = APP_UNLOCKED
+            answer = clicmd.APP_UNLOCKED
         }
-        _ = conn.send(app_state_json(answer, ""), SERVE_SEND_MS) or {}
+        _ = conn.send(clicmd.app_state_json(answer, ""), clicmd.SERVE_SEND_MS) or {}
     }
 }
 
 // The name the recent list gives `path`, or the file's name.
 fn recent_name(recents: config.JsonRecentStore, path: str) -> str {
-    list := list_recents(recents) or []
+    list := application.list_recents(recents) or []
     for r in list {
         if r.path == path {
             return r.name
         }
     }
-    return vault_name_from_path(path)
+    return application.vault_name_from_path(path)
 }
 
 // ---- Caller approval (milestone 12, Principle 12) -----------------------------------
@@ -275,7 +275,7 @@ type GateOutcome struct {
 // Names in the log entry the token `secret` still matches, when it is revoked or
 // expired.
 fn name_known_token(c: flint_crypto.Sodium, tokens: []domain.Token, secret: str, mut entry: domain.ActivityEntry) {
-    known := match_token(c, tokens, secret) or {
+    known := application.match_token(c, tokens, secret) or {
         return
     }
     entry.token = known.id
@@ -285,14 +285,14 @@ fn name_known_token(c: flint_crypto.Sodium, tokens: []domain.Token, secret: str,
 // What the approval window shows for a `cp` request: for a copy between two hosts,
 // which of them the caller's own grants already reach (design 16g3).
 fn copy_ask_for(parsed: clicmd.ParsedArgs, st: GuiState, caller: domain.Caller, vault_id: str, cat: domain.Catalog, now: i64, cwd: str) -> domain.CopyAsk! {
-    r := try copy_request_from_args(parsed)
-    if r.direction == COPY_RELAY {
+    r := try clicmd.copy_request_from_args(parsed)
+    if r.direction == domain.COPY_RELAY {
         grants := st.holder.access_book().grants
-        (from_ok, from_until) := exec_allowed_until(grants, caller, vault_id, r.alias, cat, now)
-        (to_ok, to_until) := exec_allowed_until(grants, caller, vault_id, r.to_alias, cat, now)
+        (from_ok, from_until) := domain.exec_allowed_until(grants, caller, vault_id, r.alias, cat, now)
+        (to_ok, to_until) := domain.exec_allowed_until(grants, caller, vault_id, r.to_alias, cat, now)
         return domain.CopyAsk{ direction: r.direction, host: r.alias, local: "", remote: r.remote, to_host: r.to_alias, to_path: r.local, recursive: r.recursive, force: r.force, host_allowed: from_ok, host_allowed_until: from_until, to_allowed: to_ok, to_allowed_until: to_until }
     }
-    return domain.CopyAsk{ direction: r.direction, host: r.alias, local: absolute_from(cwd, r.local), remote: r.remote, recursive: r.recursive, force: r.force, host_allowed: false, host_allowed_until: 0, to_allowed: false, to_allowed_until: 0 }
+    return domain.CopyAsk{ direction: r.direction, host: r.alias, local: domain.absolute_from(cwd, r.local), remote: r.remote, recursive: r.recursive, force: r.force, host_allowed: false, host_allowed_until: 0, to_allowed: false, to_allowed_until: 0 }
 }
 
 fn refuse(msg: str) -> GateOutcome {
@@ -303,7 +303,7 @@ fn refuse(msg: str) -> GateOutcome {
 // read), under `grant` ("" for a token or the window alone).
 fn go_ahead(st: GuiState, store: vault.LockedVaultStore, session: application.VaultSession, entry: domain.ActivityEntry, grant: domain.Grant?, sudo_typed: str, mut app: webui.App) -> GateOutcome {
     mut e := entry
-    e.state = ACTIVITY_RUNNING
+    e.state = domain.ACTIVITY_RUNNING
     mut notice := NoticeOf{ notify: false, root: false, left_ms: 0 }
     if g := grant {
         e.grant = g.id
@@ -315,28 +315,28 @@ fn go_ahead(st: GuiState, store: vault.LockedVaultStore, session: application.Va
         }
     }
     mut id: i64 = 0
-    if activity_logged(domain.AccessNeed{ action: e.action, host: "", host2: "" }) {
+    if domain.activity_logged(domain.AccessNeed{ action: e.action, host: "", host2: "" }) {
         id = log_activity_notify(st, store, session, e, notice, mut app)
     }
     return GateOutcome{ refusal: "", sudo_typed: sudo_typed, entry_id: id, grant_id: e.grant }
 }
 
 fn gate(conn: flint_ipc.IpcConn, req: clicmd.ServeRequest, c: flint_crypto.Sodium, store: vault.LockedVaultStore, st: GuiState, mut app: webui.App, session_kind: bool) -> GateOutcome {
-    parsed := parse_cli_args(req.argv) or {
+    parsed := clicmd.parse_cli_args(req.argv) or {
         return refuse("")
     }
-    need := access_need(parsed)
-    caller := ipc_caller(conn.peer)
-    mut ask := no_token_ask()
-    mut sudo := no_sudo_ask()
-    if need.action == ACCESS_TOKEN && req.token.len() == 0 {
+    need := clicmd.access_need(parsed)
+    caller := flint_ipc.ipc_caller(conn.peer)
+    mut ask := domain.no_token_ask()
+    mut sudo := domain.no_sudo_ask()
+    if need.action == domain.ACCESS_TOKEN && req.token.len() == 0 {
         // A request the command would refuse never reaches the owner.
-        treq := token_request_from_flags(parsed) or err {
+        treq := clicmd.token_request_from_flags(parsed) or err {
             return refuse("{err.message()}")
         }
-        ask = domain.TokenAsk{ name: str(treq.name.trim()), allows: token_allows_text(treq.read, treq.exec, treq.write), reaches: token_reach_text(treq.scope.all, treq.scope.groups, treq.scope.hosts), ttl: treq.ttl }
+        ask = domain.TokenAsk{ name: str(treq.name.trim()), allows: clicmd.token_allows_text(treq.read, treq.exec, treq.write), reaches: clicmd.token_reach_text(treq.scope.all, treq.scope.groups, treq.scope.hosts), ttl: treq.ttl }
         st.hold()
-        check_token_request(store, treq) or err {
+        application.check_token_request(store, treq) or err {
             st.release()
             return refuse("{err.message()}")
         }
@@ -345,23 +345,23 @@ fn gate(conn: flint_ipc.IpcConn, req: clicmd.ServeRequest, c: flint_crypto.Sodiu
             ask.reaches = "whole vault"
         }
     }
-    if need.action == ACCESS_SUDO && req.token.len() == 0 {
+    if need.action == domain.ACCESS_SUDO && req.token.len() == 0 {
         // Checked before the window: an unknown host or no command never reaches it.
         st.hold()
-        sudo = sudo_ask_for(store, need.host, parsed.rest) or err {
+        sudo = application.sudo_ask_for(store, need.host, parsed.rest) or err {
             st.release()
             return refuse("{err.message()}")
         }
         st.release()
     }
-    mut tunnel := no_tunnel_ask()
-    if parsed.positional(0) == "tunnel" && need.action == ACCESS_EXEC && req.token.len() == 0 {
+    mut tunnel := domain.no_tunnel_ask()
+    if parsed.positional(0) == "tunnel" && need.action == domain.ACCESS_EXEC && req.token.len() == 0 {
         // Checked before the window: an unknown host or tunnel never reaches it.
-        (alias, tname) := split_tunnel_ref(parsed.positional(2)) or err {
+        (alias, tname) := domain.split_tunnel_ref(parsed.positional(2)) or err {
             return refuse("{err.message()}")
         }
         st.hold()
-        tunnel = tunnel_ask(store, store, new_native_tunnels(), parsed.positional(1), alias, tname) or err {
+        tunnel = application.tunnel_ask(store, store, flint_ssh.new_native_tunnels(), parsed.positional(1), alias, tname) or err {
             st.release()
             return refuse("{err.message()}")
         }
@@ -371,32 +371,32 @@ fn gate(conn: flint_ipc.IpcConn, req: clicmd.ServeRequest, c: flint_crypto.Sodiu
     session := st.vault_session()
     if !st.unlocked() || session.path != req.vault {
         st.release()
-        return refuse(coded(ERR_LOCKED, "the vault locked before the command ran"))
+        return refuse(domain.coded(domain.ERR_LOCKED, "the vault locked before the command ran"))
     }
-    cat := load_catalog(store) or domain.Catalog{ groups: [], hosts: [], keys: [], creds: [] }
+    cat := application.load_catalog(store) or domain.Catalog{ groups: [], hosts: [], keys: [], creds: [] }
     mut tokens: []domain.Token = []
     if req.token.len() > 0 {
         tokens = store.tokens_all() or []
     }
     st.release()
     now := time.now_ms()
-    logged := whole_command(activity_command(parsed, ask, sudo))
-    mut entry := domain.ActivityEntry{ id: 0, at: time.unix_seconds(), caller: caller_label(caller), via: ACTIVITY_VIA_GRANT, token: "", action: need.action, host: need_hosts(need), command: logged.text, outcome: ACTIVITY_ALLOWED, cut: logged.cut }
+    logged := domain.whole_command(activity_command(parsed, ask, sudo))
+    mut entry := domain.ActivityEntry{ id: 0, at: time.unix_seconds(), caller: domain.caller_label(caller), via: domain.ACTIVITY_VIA_GRANT, token: "", action: need.action, host: domain.need_hosts(need), command: logged.text, outcome: domain.ACTIVITY_ALLOWED, cut: logged.cut }
 
     if req.token.len() > 0 {
-        entry.via = ACTIVITY_VIA_TOKEN
-        if need.action == ACCESS_TOKEN {
-            entry.outcome = ACTIVITY_DENIED
+        entry.via = domain.ACTIVITY_VIA_TOKEN
+        if need.action == domain.ACCESS_TOKEN {
+            entry.outcome = domain.ACTIVITY_DENIED
             log_activity(st, store, session, entry, mut app)
-            return refuse(coded(ERR_DENIED, "a token cannot create tokens: run `flint token create` from your terminal, without FLINT_TOKEN, and approve it in Flint"))
+            return refuse(domain.coded(domain.ERR_DENIED, "a token cannot create tokens: run `flint token create` from your terminal, without FLINT_TOKEN, and approve it in Flint"))
         }
-        if need.action == ACCESS_SUDO {
-            entry.outcome = ACTIVITY_DENIED
+        if need.action == domain.ACCESS_SUDO {
+            entry.outcome = domain.ACTIVITY_DENIED
             log_activity(st, store, session, entry, mut app)
-            return refuse(coded(ERR_DENIED, "a token cannot run commands as root: `exec --sudo` is approved one by one in Flint's window"))
+            return refuse(domain.coded(domain.ERR_DENIED, "a token cannot run commands as root: `exec --sudo` is approved one by one in Flint's window"))
         }
-        t := check_token_in(c, tokens, req.token, time.unix_seconds()) or err {
-            entry.outcome = ACTIVITY_DENIED
+        t := application.check_token_in(c, tokens, req.token, time.unix_seconds()) or err {
+            entry.outcome = domain.ACTIVITY_DENIED
             // A revoked or expired token is still named in the log.
             name_known_token(c, tokens, req.token, mut entry)
             log_activity(st, store, session, entry, mut app)
@@ -404,32 +404,32 @@ fn gate(conn: flint_ipc.IpcConn, req: clicmd.ServeRequest, c: flint_crypto.Sodiu
         }
         entry.token = t.id
         entry.caller = "{entry.caller} (token {t.name})"
-        if !token_covers(t, session.id, need, cat, time.unix_seconds()) {
-            entry.outcome = ACTIVITY_DENIED
+        if !domain.token_covers(t, session.id, need, cat, time.unix_seconds()) {
+            entry.outcome = domain.ACTIVITY_DENIED
             log_activity(st, store, session, entry, mut app)
-            return refuse(coded(ERR_DENIED, "the token '{t.name}' does not allow this; see `flint token list`"))
+            return refuse(domain.coded(domain.ERR_DENIED, "the token '{t.name}' does not allow this; see `flint token list`"))
         }
         return go_ahead(st, store, session, entry, none, "", mut app)
     }
 
-    if !asked_every_time(need) {
-        if g := find_grant(st.holder.access_book().grants, caller, session.id, need, cat, now) {
+    if !domain.asked_every_time(need) {
+        if g := domain.find_grant(st.holder.access_book().grants, caller, session.id, need, cat, now) {
             return go_ahead(st, store, session, entry, g, "", mut app)
         }
     }
-    if need.action == ACCESS_SUDO {
+    if need.action == domain.ACCESS_SUDO {
         // Inside a root period the person gave (milestone 57, Principle 12): no window,
         // the command shows in the period's notice.
         if hit := root_period_for(st, caller, session.id, need, cat, now) {
             return go_ahead(st, store, session, entry, hit.grant, hit.typed, mut app)
         }
     }
-    entry.via = ACTIVITY_VIA_WINDOW
+    entry.via = domain.ACTIVITY_VIA_WINDOW
     id := hex.encode(c.random_bytes(8))
     // What the window shows is read from the argv that runs, never from the client's
     // own words (`req.caller`), which a client could set to anything (milestone 15).
-    mut ap := new_approval(id, session.id, caller, caller_summary(parsed), need, now)
-    ap.command = whole_command(caller_command(parsed))
+    mut ap := domain.new_approval(id, session.id, caller, clicmd.caller_summary(parsed), need, now)
+    ap.command = domain.whole_command(clicmd.caller_command(parsed))
     wait_ms := st.holder.approval_wait()
     ap.deadline_ms = now + wait_ms
     ap.token = ask
@@ -444,10 +444,10 @@ fn gate(conn: flint_ipc.IpcConn, req: clicmd.ServeRequest, c: flint_crypto.Sodiu
     book.pending.push(ap)
     st.holder.put_access_book(book)
     st.holder.access_release()
-    write_stderr("flint-gui: asking the owner to approve {ap.label}\n")
+    process.write_stderr("flint-gui: asking the owner to approve {ap.label}\n")
     app.emit("access:request", ap)
     // A phone alert (milestone 63), decided before the window comes to the front.
-    entry.alerted = queue_alert(st, ALERT_APPROVAL, false)
+    entry.alerted = queue_alert(st, domain.ALERT_APPROVAL, false)
     show_window(mut app)
     notice := "Waiting for approval in Flint ({ap.label}), up to {wait_text(wait_ms)}…"
     send_wait(conn, notice, ap.deadline_ms, session_kind)
@@ -455,23 +455,23 @@ fn gate(conn: flint_ipc.IpcConn, req: clicmd.ServeRequest, c: flint_crypto.Sodiu
     for true {
         time.sleep_ms(APPROVAL_POLL_MS)
         t := time.now_ms()
-        cur := find_approval(st.holder.access_book(), id) or {
-            app.emit("access:resolved", ApprovalResolved{ id: id, state: APPROVAL_DENIED })
-            return refuse(coded(ERR_LOCKED, "the vault locked while Flint was asking for approval"))
+        cur := domain.find_approval(st.holder.access_book(), id) or {
+            app.emit("access:resolved", ApprovalResolved{ id: id, state: domain.APPROVAL_DENIED })
+            return refuse(domain.coded(domain.ERR_LOCKED, "the vault locked while Flint was asking for approval"))
         }
         state := cur.state
-        if state != APPROVAL_PENDING {
+        if state != domain.APPROVAL_PENDING {
             typed := forget_approval(st, id)
             app.emit("access:resolved", ApprovalResolved{ id: id, state: state })
-            if state == APPROVAL_DENIED {
-                entry.outcome = ACTIVITY_DENIED
+            if state == domain.APPROVAL_DENIED {
+                entry.outcome = domain.ACTIVITY_DENIED
                 log_activity(st, store, session, entry, mut app)
-                return refuse(coded(ERR_DENIED, "the owner denied this request in Flint"))
+                return refuse(domain.coded(domain.ERR_DENIED, "the owner denied this request in Flint"))
             }
             // A token or a sudo command is allowed for this one request; nothing else is.
-            if asked_every_time(need) {
+            if domain.asked_every_time(need) {
                 // A root period just given covers this first command: its notice counts it.
-                if need.action == ACCESS_SUDO {
+                if need.action == domain.ACCESS_SUDO {
                     if hit := root_period_for(st, caller, session.id, need, cat, t) {
                         return go_ahead(st, store, session, entry, hit.grant, typed, mut app)
                     }
@@ -479,17 +479,17 @@ fn gate(conn: flint_ipc.IpcConn, req: clicmd.ServeRequest, c: flint_crypto.Sodiu
                 return go_ahead(st, store, session, entry, none, typed, mut app)
             }
             // The grant just given covers this first command too: its notice counts it.
-            if g := find_grant(st.holder.access_book().grants, caller, session.id, need, cat, t) {
+            if g := domain.find_grant(st.holder.access_book().grants, caller, session.id, need, cat, t) {
                 return go_ahead(st, store, session, entry, g, typed, mut app)
             }
-            return refuse(coded(ERR_DENIED, "the access allowed in Flint does not cover this request"))
+            return refuse(domain.coded(domain.ERR_DENIED, "the access allowed in Flint does not cover this request"))
         }
         if t >= ap.deadline_ms {
             _ = forget_approval(st, id)
             app.emit("access:resolved", ApprovalResolved{ id: id, state: "expired" })
-            entry.outcome = ACTIVITY_TIMEOUT
+            entry.outcome = domain.ACTIVITY_TIMEOUT
             log_activity(st, store, session, entry, mut app)
-            return refuse(coded(ERR_APPROVAL_TIMEOUT, "nobody answered in Flint within {wait_text(wait_ms)}; run the command again and allow it there"))
+            return refuse(domain.coded(domain.ERR_APPROVAL_TIMEOUT, "nobody answered in Flint within {wait_text(wait_ms)}; run the command again and allow it there"))
         }
         // A client that hung up is not waiting any more. Before a session's raw mode
         // the client sends nothing, so anything readable is its close.
@@ -513,7 +513,7 @@ fn gate(conn: flint_ipc.IpcConn, req: clicmd.ServeRequest, c: flint_crypto.Sodiu
 // for `token create` the token's name, what it allows and where; for `exec --sudo`
 // the full argv, each argument quoted. Never a flag's value otherwise.
 fn activity_command(p: clicmd.ParsedArgs, ask: domain.TokenAsk, sudo: domain.SudoAsk) -> str {
-    s := caller_command(p)
+    s := clicmd.caller_command(p)
     if sudo.host.len() > 0 {
         // The whole command, as approved: what ran as root (milestone 13).
         return "flint exec {sudo.host} --sudo -- {quoted_argv(sudo.argv).join(" ")}"
@@ -557,8 +557,8 @@ fn log_activity_notify(st: GuiState, store: vault.LockedVaultStore, session: app
 
 // The new entry's id, 0 when the log was not written (said by its code only).
 fn add_activity(mut ts: vault.LockedVaultStore, e: domain.ActivityEntry) -> i64 {
-    id := record_activity(mut ts, e, time.unix_seconds()) or err {
-        write_stderr("flint-gui: the activity log was not written ({error_code_of("{err.message()}")})\n")
+    id := application.record_activity(mut ts, e, time.unix_seconds()) or err {
+        process.write_stderr("flint-gui: the activity log was not written ({error_code_of("{err.message()}")})\n")
         return 0
     }
     return id
@@ -566,8 +566,8 @@ fn add_activity(mut ts: vault.LockedVaultStore, e: domain.ActivityEntry) -> i64 
 
 // Whether entry `id` was completed with `end`.
 fn end_activity(mut ts: vault.LockedVaultStore, id: i64, end: domain.ActivityEnd) -> bool {
-    done := finish_activity(mut ts, id, end) or err {
-        write_stderr("flint-gui: the activity log was not completed ({error_code_of("{err.message()}")})\n")
+    done := application.finish_activity(mut ts, id, end) or err {
+        process.write_stderr("flint-gui: the activity log was not completed ({error_code_of("{err.message()}")})\n")
         return false
     }
     return done
@@ -591,7 +591,7 @@ type ActivityAdded struct {
 }
 
 fn activity_added(e: domain.ActivityEntry, id: i64, n: NoticeOf) -> ActivityAdded {
-    return ActivityAdded{ id: id, outcome: e.outcome, grant: e.grant, notify: n.notify, program: label_program(e.caller), hosts: e.host, action: e.action, at: e.at, state: e.state, root: n.root, left_ms: n.left_ms }
+    return ActivityAdded{ id: id, outcome: e.outcome, grant: e.grant, notify: n.notify, program: domain.label_program(e.caller), hosts: e.host, action: e.action, at: e.at, state: e.state, root: n.root, left_ms: n.left_ms }
 }
 
 // An entry's command ended (milestone 56).
@@ -609,7 +609,7 @@ fn finish_logged(st: GuiState, store: vault.LockedVaultStore, session: applicati
     if g.entry_id <= 0 {
         return
     }
-    end := activity_end(ended.exit, ended.error_code, time.now_ms() - started_ms)
+    end := domain.activity_end(ended.exit, ended.error_code, time.now_ms() - started_ms)
     st.hold()
     still := st.unlocked() && st.vault_session().path == session.path
     mut done := false
@@ -634,9 +634,9 @@ fn approval_wait_override_ms() -> i64 {
 
 fn send_wait(conn: flint_ipc.IpcConn, notice: str, deadline_ms: i64, session_kind: bool) {
     if session_kind {
-        _ = conn.send(relay_frame(TAG_WAIT, notice), SERVE_SEND_MS) or {}
+        _ = conn.send(flint_ipc.relay_frame(flint_ipc.TAG_WAIT, notice), clicmd.SERVE_SEND_MS) or {}
     } else {
-        _ = conn.send(wait_notice_json(notice, deadline_ms), SERVE_SEND_MS) or {}
+        _ = conn.send(clicmd.wait_notice_json(notice, deadline_ms), clicmd.SERVE_SEND_MS) or {}
     }
 }
 
@@ -651,13 +651,13 @@ type PeriodHit struct {
 fn root_period_for(st: GuiState, caller: domain.Caller, vault_id: str, need: domain.AccessNeed, cat: domain.Catalog, now: i64) -> PeriodHit? {
     st.holder.access_hold()
     mut book := st.holder.access_book()
-    prune_period_typed(mut book, now)
+    domain.prune_period_typed(mut book, now)
     st.holder.put_access_book(book)
     st.holder.access_release()
-    g := find_root_period(book.grants, caller, vault_id, need, cat, now, st.holder.sudo_periods()) or {
+    g := domain.find_root_period(book.grants, caller, vault_id, need, cat, now, st.holder.sudo_periods()) or {
         return none
     }
-    return PeriodHit{ grant: g, typed: period_sudo_typed(book, g.id) }
+    return PeriodHit{ grant: g, typed: domain.period_sudo_typed(book, g.id) }
 }
 
 // Drops approval `id` from the book, with any sudo password typed for it, which it
@@ -665,8 +665,8 @@ fn root_period_for(st: GuiState, caller: domain.Caller, vault_id: str, need: dom
 fn forget_approval(st: GuiState, id: str) -> str {
     st.holder.access_hold()
     mut book := st.holder.access_book()
-    drop_approval(mut book, id)
-    typed := take_sudo_typed(mut book, id)
+    domain.drop_approval(mut book, id)
+    typed := domain.take_sudo_typed(mut book, id)
     st.holder.put_access_book(book)
     st.holder.access_release()
     return typed
@@ -676,7 +676,7 @@ fn forget_approval(st: GuiState, id: str) -> str {
 fn quoted_argv(argv: []str) -> []str {
     mut q: []str = []
     for a in argv {
-        q.push(shell_single_quote(a))
+        q.push(domain.shell_single_quote(a))
     }
     return q
 }
@@ -686,12 +686,12 @@ fn quoted_argv(argv: []str) -> []str {
 fn run_servable_here(req: clicmd.ServeRequest, st: GuiState) -> bool {
     st.hold()
     defer st.release()
-    return st.unlocked() && st.vault_session().path == req.vault && run_request_servable(req)
+    return st.unlocked() && st.vault_session().path == req.vault && clicmd.run_request_servable(req)
 }
 
 fn serve_run(mut conn: flint_ipc.IpcConn, req: clicmd.ServeRequest, c: flint_crypto.Sodium, mut store: vault.LockedVaultStore, kc: flint_keychain.OsKeychain, recents: config.JsonRecentStore, st: GuiState, mut app: webui.App) {
     if !run_servable_here(req, st) {
-        _ = conn.send(json_not_served(), SERVE_SEND_MS) or {}
+        _ = conn.send(clicmd.json_not_served(), clicmd.SERVE_SEND_MS) or {}
         return
     }
     outcome := gate(conn, req, c, store, st, mut app, false)
@@ -700,7 +700,7 @@ fn serve_run(mut conn: flint_ipc.IpcConn, req: clicmd.ServeRequest, c: flint_cry
         return
     }
     if refusal.len() > 0 {
-        _ = conn.send(serve_reply_json(refused_reply(refusal, req)), SERVE_SEND_MS) or {}
+        _ = conn.send(clicmd.serve_reply_json(clicmd.refused_reply(refusal, req)), clicmd.SERVE_SEND_MS) or {}
         return
     }
     started := time.now_ms()
@@ -708,11 +708,11 @@ fn serve_run(mut conn: flint_ipc.IpcConn, req: clicmd.ServeRequest, c: flint_cry
     session := st.vault_session()
     if !st.unlocked() || session.path != req.vault {
         st.release()
-        _ = conn.send(serve_reply_json(refused_reply(coded(ERR_LOCKED, "the vault locked before the command ran"), req)), SERVE_SEND_MS) or {}
-        finish_logged(st, store, session, outcome, started, clicmd.ServedEnd{ exit: i64(exit_code_for(ERR_LOCKED)), error_code: ERR_LOCKED }, mut app)
+        _ = conn.send(clicmd.serve_reply_json(clicmd.refused_reply(domain.coded(domain.ERR_LOCKED, "the vault locked before the command ran"), req)), clicmd.SERVE_SEND_MS) or {}
+        finish_logged(st, store, session, outcome, started, clicmd.ServedEnd{ exit: i64(domain.exit_code_for(domain.ERR_LOCKED)), error_code: domain.ERR_LOCKED }, mut app)
         return
     }
-    ran := run_served(req, c, mut store, kc, recents, session)
+    ran := clicmd.run_served(req, c, mut store, kc, recents, session)
     reply := ran.reply
     if reply.served {
         // `vault rename` changes the name inside the file: keep the window's in step.
@@ -722,15 +722,15 @@ fn serve_run(mut conn: flint_ipc.IpcConn, req: clicmd.ServeRequest, c: flint_cry
             renamed.name = name
             st.adopt(renamed)
         }
-        if served_changes_vault(req) {
+        if clicmd.served_changes_vault(req) {
             app.emit("vault:changed", VaultChanged{ path: session.path, name: st.vault_session().name })
         }
-        if served_changes_tokens(req) {
+        if clicmd.served_changes_tokens(req) {
             app.emit("access:changed", GrantsChanged{ count: i64(st.holder.access_book().grants.len()) })
         }
     }
     st.release()
-    _ = conn.send(serve_reply_json(reply), SERVE_SEND_MS) or {}
+    _ = conn.send(clicmd.serve_reply_json(reply), clicmd.SERVE_SEND_MS) or {}
     finish_logged(st, store, session, outcome, started, ran.ended, mut app)
 }
 
@@ -738,10 +738,10 @@ fn serve_run(mut conn: flint_ipc.IpcConn, req: clicmd.ServeRequest, c: flint_cry
 // then the session runs without it, as a window tab does.
 fn serve_session(mut conn: flint_ipc.IpcConn, req: clicmd.ServeRequest, c: flint_crypto.Sodium, mut store: vault.LockedVaultStore, kc: flint_keychain.OsKeychain, recents: config.JsonRecentStore, st: GuiState, mut app: webui.App) {
     st.hold()
-    ok := st.unlocked() && st.vault_session().path == req.vault && session_servable(req)
+    ok := st.unlocked() && st.vault_session().path == req.vault && clicmd.session_servable(req)
     st.release()
     if !ok {
-        _ = conn.send(session_not_served_frame(), SERVE_SEND_MS) or {}
+        _ = conn.send(clicmd.session_not_served_frame(), clicmd.SERVE_SEND_MS) or {}
         return
     }
     outcome := gate(conn, req, c, store, st, mut app, true)
@@ -750,7 +750,7 @@ fn serve_session(mut conn: flint_ipc.IpcConn, req: clicmd.ServeRequest, c: flint
         return
     }
     if refusal.len() > 0 {
-        _ = conn.send(refused_session_frame(refusal, req), SERVE_SEND_MS) or {}
+        _ = conn.send(clicmd.refused_session_frame(refusal, req), clicmd.SERVE_SEND_MS) or {}
         return
     }
     started := time.now_ms()
@@ -759,22 +759,22 @@ fn serve_session(mut conn: flint_ipc.IpcConn, req: clicmd.ServeRequest, c: flint
     still := st.unlocked() && session.path == req.vault
     st.release()
     if !still {
-        _ = conn.send(refused_session_frame(coded(ERR_LOCKED, "the vault locked before the command ran"), req), SERVE_SEND_MS) or {}
+        _ = conn.send(clicmd.refused_session_frame(domain.coded(domain.ERR_LOCKED, "the vault locked before the command ran"), req), clicmd.SERVE_SEND_MS) or {}
         return
     }
     // `flint connect` on an RDP host opens its tab here (milestone 30): the CLI never
     // shows a desktop. The grant was checked above, as for an SSH session.
     st.hold()
-    desktop := served_desktop_alias(req, store)
+    desktop := clicmd.served_desktop_alias(req, store)
     st.release()
     if desktop.len() > 0 {
         app.emit("rdp:open-request", RdpOpenRequestEvent{ alias: desktop })
         show_window(mut app)
-        _ = conn.send(desktop_opened_frame(desktop, req.as_json), SERVE_SEND_MS) or {}
+        _ = conn.send(clicmd.desktop_opened_frame(desktop, req.as_json), clicmd.SERVE_SEND_MS) or {}
         finish_logged(st, store, session, outcome, started, clicmd.ServedEnd{ exit: 0, error_code: "" }, mut app)
         return
     }
-    ended := run_served_session(conn, req, c, mut store, kc, recents, session, outcome.sudo_typed)
+    ended := clicmd.run_served_session(conn, req, c, mut store, kc, recents, session, outcome.sudo_typed)
     finish_logged(st, store, session, outcome, started, ended, mut app)
 }
 

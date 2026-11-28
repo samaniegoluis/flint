@@ -11,7 +11,7 @@ import "ext:webui"
 
 // Starts hearing the window's full-screen state for `app`'s page. Call once, before
 // the window runs.
-fn window_fullscreen_install(app: webui.App) {
+pub fn window_fullscreen_install(app: webui.App) {
     // CFIRE-UPSTREAM: CF-125
     cpp {
         flint_window::install(app);
@@ -19,7 +19,7 @@ fn window_fullscreen_install(app: webui.App) {
 }
 
 // Enters or leaves full screen; nothing happens when the window already is so.
-fn window_fullscreen_set(on: bool) {
+pub fn window_fullscreen_set(on: bool) {
     // CFIRE-UPSTREAM: CF-125
     cpp {
         flint_window::set(on);
@@ -28,7 +28,7 @@ fn window_fullscreen_set(on: bool) {
 
 // Stands in for the OS in the headless end-to-end run: the page hears that the window
 // entered or left full screen, and no window moves.
-fn window_fullscreen_inject(on: bool) {
+pub fn window_fullscreen_inject(on: bool) {
     // CFIRE-UPSTREAM: CF-125
     cpp {
         flint_window::inject(on);
@@ -36,7 +36,7 @@ fn window_fullscreen_inject(on: bool) {
 }
 
 // Whether the window is full screen, as last heard from the OS.
-fn window_fullscreen_on() -> bool {
+pub fn window_fullscreen_on() -> bool {
     mut on := false
     // CFIRE-UPSTREAM: CF-125
     cpp {

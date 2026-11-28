@@ -11,20 +11,20 @@ import "../../domain"
 // CFIRE-UPSTREAM: CF-191
 import cpp "flint_language.hpp"
 
-fn os_language() -> str {
-    return language_of_locale(os_language_tag())
+pub fn os_language() -> str {
+    return domain.language_of_locale(os_language_tag())
 }
 
 // The OS's own language tag or locale, as read ("es-MX", "es_MX.UTF-8"), for the
 // line the GUI logs at start (milestone 68).
-fn os_language_tag() -> str {
+pub fn os_language_tag() -> str {
     mut tag := ""
     // CFIRE-UPSTREAM: CF-191
     cpp {
         tag = flint_language::preferred();
     }
     if tag.len() == 0 {
-        tag = locale_of_env((os.getenv("LANGUAGE") or ""), (os.getenv("LC_ALL") or ""), (os.getenv("LC_MESSAGES") or ""), (os.getenv("LANG") or ""))
+        tag = domain.locale_of_env((os.getenv("LANGUAGE") or ""), (os.getenv("LC_ALL") or ""), (os.getenv("LC_MESSAGES") or ""), (os.getenv("LANG") or ""))
     }
     return tag
 }

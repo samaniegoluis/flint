@@ -16,11 +16,11 @@ import cpp "flint_vault_lock.hpp"
 import "core:json"
 import "../../domain"
 
-type SessionHolder struct {
+pub type SessionHolder struct {
     cell: shared[cpp.flint_vault::SessionCell]
 }
 
-type HeldSession struct {
+pub type HeldSession struct {
     unlocked:    bool
     path:        str
     name:        str
@@ -29,7 +29,7 @@ type HeldSession struct {
     cached:      bool
 }
 
-fn new_session_holder() -> SessionHolder {
+pub fn new_session_holder() -> SessionHolder {
     mut h := SessionHolder{}
     // CFIRE-UPSTREAM: CF-026
     cpp {
@@ -309,10 +309,10 @@ fn (self: SessionHolder) access_book() -> domain.AccessBook {
         text = self.cell->access_json;
     }
     if text.len() == 0 {
-        return empty_access_book()
+        return domain.empty_access_book()
     }
     // CFIRE-UPSTREAM: CF-164 (a labeled argument keeps libstdc++'s chrono::parse out)
-    return json.parse[domain.AccessBook](payload: text) or empty_access_book()
+    return json.parse[domain.AccessBook](payload: text) or domain.empty_access_book()
 }
 
 fn (self: SessionHolder) put_access_book(book: domain.AccessBook) {
@@ -437,7 +437,7 @@ fn (self: SessionHolder) attended(now_ms: i64) -> bool {
         focused = self.cell->window_focused;
         last = self.cell->last_input_ms;
     }
-    return window_attended(focused, last, now_ms)
+    return domain.window_attended(focused, last, now_ms)
 }
 
 fn (self: SessionHolder) set_alert_status(st: domain.AlertStatus) {
@@ -457,8 +457,8 @@ fn (self: SessionHolder) alert_status() -> domain.AlertStatus {
         text = self.cell->alert_status_json;
     }
     if text.len() == 0 {
-        return no_alert_status()
+        return domain.no_alert_status()
     }
     // CFIRE-UPSTREAM: CF-164 (a labeled argument keeps libstdc++'s chrono::parse out)
-    return json.parse[domain.AlertStatus](payload: text) or no_alert_status()
+    return json.parse[domain.AlertStatus](payload: text) or domain.no_alert_status()
 }

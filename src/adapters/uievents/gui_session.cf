@@ -21,7 +21,7 @@ PROMPT_TIMEOUT_MS: i32 = 300000
 // ---- Mailboxes (called from RPC handlers and the worker) --------------------------
 
 // Opens the mailbox of a new session. False when the id is already in use.
-fn gui_session_open(session_id: str, cols: i32, rows: i32) -> bool {
+pub fn gui_session_open(session_id: str, cols: i32, rows: i32) -> bool {
     mut ok := false
     // CFIRE-UPSTREAM: CF-026
     cpp {
@@ -31,7 +31,7 @@ fn gui_session_open(session_id: str, cols: i32, rows: i32) -> bool {
 }
 
 // Marks a session closed: its input ends and a pending prompt is cancelled.
-fn gui_session_close(session_id: str) -> bool {
+pub fn gui_session_close(session_id: str) -> bool {
     mut ok := false
     // CFIRE-UPSTREAM: CF-026
     cpp {
@@ -41,7 +41,7 @@ fn gui_session_close(session_id: str) -> bool {
 }
 
 // Closes every open session.
-fn gui_session_close_all() {
+pub fn gui_session_close_all() {
     // CFIRE-UPSTREAM: CF-026
     cpp {
         flint_gui::close_all();
@@ -49,14 +49,14 @@ fn gui_session_close_all() {
 }
 
 // Removes a session's mailbox; called by the worker when the session has ended.
-fn gui_session_drop(session_id: str) {
+pub fn gui_session_drop(session_id: str) {
     // CFIRE-UPSTREAM: CF-026
     cpp {
         flint_gui::drop_box(session_id);
     }
 }
 
-fn gui_session_count() -> i64 {
+pub fn gui_session_count() -> i64 {
     mut n: i64 = 0
     // CFIRE-UPSTREAM: CF-026
     cpp {
@@ -67,15 +67,15 @@ fn gui_session_count() -> i64 {
 
 fn mailbox_error(rc: i32, session_id: str) -> str {
     if rc == 1 {
-        return coded(ERR_NOT_FOUND, "no session '{session_id}'")
+        return domain.coded(domain.ERR_NOT_FOUND, "no session '{session_id}'")
     }
     if rc == 3 {
-        return coded(ERR_INVALID, "that prompt is no longer waiting for an answer")
+        return domain.coded(domain.ERR_INVALID, "that prompt is no longer waiting for an answer")
     }
-    return coded(ERR_INVALID, "the session '{session_id}' is closed")
+    return domain.coded(domain.ERR_INVALID, "the session '{session_id}' is closed")
 }
 
-fn gui_session_input(session_id: str, data: str) -> void! {
+pub fn gui_session_input(session_id: str, data: str) -> void! {
     mut rc: i32 = 0
     // CFIRE-UPSTREAM: CF-026
     cpp {
@@ -86,10 +86,10 @@ fn gui_session_input(session_id: str, data: str) -> void! {
     }
 }
 
-fn gui_session_resize(session_id: str, cols: i32, rows: i32) -> void! {
+pub fn gui_session_resize(session_id: str, cols: i32, rows: i32) -> void! {
     size := domain.TerminalSize{ cols: cols, rows: rows }
     if !size.is_valid() {
-        return error(coded(ERR_INVALID, "terminal size {cols}x{rows} is out of range"))
+        return error(domain.coded(domain.ERR_INVALID, "terminal size {cols}x{rows} is out of range"))
     }
     mut rc: i32 = 0
     // CFIRE-UPSTREAM: CF-026
@@ -102,7 +102,7 @@ fn gui_session_resize(session_id: str, cols: i32, rows: i32) -> void! {
 }
 
 // Answers the prompt `prompt_id` of a session. `ok` false cancels it.
-fn gui_session_answer(session_id: str, prompt_id: str, ok: bool, value: str) -> void! {
+pub fn gui_session_answer(session_id: str, prompt_id: str, ok: bool, value: str) -> void! {
     mut rc: i32 = 0
     // CFIRE-UPSTREAM: CF-026
     cpp {
@@ -159,14 +159,14 @@ type SessionPrompt struct {
 
 // The core's message for an event's `code` and `message`: an empty id when there is no
 // error or the core does not name it.
-fn event_message(code: str, message: str) -> domain.CoreMessage {
+pub fn event_message(code: str, message: str) -> domain.CoreMessage {
     if code.len() == 0 {
         return domain.CoreMessage{ code: "", id: "", params: [], message: message }
     }
-    return core_message_of(coded(code, message))
+    return domain.core_message_of(domain.coded(code, message))
 }
 
-fn emit_session_state(mut app: webui.App, session_id: str, state: str, code: str, message: str, exit_code: i64) {
+pub fn emit_session_state(mut app: webui.App, session_id: str, state: str, code: str, message: str, exit_code: i64) {
     m := event_message(code, message)
     app.emit("session:state", SessionState{ session: session_id, state: state, code: code, message: message, id: m.id, params: m.params, exit_code: exit_code })
 }
@@ -182,7 +182,7 @@ type GuiTerminal struct {
     session: str
 }
 
-fn new_gui_terminal(app: webui.App, session_id: str) -> GuiTerminal {
+pub fn new_gui_terminal(app: webui.App, session_id: str) -> GuiTerminal {
     return GuiTerminal{ app: app, session: session_id }
 }
 
@@ -219,7 +219,7 @@ fn (mut self: GuiTerminal) term_input(timeout_ms: i32) -> str! {
         rc = flint_gui::take_input(sid, timeout_ms, got);
     }
     if rc != 0 {
-        return error(coded(ERR_IO, "the session was closed"))
+        return error(domain.coded(domain.ERR_IO, "the session was closed"))
     }
     return got
 }
@@ -252,7 +252,7 @@ type GuiPrompter struct {
     timeout_ms: i32
 }
 
-fn new_gui_prompter(app: webui.App, session_id: str) -> GuiPrompter {
+pub fn new_gui_prompter(app: webui.App, session_id: str) -> GuiPrompter {
     return GuiPrompter{ app: app, session: session_id, timeout_ms: PROMPT_TIMEOUT_MS }
 }
 
@@ -276,7 +276,7 @@ fn (self: GuiPrompter) ask(kind: str, user: str, alias: str, q: domain.HostKeyQu
         rc = flint_gui::arm_prompt(sid, prompt_id);
     }
     if rc != 0 {
-        return error(coded(ERR_IO, "the session was closed"))
+        return error(domain.coded(domain.ERR_IO, "the session was closed"))
     }
     mut app := self.app
     app.emit("session:prompt", SessionPrompt{ session: sid, prompt: prompt_id, kind: kind, user: user, alias: alias, host_key: host_key_payload(q) })
@@ -287,10 +287,10 @@ fn (self: GuiPrompter) ask(kind: str, user: str, alias: str, q: domain.HostKeyQu
         rc = flint_gui::await_answer(sid, wait, got);
     }
     if rc == 2 {
-        return error(coded(ERR_IO, "the session was closed"))
+        return error(domain.coded(domain.ERR_IO, "the session was closed"))
     }
     if rc == 4 {
-        return error(coded(ERR_TIMEOUT, "nobody answered the prompt"))
+        return error(domain.coded(domain.ERR_TIMEOUT, "nobody answered the prompt"))
     }
     return PromptAnswer{ value: got, cancelled: rc == 1 }
 }
@@ -328,11 +328,11 @@ type DesktopReady struct {
     rtt_ms:      i64 `json:"rtt_ms"`
 }
 
-type GuiDesktopSink struct {
+pub type GuiDesktopSink struct {
     app: webui.App
 }
 
-fn new_gui_desktop_sink(app: webui.App) -> GuiDesktopSink {
+pub fn new_gui_desktop_sink(app: webui.App) -> GuiDesktopSink {
     return GuiDesktopSink{ app: app }
 }
 

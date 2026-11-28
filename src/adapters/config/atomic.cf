@@ -9,18 +9,18 @@ import "../../domain"
 
 fn write_file_atomic(path: str, text: str) -> void! {
     dir := fs.dirname(path)
-    fs.mkdir_all(dir) or err {
-        return error(coded(ERR_IO, "cannot create {dir}"))
+    fs.mkdir_all(dir) or {
+        return error(domain.coded(domain.ERR_IO, "cannot create {dir}"))
     }
     tmp := path + ".tmp"
-    fs.write_text(tmp, text) or err {
+    fs.write_text(tmp, text) or {
         _ = fs.remove(tmp)
-        return error(coded(ERR_IO, "cannot write {tmp}"))
+        return error(domain.coded(domain.ERR_IO, "cannot write {tmp}"))
     }
     // str(): a view here lowers like the C function of that name once a package
     // importing this one declares it (CFIRE-UPSTREAM: CF-158)
-    fs.rename(tmp, str(path)) or err {
+    fs.rename(tmp, str(path)) or {
         _ = fs.remove(tmp)
-        return error(coded(ERR_IO, "cannot replace {path}"))
+        return error(domain.coded(domain.ERR_IO, "cannot replace {path}"))
     }
 }

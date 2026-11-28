@@ -30,10 +30,10 @@ fn desk_pair() -> FakeScreens {
 }
 
 test "the monitors offered, the default choice and why it may be greyed" {
-    mut ui := FakeUiStateStore{ saved: default_ui_state(), saves: 0 }
+    mut ui := FakeUiStateStore{ saved: domain.default_ui_state(), saves: 0 }
     v := desktop_monitors(desk_pair(), ui)
     assert_eq(v.reason, "")
-    assert_eq(v.max, MAX_MONITORS)
+    assert_eq(v.max, domain.MAX_MONITORS)
     assert_eq(v.picks.len(), 2)
     assert_eq(v.picks[0], "1")
     // The laptop shares the longest edge with the main one.
@@ -50,7 +50,7 @@ test "the monitors offered, the default choice and why it may be greyed" {
 
 test "a desktop spans the chosen monitors, the main one primary, and the choice is remembered" {
     mut rd := new_fake_desktop("ab:cd", "x")
-    mut ui := FakeUiStateStore{ saved: default_ui_state(), saves: 0 }
+    mut ui := FakeUiStateStore{ saved: domain.default_ui_state(), saves: 0 }
     picks: []domain.MonitorPick = [domain.MonitorPick{ id: "2", width: 1080, height: 1920 }, domain.MonitorPick{ id: "1", width: 2560, height: 1440 }]
     span := try span_remote_desktop(mut rd, desk_pair(), mut ui, "t1", picks)
     assert_eq(rd.layouts.len(), 1)
@@ -65,7 +65,7 @@ test "a desktop spans the chosen monitors, the main one primary, and the choice 
 
 test "spanning is refused where the system cannot, past the cap and without the main monitor" {
     mut rd := new_fake_desktop("ab:cd", "x")
-    mut ui := FakeUiStateStore{ saved: default_ui_state(), saves: 0 }
+    mut ui := FakeUiStateStore{ saved: domain.default_ui_state(), saves: 0 }
     pair: []domain.MonitorPick = [domain.MonitorPick{ id: "1", width: 0, height: 0 }, domain.MonitorPick{ id: "2", width: 0, height: 0 }]
     mut not_here := desk_pair()
     not_here.reason = "Not supported on this system yet"
@@ -76,7 +76,7 @@ test "spanning is refused where the system cannot, past the cap and without the 
     without_main: []domain.MonitorPick = [domain.MonitorPick{ id: "2", width: 0, height: 0 }, domain.MonitorPick{ id: "3", width: 0, height: 0 }]
     span_remote_desktop(mut rd, desk_pair(), mut ui, "t1", without_main) or err { msgs.push("{err.message()}") }
     assert_eq(msgs.len(), 3)
-    assert_eq(error_code_of(msgs[0]), ERR_UNSUPPORTED)
+    assert_eq(domain.error_code_of(msgs[0]), domain.ERR_UNSUPPORTED)
     assert_eq(rd.layouts.len(), 0)
     assert_eq(ui.saves, 0)
 }
@@ -95,9 +95,9 @@ test "a reconnect keeps the monitors the desktop spans" {
     ]
     bad: []domain.RdpMonitor = [domain.RdpMonitor{ local_id: "1", x: 5, y: 0, width: 2560, height: 1440, primary: true }]
     rd.events = [
-        domain.RdpEvent{ kind: RDP_EVENT_RESIZE, message: "", width: 3640, height: 1920, monitors: layout },
-        domain.RdpEvent{ kind: RDP_EVENT_GRAPHICS, message: "compatible", width: 3640, height: 1920, monitors: layout },
-        domain.RdpEvent{ kind: RDP_EVENT_RESIZE, message: "", width: 1280, height: 720, monitors: bad },
+        domain.RdpEvent{ kind: domain.RDP_EVENT_RESIZE, message: "", width: 3640, height: 1920, monitors: layout },
+        domain.RdpEvent{ kind: domain.RDP_EVENT_GRAPHICS, message: "compatible", width: 3640, height: 1920, monitors: layout },
+        domain.RdpEvent{ kind: domain.RDP_EVENT_RESIZE, message: "", width: 1280, height: 720, monitors: bad },
     ]
     mut sink := FakeDesktopSink{ ready: [], locked: false, cursors: [], graphics: [] }
     mut clip0 := no_clipboard()

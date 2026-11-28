@@ -11,25 +11,25 @@ package domain
 
 // Where an installed package came from: a file (`apt install ./flint_….deb`, every
 // install today: there is no repository) or a repository the system's updater follows.
-INSTALL_FROM_FILE: str = "file"
-INSTALL_FROM_REPOSITORY: str = "repository"
+pub INSTALL_FROM_FILE: str = "file"
+pub INSTALL_FROM_REPOSITORY: str = "repository"
 // How to update, for a package from a repository: the system's updater.
 UPDATE_HOW_REPOSITORY: str = "repository"
 
 // The package's formats, as `install-kind` names them (`package:deb`, `package:rpm`).
-PACKAGE_DEB: str = "deb"
-PACKAGE_RPM: str = "rpm"
+pub PACKAGE_DEB: str = "deb"
+pub PACKAGE_RPM: str = "rpm"
 
 // The person's staging folder, under their home (never XDG_CACHE_HOME: root finds it
 // from the caller's uid alone, D-124 (3)).
 UPDATE_PACKAGE_STAGE: str = ".cache/flint/update"
-UPDATE_MANIFEST_FILE: str = "manifest.json"
-UPDATE_SIGNATURE_FILE: str = "manifest.json.sig"
+pub UPDATE_MANIFEST_FILE: str = "manifest.json"
+pub UPDATE_SIGNATURE_FILE: str = "manifest.json.sig"
 // The helper's place in the package, beside the app.
-UPDATE_ROOT_HELPER: str = "flint-update-root"
+pub UPDATE_ROOT_HELPER: str = "flint-update-root"
 
 // The format of a package install-kind ("" when it is not one).
-fn package_format(kind: str) -> str {
+pub fn package_format(kind: str) -> str {
     if kind == "package:deb" {
         return PACKAGE_DEB
     }
@@ -40,7 +40,7 @@ fn package_format(kind: str) -> str {
 }
 
 // The manifest's asset for a package format.
-fn update_package_asset_key(format: str) -> str {
+pub fn update_package_asset_key(format: str) -> str {
     if format == PACKAGE_RPM {
         return UPDATE_ASSET_RPM
     }
@@ -48,14 +48,14 @@ fn update_package_asset_key(format: str) -> str {
 }
 
 // The staged package's file name: apt reads a .deb by its suffix.
-fn update_package_file(format: str) -> str {
+pub fn update_package_file(format: str) -> str {
     return "package." + format
 }
 
 // The staging of a package update, as UpdatePaths (milestone 53's): `zip` is the
 // package, `new_root` stays empty (nothing is unpacked), `installed` is the package's
 // folder (/usr/lib/flint).
-fn update_package_paths(home: str, format: str, installed: str) -> UpdatePaths {
+pub fn update_package_paths(home: str, format: str, installed: str) -> UpdatePaths {
     staging := trim_slashes(home) + "/" + UPDATE_PACKAGE_STAGE
     return UpdatePaths{
         installed: trim_slashes(installed),
@@ -70,11 +70,11 @@ fn update_package_paths(home: str, format: str, installed: str) -> UpdatePaths {
     }
 }
 
-fn update_manifest_path(p: UpdatePaths) -> str {
+pub fn update_manifest_path(p: UpdatePaths) -> str {
     return p.staging + "/" + UPDATE_MANIFEST_FILE
 }
 
-fn update_signature_path(p: UpdatePaths) -> str {
+pub fn update_signature_path(p: UpdatePaths) -> str {
     return p.staging + "/" + UPDATE_SIGNATURE_FILE
 }
 
@@ -90,7 +90,7 @@ fn leading_spaces(line: str) -> usize {
 // by its sources, indented further. Only `/var/lib/dpkg/status` there means it came
 // from a file; any other source is a repository. Anything unreadable reads as a file
 // (every install today, D-124 (1)).
-fn apt_source_of(policy: str) -> str {
+pub fn apt_source_of(policy: str) -> str {
     mut on := false
     mut depth: usize = 0
     for raw in policy.lines() {
@@ -117,7 +117,7 @@ fn apt_source_of(policy: str) -> str {
 
 // `dnf info --installed flint`: `From repository : @commandline` (dnf5; `From repo` in
 // dnf 4) for a file; any other repository name for a repository.
-fn dnf_source_of(info: str) -> str {
+pub fn dnf_source_of(info: str) -> str {
     for raw in info.lines() {
         line := raw.trim()
         if !line.starts_with("From repo") {
@@ -147,7 +147,7 @@ fn package_update_command(format: str) -> str {
 // verified: a release of Flint's (check_update_manifest_from), newer than the version
 // installed (the helper's own: it ships in the package), with a package of the format
 // installed. The package's size and SHA-256 are checked against that asset next.
-fn root_update_asset(m: UpdateManifest, format: str, installed: str, download_prefix: str) -> UpdateAsset! {
+pub fn root_update_asset(m: UpdateManifest, format: str, installed: str, download_prefix: str) -> UpdateAsset! {
     try check_update_manifest_from(m, download_prefix)
     if !version_is_newer(m.version, installed) {
         return error(coded(ERR_INVALID, "the update ({m.version}) is not newer than the installed Flint ({installed})"))
@@ -169,7 +169,7 @@ fn root_update_asset(m: UpdateManifest, format: str, installed: str, download_pr
 }
 
 // The package root copied matches the asset: its size and its SHA-256.
-fn root_package_matches(a: UpdateAsset, size: i64, sha256: str) -> void! {
+pub fn root_package_matches(a: UpdateAsset, size: i64, sha256: str) -> void! {
     if size != a.size {
         return error(coded(ERR_INVALID, "the package is not the size the release names"))
     }
@@ -179,7 +179,7 @@ fn root_package_matches(a: UpdateAsset, size: i64, sha256: str) -> void! {
 }
 
 // What flint-update-root did, printed as JSON and told by its exit code.
-type RootOutcome struct {
+pub type RootOutcome struct {
     installed: bool `json:"installed"`
     version:   str  `json:"version"`
     code:      str  `json:"code"`
@@ -194,12 +194,12 @@ type RootOutcome struct {
 ROOT_EXIT_OK: i32 = 0
 ROOT_EXIT_USAGE: i32 = 2
 ROOT_EXIT_REFUSED: i32 = 3
-ROOT_EXIT_INSTALL: i32 = 4
-ROOT_EXIT_NOTHING: i32 = 5
+pub ROOT_EXIT_INSTALL: i32 = 4
+pub ROOT_EXIT_NOTHING: i32 = 5
 PKEXEC_EXIT_DISMISSED: i32 = 126
 PKEXEC_EXIT_DENIED: i32 = 127
 
-fn root_exit_code(o: RootOutcome) -> i32 {
+pub fn root_exit_code(o: RootOutcome) -> i32 {
     if o.installed {
         return ROOT_EXIT_OK
     }
@@ -216,21 +216,21 @@ fn root_exit_code(o: RootOutcome) -> i32 {
 }
 
 // `pkexec flint-update-root` once it ended: its exit code and what it printed.
-type RootRun struct {
+pub type RootRun struct {
     exit_code: i32
     stdout:    str
 }
 
 // What a Relaunch's run of the helper means for the page: installed, kept for another
 // try (with why), or discarded (with why).
-type PackageRelaunch struct {
+pub type PackageRelaunch struct {
     installed: bool
     discard:   bool
     code:      str
     message:   str
 }
 
-fn package_relaunch_of(exit_code: i32, o: RootOutcome?) -> PackageRelaunch {
+pub fn package_relaunch_of(exit_code: i32, o: RootOutcome?) -> PackageRelaunch {
     if exit_code == ROOT_EXIT_OK {
         return PackageRelaunch{ installed: true, discard: false, code: "", message: "" }
     }

@@ -6,7 +6,6 @@ package clicmd
 // command the running app serves (serve.cf), hands back the app's unlocked vault.
 
 import "core:fs"
-import "core:os"
 import "core:json"
 import "../../adapters/config"
 import "../../adapters/crypto" as flint_crypto
@@ -20,20 +19,20 @@ import "../../domain"
 // Makes a path absolute against the working directory. Shells expand `~`. On
 // Windows, backslashes become `/` first (windows-port).
 fn absolute_path(raw: str) -> str {
-    path := local_slashes(raw)
+    path := process.local_slashes(raw)
     if path.len() == 0 || domain.is_absolute_path(path) {
         return path
     }
     if path.starts_with("./") {
-        return current_dir() + "/" + path[2..]
+        return process.current_dir() + "/" + path[2..]
     }
-    return current_dir() + "/" + path
+    return process.current_dir() + "/" + path
 }
 
 // A --vault selector: a path (anything with '/' or ending in .flint) is made
 // absolute; a name is kept as is.
 fn vault_selector(p: ParsedArgs) -> str {
-    sel := local_slashes(p.flag_value("--vault"))
+    sel := process.local_slashes(p.flag_value("--vault"))
     if sel.contains("/") || sel.ends_with(".flint") {
         return absolute_path(sel)
     }
@@ -58,11 +57,11 @@ fn served_vault_source(kc: flint_keychain.OsKeychain, session: application.Vault
 }
 
 fn open_target(p: ParsedArgs, sec: SecretInput, c: flint_crypto.Sodium, mut store: vault.LockedVaultStore, src: VaultSource, recents: config.JsonRecentStore) -> application.VaultSession! {
-    target := try resolve_vault(recents, vault_selector(p))
+    target := try application.resolve_vault(recents, vault_selector(p))
     if src.served {
         // The app checked the target before running the command; this is a guard.
-        if !same_file_path(target.path, src.session.path) {
-            return error(coded(ERR_INTERNAL, "the app serves another vault than {target.path}"))
+        if !process.same_file_path(target.path, src.session.path) {
+            return error(domain.coded(domain.ERR_INTERNAL, "the app serves another vault than {target.path}"))
         }
         return src.session
     }
@@ -72,13 +71,13 @@ fn open_target(p: ParsedArgs, sec: SecretInput, c: flint_crypto.Sodium, mut stor
 // Unlocks `path` with the key the keychain caches for it, or else with the master
 // password (from stdin or typed).
 fn unlock_cached_or_typed(c: flint_crypto.Sodium, mut store: vault.LockedVaultStore, kc: flint_keychain.OsKeychain, recents: config.JsonRecentStore, path: str, name: str, sec: SecretInput) -> application.VaultSession! {
-    cached := unlock_vault(c, mut store, kc, recents, path, "", false) or err {
+    cached := application.unlock_vault(c, mut store, kc, recents, path, "", false) or err {
         msg := "{err.message()}"
-        if error_code_of(msg) != ERR_LOCKED {
+        if domain.error_code_of(msg) != domain.ERR_LOCKED {
             return error(msg)
         }
         password := try master_password_for(sec, name)
-        return try unlock_vault(c, mut store, kc, recents, path, password, false)
+        return try application.unlock_vault(c, mut store, kc, recents, path, password, false)
     }
     return cached
 }
@@ -94,8 +93,8 @@ fn cmd_vault(p: ParsedArgs, sec: SecretInput, as_json: bool, c: flint_crypto.Sod
         if !sec.has_master {
             password = try prompt_new_secret("master password")
         }
-        s := try create_vault(c, mut store, src.kc, recents, absolute_path(p.positional(2)), p.flag_value("--name"), password, false)
-        info := session_info(s)
+        s := try application.create_vault(c, mut store, src.kc, recents, absolute_path(p.positional(2)), p.flag_value("--name"), password, false)
+        info := application.session_info(s)
         if as_json {
             say(json.stringify(info))
         } else {
@@ -107,8 +106,8 @@ fn cmd_vault(p: ParsedArgs, sec: SecretInput, as_json: bool, c: flint_crypto.Sod
         try p.allow_flags("vault open", [])
         try p.expect_args("vault open", 1, "<path>")
         path := absolute_path(p.positional(2))
-        s := try unlock_cached_or_typed(c, mut store, src.kc, recents, path, vault_name_from_path(path), sec)
-        info := session_info(s)
+        s := try unlock_cached_or_typed(c, mut store, src.kc, recents, path, application.vault_name_from_path(path), sec)
+        info := application.session_info(s)
         if as_json {
             say(json.stringify(info))
         } else {
@@ -120,7 +119,7 @@ fn cmd_vault(p: ParsedArgs, sec: SecretInput, as_json: bool, c: flint_crypto.Sod
         try p.allow_flags("vault unlock", [])
         try p.expect_args("vault unlock", 0, "[--vault <name|path>]")
         s := try open_target(p, sec, c, mut store, src, recents)
-        info := session_info(s)
+        info := application.session_info(s)
         if as_json {
             say(json.stringify(info))
         } else {
@@ -131,10 +130,10 @@ fn cmd_vault(p: ParsedArgs, sec: SecretInput, as_json: bool, c: flint_crypto.Sod
     if verb == "lock" {
         try p.allow_flags("vault lock", [])
         try p.expect_args("vault lock", 0, "[--vault <name|path>]")
-        target := try resolve_vault(recents, vault_selector(p))
-        try lock_vault(mut store, src.kc, target.path)
+        target := try application.resolve_vault(recents, vault_selector(p))
+        try application.lock_vault(mut store, src.kc, target.path)
         if as_json {
-            say(json.stringify(application.VaultInfo{ path: target.path, name: target.name, format: VAULT_FORMAT_V1, cached: false }))
+            say(json.stringify(application.VaultInfo{ path: target.path, name: target.name, format: domain.VAULT_FORMAT_V1, cached: false }))
         } else {
             say("Locked vault '{target.name}': Flint holds no key for it and none is cached on this machine.")
         }
@@ -143,13 +142,13 @@ fn cmd_vault(p: ParsedArgs, sec: SecretInput, as_json: bool, c: flint_crypto.Sod
     if verb == "status" {
         try p.allow_flags("vault status", [])
         try p.expect_args("vault status", 0, "[--vault <name|path>]")
-        target := try resolve_vault(recents, vault_selector(p))
-        mut st := application.VaultStatus{ path: "", name: "", exists: false, unlocked: false, cached: false, groups: 0, hosts: 0, keys: 0, credentials: 0, activity_days: -1, remote: no_remote_status(), lock_reason: "", lock_detail: "" }
-        if src.served && same_file_path(target.path, src.session.path) {
+        target := try application.resolve_vault(recents, vault_selector(p))
+        mut st := application.VaultStatus{ path: "", name: "", exists: false, unlocked: false, cached: false, groups: 0, hosts: 0, keys: 0, credentials: 0, activity_days: -1, remote: application.no_remote_status(), lock_reason: "", lock_detail: "" }
+        if src.served && process.same_file_path(target.path, src.session.path) {
             // Unlocked in the app: counts from the open store, no keychain read.
-            st = try open_vault_status(store, store, src.session)
+            st = try application.open_vault_status(store, store, src.session)
         } else {
-            st = try vault_status(c, mut store, src.kc, recents, target.path, target.name)
+            st = try application.vault_status(c, mut store, src.kc, recents, target.path, target.name)
             if st.exists && !st.unlocked && !src.served {
                 // Only the running Flint knows why (milestone 61); the CLI asks it.
                 why := app_lock_reason(target)
@@ -158,7 +157,7 @@ fn cmd_vault(p: ParsedArgs, sec: SecretInput, as_json: bool, c: flint_crypto.Sod
             }
         }
         if st.exists {
-            st.remote = try remote_status(c, store, remote_links(), target.path)
+            st.remote = try application.remote_status(c, store, remote_links(), target.path)
         }
         if as_json {
             say(json.stringify(st))
@@ -170,7 +169,7 @@ fn cmd_vault(p: ParsedArgs, sec: SecretInput, as_json: bool, c: flint_crypto.Sod
     if verb == "list" {
         try p.allow_flags("vault list", [])
         try p.expect_args("vault list", 0, "")
-        views := try recent_vault_views(store, recents)
+        views := try application.recent_vault_views(store, recents)
         if as_json {
             say(json.stringify(views))
         } else {
@@ -185,7 +184,7 @@ fn cmd_vault(p: ParsedArgs, sec: SecretInput, as_json: bool, c: flint_crypto.Sod
         if sel.contains("/") || sel.ends_with(".flint") {
             sel = absolute_path(sel)
         }
-        target := try use_vault(store, recents, sel)
+        target := try application.use_vault(store, recents, sel)
         if as_json {
             say(json.stringify(target))
         } else {
@@ -198,8 +197,8 @@ fn cmd_vault(p: ParsedArgs, sec: SecretInput, as_json: bool, c: flint_crypto.Sod
         try p.expect_args("vault rename", 1, "<new-name>")
         s := try open_target(p, sec, c, mut store, src, recents)
         old := s.name
-        renamed := try rename_vault(mut store, recents, s, p.positional(2))
-        info := session_info(renamed)
+        renamed := try application.rename_vault(mut store, recents, s, p.positional(2))
+        info := application.session_info(renamed)
         if as_json {
             say(json.stringify(info))
         } else {
@@ -250,7 +249,7 @@ fn cmd_vault(p: ParsedArgs, sec: SecretInput, as_json: bool, c: flint_crypto.Sod
         if sel.contains("/") || sel.ends_with(".flint") {
             sel = absolute_path(sel)
         }
-        gone := try forget_recent(mut store, src.kc, recents, sel)
+        gone := try application.forget_recent(mut store, src.kc, recents, sel)
         if as_json {
             say(json.stringify(RemovedNote{ removed: "vault", name: gone.name }))
         } else {
@@ -258,7 +257,7 @@ fn cmd_vault(p: ParsedArgs, sec: SecretInput, as_json: bool, c: flint_crypto.Sod
         }
         return
     }
-    return error(coded(ERR_USAGE, "unknown command `flint vault {verb}`; see `flint help`"))
+    return error(domain.coded(domain.ERR_USAGE, "unknown command `flint vault {verb}`; see `flint help`"))
 }
 
 // What `vault passwd --json` prints: the vault, whether this machine still remembers
@@ -275,24 +274,24 @@ type PasswdReport struct {
 // vault unlocked: one holder of an unlocked vault (v3); Settings → Vault changes it
 // there.
 fn cmd_vault_passwd(p: ParsedArgs, sec: SecretInput, as_json: bool, c: flint_crypto.Sodium, mut store: vault.LockedVaultStore, src: VaultSource, recents: config.JsonRecentStore) -> void! {
-    target := try resolve_vault(recents, vault_selector(p))
+    target := try application.resolve_vault(recents, vault_selector(p))
     if src.served || app_holds_unlocked(target) {
-        return error(coded(ERR_CONFLICT, "Flint has vault '{target.name}' unlocked; change its master password there (Settings → Vault), or lock it in Flint first"))
+        return error(domain.coded(domain.ERR_CONFLICT, "Flint has vault '{target.name}' unlocked; change its master password there (Settings → Vault), or lock it in Flint first"))
     }
     if sec.has_master != sec.has_new_master {
-        return error(coded(ERR_USAGE, "pass both --master-stdin and --new-master-stdin, or neither to be asked"))
+        return error(domain.coded(domain.ERR_USAGE, "pass both --master-stdin and --new-master-stdin, or neither to be asked"))
     }
     mut current := sec.master
     if !sec.has_master {
         current = try prompt_secret("Current master password for '{target.name}'")
     }
-    session := try unlock_vault(c, mut store, src.kc, recents, target.path, current, false)
+    session := try application.unlock_vault(c, mut store, src.kc, recents, target.path, current, false)
     mut next_password := sec.new_master
     if !sec.has_new_master {
         next_password = try prompt_new_secret("new master password")
     }
-    strength := password_strength(next_password, session.name)
-    next := try change_master_password_synced(c, mut store, src.kc, remote_links(), new_http_vault_remote(), token_keychain(), session, current, next_password, wall_ms())
+    strength := application.password_strength(next_password, session.name)
+    next := try application.change_master_password_synced(c, mut store, src.kc, remote_links(), vaultremote.new_http_vault_remote(), token_keychain(), session, current, next_password, wall_ms())
     if as_json {
         say(json.stringify(PasswdReport{ path: next.path, name: next.name, remembered: next.cached, strength: strength }))
         return
@@ -304,7 +303,7 @@ fn cmd_vault_passwd(p: ParsedArgs, sec: SecretInput, as_json: bool, c: flint_cry
         if strength.warning.len() > 0 {
             why = " {strength.warning}."
         }
-        write_stderr("warning: this password is too weak for a remote vault, which needs Strong (3 of 4).{why}\n")
+        process.write_stderr("warning: this password is too weak for a remote vault, which needs Strong (3 of 4).{why}\n")
     }
     if next.cached {
         say("This computer still remembers it.")
@@ -316,20 +315,20 @@ fn cmd_vault_passwd(p: ParsedArgs, sec: SecretInput, as_json: bool, c: flint_cry
 // The master password typed for this command opens both (Principle 11). Refused while
 // the app holds the vault unlocked: one holder of an unlocked vault (v3).
 fn cmd_vault_merge(p: ParsedArgs, sec: SecretInput, as_json: bool, c: flint_crypto.Sodium, mut store: vault.LockedVaultStore, src: VaultSource, recents: config.JsonRecentStore) -> void! {
-    target := try resolve_vault(recents, vault_selector(p))
+    target := try application.resolve_vault(recents, vault_selector(p))
     if src.served || app_holds_unlocked(target) {
-        return error(coded(ERR_CONFLICT, "Flint has vault '{target.name}' unlocked; lock it in Flint first, then merge"))
+        return error(domain.coded(domain.ERR_CONFLICT, "Flint has vault '{target.name}' unlocked; lock it in Flint first, then merge"))
     }
     copy_path := absolute_path(p.positional(2))
     // The use case compares the text; the same file may be named another way (letter
     // case on Windows and macOS, a symbolic link), and that is the vault itself too.
-    if same_file_path(copy_path, target.path) {
-        return error(coded(ERR_INVALID, "{copy_path} is the vault itself; name the conflict copy to merge into it"))
+    if process.same_file_path(copy_path, target.path) {
+        return error(domain.coded(domain.ERR_INVALID, "{copy_path} is the vault itself; name the conflict copy to merge into it"))
     }
     password := try master_password_for(sec, target.name)
-    session := try unlock_vault(c, mut store, src.kc, recents, target.path, password, false)
-    mut copy := new_copy_vault_store(flint_config_dir())
-    got := try merge_vault_copy(c, mut store, mut copy, src.kc, session, copy_path, password)
+    session := try application.unlock_vault(c, mut store, src.kc, recents, target.path, password, false)
+    mut copy := vault.new_copy_vault_store(config.flint_config_dir())
+    got := try application.merge_vault_copy(c, mut store, mut copy, src.kc, session, copy_path, password)
     if as_json {
         say(json.stringify(got))
         return
@@ -342,7 +341,7 @@ fn cmd_vault_merge(p: ParsedArgs, sec: SecretInput, as_json: bool, c: flint_cryp
 fn cmd_group(p: ParsedArgs, sec: SecretInput, as_json: bool, c: flint_crypto.Sodium, mut store: vault.LockedVaultStore, src: VaultSource, recents: config.JsonRecentStore) -> void! {
     verb := p.positional(1)
     if verb != "add" && verb != "list" && verb != "rename" && verb != "rm" {
-        return error(coded(ERR_USAGE, "unknown command `flint group {verb}`; see `flint help`"))
+        return error(domain.coded(domain.ERR_USAGE, "unknown command `flint group {verb}`; see `flint help`"))
     }
     try p.allow_flags("group " + verb, [])
     if verb == "add" {
@@ -356,7 +355,7 @@ fn cmd_group(p: ParsedArgs, sec: SecretInput, as_json: bool, c: flint_crypto.Sod
     }
     _ = try open_target(p, sec, c, mut store, src, recents)
     if verb == "list" {
-        groups := try list_groups(store)
+        groups := try application.list_groups(store)
         if as_json {
             say(json.stringify(groups))
         } else {
@@ -367,13 +366,13 @@ fn cmd_group(p: ParsedArgs, sec: SecretInput, as_json: bool, c: flint_crypto.Sod
     mut g := application.GroupView{ path: "", name: "", hosts: 0, subgroups: 0 }
     mut done := ""
     if verb == "add" {
-        g = try add_group(c, mut store, p.positional(2))
+        g = try application.add_group(c, mut store, p.positional(2))
         done = "Added"
     } else if verb == "rename" {
-        g = try rename_group(mut store, p.positional(2), p.positional(3))
+        g = try application.rename_group(mut store, p.positional(2), p.positional(3))
         done = "Renamed to"
     } else {
-        g = try remove_group(mut store, p.positional(2))
+        g = try application.remove_group(mut store, p.positional(2))
         done = "Removed"
     }
     if as_json {
@@ -386,7 +385,7 @@ fn cmd_group(p: ParsedArgs, sec: SecretInput, as_json: bool, c: flint_crypto.Sod
 // ---- host ----------------------------------------------------------------------
 
 fn host_patch_from_flags(p: ParsedArgs, sec: SecretInput) -> application.HostPatch! {
-    mut patch := empty_host_patch()
+    mut patch := application.empty_host_patch()
     if p.has_flag("--alias") {
         patch.alias = p.flag_value("--alias")
         patch.set_alias = true
@@ -452,7 +451,7 @@ fn host_patch_from_flags(p: ParsedArgs, sec: SecretInput) -> application.HostPat
         patch.set_audio = true
     }
     if p.has_flag("--microphone") && p.has_flag("--no-microphone") {
-        return error(coded(ERR_USAGE, "--microphone and --no-microphone contradict each other"))
+        return error(domain.coded(domain.ERR_USAGE, "--microphone and --no-microphone contradict each other"))
     }
     if p.has_flag("--microphone") || p.has_flag("--no-microphone") {
         patch.microphone = p.has_flag("--microphone")
@@ -463,7 +462,7 @@ fn host_patch_from_flags(p: ParsedArgs, sec: SecretInput) -> application.HostPat
         patch.set_command = true
     }
     if p.has_flag("--keep-shell") && p.has_flag("--no-keep-shell") {
-        return error(coded(ERR_USAGE, "--keep-shell and --no-keep-shell contradict each other"))
+        return error(domain.coded(domain.ERR_USAGE, "--keep-shell and --no-keep-shell contradict each other"))
     }
     if p.has_flag("--keep-shell") || p.has_flag("--no-keep-shell") {
         patch.keep_shell = p.has_flag("--keep-shell")
@@ -505,7 +504,7 @@ fn cmd_host(p: ParsedArgs, sec: SecretInput, as_json: bool, c: flint_crypto.Sodi
         patch.alias = p.positional(2)
         patch.set_alias = true
         s := try open_target(p, sec, c, mut store, src, recents)
-        h := try add_host(c, mut store, s, patch)
+        h := try application.add_host(c, mut store, s, patch)
         if as_json {
             say(json.stringify(h))
         } else {
@@ -522,7 +521,7 @@ fn cmd_host(p: ParsedArgs, sec: SecretInput, as_json: bool, c: flint_crypto.Sodi
         try p.expect_args("host edit", 1, "<alias> [options]")
         patch := try host_patch_from_flags(p, sec)
         s := try open_target(p, sec, c, mut store, src, recents)
-        h := try edit_host(c, mut store, s, p.positional(2), patch)
+        h := try application.edit_host(c, mut store, s, p.positional(2), patch)
         if as_json {
             say(json.stringify(h))
         } else {
@@ -534,7 +533,7 @@ fn cmd_host(p: ParsedArgs, sec: SecretInput, as_json: bool, c: flint_crypto.Sodi
         try p.allow_flags("host list", ["--group", "--tag"])
         try p.expect_args("host list", 0, "[--group <path>] [--tag <tag>]")
         _ = try open_target(p, sec, c, mut store, src, recents)
-        hosts := try list_hosts(store, p.flag_value("--group"), p.flag_value("--tag"))
+        hosts := try application.list_hosts(store, p.flag_value("--group"), p.flag_value("--tag"))
         if as_json {
             say(json.stringify(hosts))
         } else {
@@ -546,7 +545,7 @@ fn cmd_host(p: ParsedArgs, sec: SecretInput, as_json: bool, c: flint_crypto.Sodi
         try p.allow_flags("host show", [])
         try p.expect_args("host show", 1, "<alias>")
         _ = try open_target(p, sec, c, mut store, src, recents)
-        h := try show_host(store, p.positional(2))
+        h := try application.show_host(store, p.positional(2))
         if as_json {
             say(json.stringify(h))
         } else {
@@ -558,7 +557,7 @@ fn cmd_host(p: ParsedArgs, sec: SecretInput, as_json: bool, c: flint_crypto.Sodi
         try p.allow_flags("host rm", [])
         try p.expect_args("host rm", 1, "<alias>")
         _ = try open_target(p, sec, c, mut store, src, recents)
-        h := try remove_host(mut store, p.positional(2))
+        h := try application.remove_host(mut store, p.positional(2))
         if as_json {
             say(json.stringify(RemovedNote{ removed: "host", name: h.alias }))
         } else {
@@ -566,7 +565,7 @@ fn cmd_host(p: ParsedArgs, sec: SecretInput, as_json: bool, c: flint_crypto.Sodi
         }
         return
     }
-    return error(coded(ERR_USAGE, "unknown command `flint host {verb}`; see `flint help`"))
+    return error(domain.coded(domain.ERR_USAGE, "unknown command `flint host {verb}`; see `flint help`"))
 }
 
 // ---- key -----------------------------------------------------------------------
@@ -578,21 +577,21 @@ fn cmd_key(p: ParsedArgs, sec: SecretInput, as_json: bool, c: flint_crypto.Sodiu
         try p.expect_args("key add", 1, "<name> (--file <path> | --key-stdin) [--passphrase | --passphrase-stdin]")
         mut content := ""
         if p.has_flag("--file") && sec.has_key {
-            return error(coded(ERR_USAGE, "give the private key with --file or --key-stdin, not both"))
+            return error(domain.coded(domain.ERR_USAGE, "give the private key with --file or --key-stdin, not both"))
         }
         if p.has_flag("--file") {
             content = try read_key_file(p.flag_value("--file"))
         } else if sec.has_key {
             content = sec.key_text
         } else {
-            return error(coded(ERR_USAGE, "give the private key with --file <path> or --key-stdin"))
+            return error(domain.coded(domain.ERR_USAGE, "give the private key with --file <path> or --key-stdin"))
         }
         mut passphrase := sec.passphrase
         if !sec.has_passphrase && p.has_flag("--passphrase") {
             passphrase = try prompt_secret("key passphrase")
         }
         s := try open_target(p, sec, c, mut store, src, recents)
-        k := try add_key(c, mut store, inspector, s, p.positional(2), content, passphrase)
+        k := try application.add_key(c, mut store, inspector, s, p.positional(2), content, passphrase)
         if as_json {
             say(json.stringify(k))
         } else {
@@ -604,7 +603,7 @@ fn cmd_key(p: ParsedArgs, sec: SecretInput, as_json: bool, c: flint_crypto.Sodiu
         try p.allow_flags("key list", [])
         try p.expect_args("key list", 0, "")
         _ = try open_target(p, sec, c, mut store, src, recents)
-        keys := try list_keys(store)
+        keys := try application.list_keys(store)
         if as_json {
             say(json.stringify(keys))
         } else {
@@ -616,7 +615,7 @@ fn cmd_key(p: ParsedArgs, sec: SecretInput, as_json: bool, c: flint_crypto.Sodiu
         try p.allow_flags("key show", [])
         try p.expect_args("key show", 1, "<name>")
         _ = try open_target(p, sec, c, mut store, src, recents)
-        k := try show_key(store, p.positional(2))
+        k := try application.show_key(store, p.positional(2))
         if as_json {
             say(json.stringify(k))
         } else {
@@ -628,7 +627,7 @@ fn cmd_key(p: ParsedArgs, sec: SecretInput, as_json: bool, c: flint_crypto.Sodiu
         try p.allow_flags("key rename", [])
         try p.expect_args("key rename", 2, "<name> <new-name>")
         _ = try open_target(p, sec, c, mut store, src, recents)
-        k := try rename_key(mut store, p.positional(2), p.positional(3))
+        k := try application.rename_key(mut store, p.positional(2), p.positional(3))
         if as_json {
             say(json.stringify(k))
         } else {
@@ -640,7 +639,7 @@ fn cmd_key(p: ParsedArgs, sec: SecretInput, as_json: bool, c: flint_crypto.Sodiu
         try p.allow_flags("key rm", [])
         try p.expect_args("key rm", 1, "<name>")
         _ = try open_target(p, sec, c, mut store, src, recents)
-        k := try remove_key(mut store, p.positional(2))
+        k := try application.remove_key(mut store, p.positional(2))
         if as_json {
             say(json.stringify(RemovedNote{ removed: "key", name: k.name }))
         } else {
@@ -648,13 +647,13 @@ fn cmd_key(p: ParsedArgs, sec: SecretInput, as_json: bool, c: flint_crypto.Sodiu
         }
         return
     }
-    return error(coded(ERR_USAGE, "unknown command `flint key {verb}`; see `flint help`"))
+    return error(domain.coded(domain.ERR_USAGE, "unknown command `flint key {verb}`; see `flint help`"))
 }
 
 fn read_key_file(path: str) -> str! {
     full := absolute_path(path)
-    text := fs.read_text(full) or err {
-        return error(coded(ERR_NOT_FOUND, "cannot read the key file {full}"))
+    text := fs.read_text(full) or {
+        return error(domain.coded(domain.ERR_NOT_FOUND, "cannot read the key file {full}"))
     }
     return text
 }
@@ -662,7 +661,7 @@ fn read_key_file(path: str) -> str! {
 // ---- cred ----------------------------------------------------------------------
 
 fn cred_patch_from_flags(p: ParsedArgs, sec: SecretInput) -> application.CredPatch! {
-    mut patch := empty_cred_patch()
+    mut patch := application.empty_cred_patch()
     if p.has_flag("--name") {
         patch.name = p.flag_value("--name")
         patch.set_name = true
@@ -697,7 +696,7 @@ fn cmd_cred(p: ParsedArgs, sec: SecretInput, as_json: bool, c: flint_crypto.Sodi
         patch.name = p.positional(2)
         patch.set_name = true
         s := try open_target(p, sec, c, mut store, src, recents)
-        v := try add_cred(c, mut store, s, patch)
+        v := try application.add_cred(c, mut store, s, patch)
         if as_json {
             say(json.stringify(v))
         } else {
@@ -710,7 +709,7 @@ fn cmd_cred(p: ParsedArgs, sec: SecretInput, as_json: bool, c: flint_crypto.Sodi
         try p.expect_args("cred edit", 1, "<name> [options]")
         patch := try cred_patch_from_flags(p, sec)
         s := try open_target(p, sec, c, mut store, src, recents)
-        v := try edit_cred(c, mut store, s, p.positional(2), patch)
+        v := try application.edit_cred(c, mut store, s, p.positional(2), patch)
         if as_json {
             say(json.stringify(v))
         } else {
@@ -722,7 +721,7 @@ fn cmd_cred(p: ParsedArgs, sec: SecretInput, as_json: bool, c: flint_crypto.Sodi
         try p.allow_flags("cred list", [])
         try p.expect_args("cred list", 0, "")
         _ = try open_target(p, sec, c, mut store, src, recents)
-        list := try list_creds(store)
+        list := try application.list_creds(store)
         if as_json {
             say(json.stringify(list))
         } else {
@@ -734,7 +733,7 @@ fn cmd_cred(p: ParsedArgs, sec: SecretInput, as_json: bool, c: flint_crypto.Sodi
         try p.allow_flags("cred show", [])
         try p.expect_args("cred show", 1, "<name>")
         _ = try open_target(p, sec, c, mut store, src, recents)
-        v := try show_cred(store, p.positional(2))
+        v := try application.show_cred(store, p.positional(2))
         if as_json {
             say(json.stringify(v))
         } else {
@@ -746,7 +745,7 @@ fn cmd_cred(p: ParsedArgs, sec: SecretInput, as_json: bool, c: flint_crypto.Sodi
         try p.allow_flags("cred rm", [])
         try p.expect_args("cred rm", 1, "<name>")
         _ = try open_target(p, sec, c, mut store, src, recents)
-        v := try remove_cred(mut store, p.positional(2))
+        v := try application.remove_cred(mut store, p.positional(2))
         if as_json {
             say(json.stringify(RemovedNote{ removed: "credential", name: v.name }))
         } else {
@@ -754,5 +753,5 @@ fn cmd_cred(p: ParsedArgs, sec: SecretInput, as_json: bool, c: flint_crypto.Sodi
         }
         return
     }
-    return error(coded(ERR_USAGE, "unknown command `flint cred {verb}`; see `flint help`"))
+    return error(domain.coded(domain.ERR_USAGE, "unknown command `flint cred {verb}`; see `flint help`"))
 }

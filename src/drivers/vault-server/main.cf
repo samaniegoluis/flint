@@ -41,7 +41,7 @@ fn log_line(s: str) {
 
 fn fail(msg: str) {
     eprintln("flint-vault-server: {error_text_of(msg)}")
-    os.exit(exit_code_for(error_code_of(msg)))
+    os.exit(domain.exit_code_for(domain.error_code_of(msg)))
 }
 
 fn on_stop(sig: i32) {
@@ -57,36 +57,36 @@ type TokenOut struct {
 fn listen_parts(spec: str) -> ServeOptions! {
     colon := spec.last_index_of(":") or 0
     if colon == 0 {
-        return error(coded(ERR_USAGE, "FLINT_VAULT_LISTEN must be host:port, such as 0.0.0.0:8787"))
+        return error(domain.coded(domain.ERR_USAGE, "FLINT_VAULT_LISTEN must be host:port, such as 0.0.0.0:8787"))
     }
     mut host := spec[..colon]
     if host.starts_with("[") && host.ends_with("]") {
         host = str(host[1..host.len() - 1])
     }
-    port := parse_version_tag(spec[colon + 1..])
+    port := domain.parse_version_tag(spec[colon + 1..])
     if port < 1 || port > 65535 {
-        return error(coded(ERR_USAGE, "FLINT_VAULT_LISTEN has no valid port"))
+        return error(domain.coded(domain.ERR_USAGE, "FLINT_VAULT_LISTEN has no valid port"))
     }
     return ServeOptions{ host: host, port: u16(port), data_dir: "", trust_proxy: false, header_ms: HEADER_TIMEOUT_MS, body_ms: BODY_TIMEOUT_MS }
 }
 
 fn cmd_serve() -> void! {
-    sodium := try new_sodium()
+    sodium := try flint_crypto.new_sodium()
     // CFIRE-UPSTREAM: CF-196 (`mut x := CONST` of another package infers no type)
-    mut max_body: i64 = SERVER_MAX_BODY_DEFAULT
+    mut max_body: i64 = vaultserver.SERVER_MAX_BODY_DEFAULT
     max_text := (os.getenv("FLINT_VAULT_MAX_BYTES") or "")
     if max_text.len() > 0 {
-        max_body = parse_version_tag(max_text)
+        max_body = domain.parse_version_tag(max_text)
         if max_body < 1 {
-            return error(coded(ERR_USAGE, "FLINT_VAULT_MAX_BYTES must be a number of bytes"))
+            return error(domain.coded(domain.ERR_USAGE, "FLINT_VAULT_MAX_BYTES must be a number of bytes"))
         }
     }
-    mut cfg := try server_config_from(sodium, (os.getenv("FLINT_VAULT_TOKEN") or ""), (os.getenv("FLINT_VAULT_TOKEN_HASH") or ""), max_body)
+    mut cfg := try vaultserver.server_config_from(sodium, (os.getenv("FLINT_VAULT_TOKEN") or ""), (os.getenv("FLINT_VAULT_TOKEN_HASH") or ""), max_body)
     max_vaults_text := (os.getenv("FLINT_VAULT_MAX_VAULTS") or "")
     if max_vaults_text.len() > 0 {
-        cfg.max_vaults = parse_version_tag(max_vaults_text)
+        cfg.max_vaults = domain.parse_version_tag(max_vaults_text)
         if cfg.max_vaults < 1 {
-            return error(coded(ERR_USAGE, "FLINT_VAULT_MAX_VAULTS must be a number of vaults"))
+            return error(domain.coded(domain.ERR_USAGE, "FLINT_VAULT_MAX_VAULTS must be a number of vaults"))
         }
     }
     mut opts := try listen_parts((os.getenv("FLINT_VAULT_LISTEN") or DEFAULT_LISTEN))
@@ -99,8 +99,8 @@ fn cmd_serve() -> void! {
 }
 
 fn cmd_token(as_json: bool) -> void! {
-    sodium := try new_sodium()
-    t := try new_server_token(sodium)
+    sodium := try flint_crypto.new_sodium()
+    t := try vaultserver.new_server_token(sodium)
     if as_json {
         println(json.stringify(TokenOut{ token: t.token, hash: t.hash }))
         return
@@ -114,7 +114,7 @@ fn cmd_token(as_json: bool) -> void! {
 }
 
 fn data_store() -> serverfs.FileBlobStore! {
-    return try new_file_blob_store((os.getenv("FLINT_VAULT_DATA") or DEFAULT_DATA))
+    return try serverfs.new_file_blob_store((os.getenv("FLINT_VAULT_DATA") or DEFAULT_DATA))
 }
 
 fn pad_left(s: str, width: usize) -> str {
@@ -127,7 +127,7 @@ fn pad_left(s: str, width: usize) -> str {
 
 fn cmd_vaults(as_json: bool) -> void! {
     mut store := try data_store()
-    vaults := try list_server_vaults(mut store)
+    vaults := try vaultserver.list_server_vaults(mut store)
     if as_json {
         println(json.stringify(vaults))
         return
@@ -145,8 +145,8 @@ fn cmd_vaults(as_json: bool) -> void! {
 
 fn cmd_versions(wanted: str, as_json: bool) -> void! {
     mut store := try data_store()
-    v := try server_vault_named(mut store, wanted)
-    kept := try list_vault_versions(mut store, v.id)
+    v := try vaultserver.server_vault_named(mut store, wanted)
+    kept := try vaultserver.list_vault_versions(mut store, v.id)
     if as_json {
         println(json.stringify(kept))
         return
@@ -159,13 +159,13 @@ fn cmd_versions(wanted: str, as_json: bool) -> void! {
 }
 
 fn cmd_restore(wanted: str, arg: str, as_json: bool) -> void! {
-    n := parse_version_tag(arg)
+    n := domain.parse_version_tag(arg)
     if n < 1 {
-        return error(coded(ERR_USAGE, "restore takes a version number from `flint-vault-server versions`"))
+        return error(domain.coded(domain.ERR_USAGE, "restore takes a version number from `flint-vault-server versions`"))
     }
     mut store := try data_store()
-    target := try server_vault_named(mut store, wanted)
-    v := try restore_vault_version(mut store, target.id, n, time.now().unix_millis())
+    target := try vaultserver.server_vault_named(mut store, wanted)
+    v := try vaultserver.restore_vault_version(mut store, target.id, n, time.now().unix_millis())
     if as_json {
         println(json.stringify(v))
         return
@@ -175,8 +175,8 @@ fn cmd_restore(wanted: str, arg: str, as_json: bool) -> void! {
 
 fn cmd_label(wanted: str, label: str) -> void! {
     mut store := try data_store()
-    target := try server_vault_named(mut store, wanted)
-    try set_server_vault_label(mut store, target.id, label)
+    target := try vaultserver.server_vault_named(mut store, wanted)
+    try vaultserver.set_server_vault_label(mut store, target.id, label)
     if label.len() == 0 {
         println("vault {target.id} has no label now")
         return
@@ -197,8 +197,8 @@ fn confirmed(question: str) -> bool {
 // removes its folder. `--yes` skips the question, for scripts.
 fn cmd_delete(wanted: str, yes: bool, as_json: bool) -> void! {
     mut store := try data_store()
-    target := try server_vault_named(mut store, wanted)
-    kept := try list_vault_versions(mut store, target.id)
+    target := try vaultserver.server_vault_named(mut store, wanted)
+    kept := try vaultserver.list_vault_versions(mut store, target.id)
     if !yes {
         mut named := target.id
         if target.label.len() > 0 {
@@ -207,10 +207,10 @@ fn cmd_delete(wanted: str, yes: bool, as_json: bool) -> void! {
         eprintln("vault {named}: version {target.version}, {kept.len()} versions kept, {target.size} bytes")
         eprintln("A machine still connected to it uploads its copy again at its next sync: disconnect them first.")
         if !confirmed("Delete it and every version kept?") {
-            return error(coded(ERR_DENIED, "nothing was deleted"))
+            return error(domain.coded(domain.ERR_DENIED, "nothing was deleted"))
         }
     }
-    try delete_server_vault(mut store, target.id)
+    try vaultserver.delete_server_vault(mut store, target.id)
     if as_json {
         println(json.stringify(target))
         return
@@ -237,7 +237,7 @@ fn main() {
         }
     }
     if words.len() > 0 && (words[0] == "--version" || words[0] == "-V" || words[0] == "version") {
-        println("flint-vault-server {FLINT_VERSION}")
+        println("flint-vault-server {version.FLINT_VERSION}")
         return
     }
     if words.len() > 0 && (words[0] == "--help" || words[0] == "-h" || words[0] == "help") {
@@ -308,5 +308,5 @@ fn main() {
         }
         return
     }
-    fail(coded(ERR_USAGE, USAGE))
+    fail(domain.coded(domain.ERR_USAGE, USAGE))
 }

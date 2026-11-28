@@ -23,18 +23,18 @@ test "FLINT_PRESENCE=password picks the master password and never skips the chec
     mut p := new_os_presence()
     p.force_password = true
     assert_eq(p.presence_method(), PRESENCE_PASSWORD)
-    p.presence_confirm(window_open_reason("x")) or { refused += 1 }
+    p.presence_confirm(domain.window_open_reason("x")) or { refused += 1 }
     assert_eq(refused, 1)
 }
 
 // Milestone 68: the reason the OS dialog shows follows the window's language; the
 // English is the core's sentence, unchanged.
 test "a presence reason reads in the window's language" {
-    r := sudo_period_reason("claude", "db1", "5")
+    r := domain.sudo_period_reason("claude", "db1", "5")
     assert_eq(presence_text("en", r), r.text)
     assert_eq(presence_text("es", r), "permitir que \"claude\" ejecute comandos como root en db1 durante 5 minutos")
-    assert_eq(presence_text("es", window_open_reason("Work")), "abrir la ventana de Flint de la bóveda Work")
-    assert_eq(presence_text("es", rdp_type_password_reason("win1")), "escribir la contraseña de win1 en su escritorio remoto")
+    assert_eq(presence_text("es", domain.window_open_reason("Work")), "abrir la ventana de Flint de la bóveda Work")
+    assert_eq(presence_text("es", domain.rdp_type_password_reason("win1")), "escribir la contraseña de win1 en su escritorio remoto")
     // An id the table lacks, or params it does not expect, read English.
     assert_eq(presence_text("es", domain.PresenceReason{ id: "x", params: [], text: "do x" }), "do x")
     p := new_os_presence()

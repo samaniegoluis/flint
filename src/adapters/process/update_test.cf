@@ -6,7 +6,6 @@ package process
 import "core:fs"
 import "core:os"
 import "core:time"
-import "../../domain"
 
 fn update_tmp(name: str) -> str {
     return "{temp_base()}/flint-update-{name}-{time.now_ms()}"

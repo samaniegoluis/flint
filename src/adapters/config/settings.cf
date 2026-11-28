@@ -13,36 +13,36 @@ type SettingsFile struct {
     settings: domain.Settings `json:"settings"`
 }
 
-type JsonSettingsStore struct {
+pub type JsonSettingsStore struct {
     path: str
 }
 
-fn new_json_settings_store(dir: str) -> JsonSettingsStore {
+pub fn new_json_settings_store(dir: str) -> JsonSettingsStore {
     return JsonSettingsStore{ path: dir + "/settings.json" }
 }
 
 fn (self: JsonSettingsStore) settings_load() -> domain.Settings! {
     if !fs.exists(self.path) {
-        return default_settings()
+        return domain.default_settings()
     }
-    text := fs.read_text(self.path) or err {
-        return error(coded(ERR_IO, "cannot read {self.path}"))
+    text := fs.read_text(self.path) or {
+        return error(domain.coded(domain.ERR_IO, "cannot read {self.path}"))
     }
     // CFIRE-UPSTREAM: CF-164 (a labeled argument keeps libstdc++'s chrono::parse out)
-    parsed := json.parse[SettingsFile](payload: text) or err {
+    parsed := json.parse[SettingsFile](payload: text) or {
         // A damaged file must not keep the app from starting: use the defaults.
-        return default_settings()
+        return domain.default_settings()
     }
     return parsed.settings
 }
 
 fn (self: JsonSettingsStore) settings_save(s: domain.Settings) -> void! {
     dir := fs.dirname(self.path)
-    fs.mkdir_all(dir) or err {
-        return error(coded(ERR_IO, "cannot create {dir}"))
+    fs.mkdir_all(dir) or {
+        return error(domain.coded(domain.ERR_IO, "cannot create {dir}"))
     }
     body := json.stringify(SettingsFile{ version: 1, settings: s })
-    fs.write_text(self.path, body + "\n") or err {
-        return error(coded(ERR_IO, "cannot write {self.path}"))
+    fs.write_text(self.path, body + "\n") or {
+        return error(domain.coded(domain.ERR_IO, "cannot write {self.path}"))
     }
 }

@@ -9,12 +9,12 @@ import "../../application"
 import "../../domain"
 
 fn cp_usage() -> str {
-    return coded(ERR_USAGE, "usage: flint cp [-r] [--force] <src> <dst>, where one or both name a host as <alias>:<path>")
+    return domain.coded(domain.ERR_USAGE, "usage: flint cp [-r] [--force] <src> <dst>, where one or both name a host as <alias>:<path>")
 }
 
 // The copy `flint cp <src> <dst>` asks for: one side names a host, or both (a copy
 // between two hosts, which reads `remote` on `alias` and writes `local` on `to_alias`).
-fn copy_request_from_args(p: ParsedArgs) -> application.CopyRequest! {
+pub fn copy_request_from_args(p: ParsedArgs) -> application.CopyRequest! {
     if p.positionals.len() != 3 || p.has_rest {
         return error(cp_usage())
     }
@@ -23,30 +23,30 @@ fn copy_request_from_args(p: ParsedArgs) -> application.CopyRequest! {
     src_remote := is_cp_remote_arg(src)
     dst_remote := is_cp_remote_arg(dst)
     if !src_remote && !dst_remote {
-        return error(coded(ERR_USAGE, "neither path names a host; write one as <alias>:<path>, e.g. web:/etc/app.conf"))
+        return error(domain.coded(domain.ERR_USAGE, "neither path names a host; write one as <alias>:<path>, e.g. web:/etc/app.conf"))
     }
     recursive := p.has_flag("-r") || p.has_flag("--recursive")
     force := p.has_flag("--force")
     if src_remote && dst_remote {
-        a := try parse_remote_arg(src)
-        b := try parse_remote_arg(dst)
-        return application.CopyRequest{ id: "cp", alias: a.alias, direction: COPY_RELAY, local: b.path, remote: a.path, recursive: recursive, force: force, to_alias: b.alias }
+        a := try domain.parse_remote_arg(src)
+        b := try domain.parse_remote_arg(dst)
+        return application.CopyRequest{ id: "cp", alias: a.alias, direction: domain.COPY_RELAY, local: b.path, remote: a.path, recursive: recursive, force: force, to_alias: b.alias }
     }
     if src_remote {
-        r := try parse_remote_arg(src)
-        return application.CopyRequest{ id: "cp", alias: r.alias, direction: COPY_DOWNLOAD, local: local_slashes(dst), remote: r.path, recursive: recursive, force: force }
+        r := try domain.parse_remote_arg(src)
+        return application.CopyRequest{ id: "cp", alias: r.alias, direction: domain.COPY_DOWNLOAD, local: process.local_slashes(dst), remote: r.path, recursive: recursive, force: force }
     }
-    r := try parse_remote_arg(dst)
-    return application.CopyRequest{ id: "cp", alias: r.alias, direction: COPY_UPLOAD, local: local_slashes(src), remote: r.path, recursive: recursive, force: force }
+    r := try domain.parse_remote_arg(dst)
+    return application.CopyRequest{ id: "cp", alias: r.alias, direction: domain.COPY_UPLOAD, local: process.local_slashes(src), remote: r.path, recursive: recursive, force: force }
 }
 
 // Whether a `flint cp` path names a host. On Windows, `C:\...` and `C:/...` are
 // local paths, not host `C` (scp on Windows reads them the same way). windows-port.
 fn is_cp_remote_arg(arg: str) -> bool {
-    if os_name() == "windows" && is_drive_path(local_slashes(arg)) {
+    if process.os_name() == "windows" && domain.is_drive_path(process.local_slashes(arg)) {
         return false
     }
-    return is_remote_arg(arg)
+    return domain.is_remote_arg(arg)
 }
 
 // The host alias a `flint cp` line copies to or from ("" when it names none).
@@ -54,7 +54,7 @@ fn cp_alias(p: ParsedArgs) -> str {
     for i in 1..3 {
         a := p.positional(usize(i))
         if is_cp_remote_arg(a) {
-            r := parse_remote_arg(a) or domain.RemotePath{ alias: "", path: "" }
+            r := domain.parse_remote_arg(a) or domain.RemotePath{ alias: "", path: "" }
             return r.alias
         }
     }
@@ -66,7 +66,7 @@ fn cp_second_alias(p: ParsedArgs) -> str {
     if !is_cp_remote_arg(p.positional(1)) || !is_cp_remote_arg(p.positional(2)) {
         return ""
     }
-    r := parse_remote_arg(p.positional(2)) or domain.RemotePath{ alias: "", path: "" }
+    r := domain.parse_remote_arg(p.positional(2)) or domain.RemotePath{ alias: "", path: "" }
     return r.alias
 }
 
@@ -80,18 +80,18 @@ fn duration_text(ms: i64) -> str {
 
 fn copy_summary(r: domain.CopyResult, req: application.CopyRequest) -> str {
     mut where := "to {r.host}:{req.remote}"
-    if r.direction == COPY_RELAY {
+    if r.direction == domain.COPY_RELAY {
         where = "from {r.host}:{req.remote} to {r.to_host}:{req.local}"
         if r.files.len() == 1 && r.folders == 0 {
             where = "from {r.host}:{r.files[0].source} to {r.to_host}:{r.files[0].target}"
         }
     }
-    if r.direction == COPY_DOWNLOAD {
+    if r.direction == domain.COPY_DOWNLOAD {
         where = "from {r.host}:{req.remote} to {req.local}"
     }
-    if r.files.len() == 1 && r.folders == 0 && r.direction != COPY_RELAY {
+    if r.files.len() == 1 && r.folders == 0 && r.direction != domain.COPY_RELAY {
         f := r.files[0]
-        if r.direction == COPY_UPLOAD {
+        if r.direction == domain.COPY_UPLOAD {
             where = "to {r.host}:{f.target}"
         } else {
             where = "from {r.host}:{f.source} to {f.target}"
@@ -109,14 +109,14 @@ fn cmd_cp[P: ports.Prompter, L: ports.LocalFiles, K: ports.TransferSink](p: Pars
     req := try copy_request_from_args(p)
     opts := try connect_options(p)
     s := try open_target(p, sec, c, mut store, src, recents)
-    mut link := new_ssh_link()
-    mut clock := new_system_clock()
+    mut link := flint_ssh.new_ssh_link()
+    mut clock := process.new_system_clock()
     mut res := domain.CopyResult{}
-    if req.direction == COPY_RELAY {
-        mut to := new_ssh_link()
-        res = try relay_with_hosts(c, mut store, s, mut link, mut to, prompter, mut sink, mut clock, req, opts)
+    if req.direction == domain.COPY_RELAY {
+        mut to := flint_ssh.new_ssh_link()
+        res = try application.relay_with_hosts(c, mut store, s, mut link, mut to, prompter, mut sink, mut clock, req, opts)
     } else {
-        res = try copy_with_host(c, mut store, s, mut link, prompter, mut local, mut sink, mut clock, req, opts)
+        res = try application.copy_with_host(c, mut store, s, mut link, prompter, mut local, mut sink, mut clock, req, opts)
     }
     if as_json {
         say(json.stringify(res))
@@ -131,7 +131,7 @@ fn cmd_cp[P: ports.Prompter, L: ports.LocalFiles, K: ports.TransferSink](p: Pars
             }
             list = list + sk
         }
-        write_stderr("flint: skipped {plural(i64(res.skipped.len()), "link or special file", "links or special files")}: {list}\n")
+        process.write_stderr("flint: skipped {plural(i64(res.skipped.len()), "link or special file", "links or special files")}: {list}\n")
     }
     return 0
 }

@@ -16,7 +16,7 @@ import "../domain"
 import "../ports"
 
 // What `vault merge` reports: the vault, the copy merged into it, and what changed.
-type MergeOutcome struct {
+pub type MergeOutcome struct {
     path:   str         `json:"path"`
     name:   str         `json:"name"`
     copy:   str         `json:"copy"`
@@ -26,22 +26,22 @@ type MergeOutcome struct {
 // Merges the vault at `copy_path` into the open vault (`store`, `session`), through
 // `copy`, a store of its own for the copy. `password` is the master password typed
 // for this command; empty, the key this computer remembers for the copy is used.
-fn merge_vault_copy[C: ports.Crypto, S: ports.VaultStore, P: ports.VaultStore, K: ports.Keychain](crypto: C, mut store: S, mut copy: P, keychain: K, session: VaultSession, copy_path: str, password: str) -> MergeOutcome! {
+pub fn merge_vault_copy[C: ports.Crypto, S: ports.VaultStore, P: ports.VaultStore, K: ports.Keychain](crypto: C, mut store: S, mut copy: P, keychain: K, session: VaultSession, copy_path: str, password: str) -> MergeOutcome! {
     try check_absolute(copy_path)
     if copy_path == session.path {
-        return error(coded(ERR_INVALID, "{copy_path} is the vault itself; name the conflict copy to merge into it"))
+        return error(domain.coded(domain.ERR_INVALID, "{copy_path} is the vault itself; name the conflict copy to merge into it"))
     }
     salt := try copy.vault_read_salt(copy_path)
     mut master: []byte = []
     if password.len() == 0 {
         cached := keychain.keychain_load(vault_account(salt)) or []
-        if cached.len() != VAULT_KEY_LEN {
-            return error(coded(ERR_LOCKED, "the master password is needed to open {copy_path}"))
+        if cached.len() != domain.VAULT_KEY_LEN {
+            return error(domain.coded(domain.ERR_LOCKED, "the master password is needed to open {copy_path}"))
         }
         master = cached
         crypto.wipe(cached)
     } else {
-        master = try crypto.derive_key(password, salt, VAULT_ARGON2_OPS, VAULT_ARGON2_MEM)
+        master = try crypto.derive_key(password, salt, domain.VAULT_ARGON2_OPS, domain.VAULT_ARGON2_MEM)
     }
     defer crypto.wipe(master)
     (page, secrets) := try derive_vault_keys(crypto, master)
@@ -49,29 +49,29 @@ fn merge_vault_copy[C: ports.Crypto, S: ports.VaultStore, P: ports.VaultStore, K
     defer crypto.wipe(secrets)
     copy.vault_attach_copy(copy_path, page, salt) or err {
         msg := "{err.message()}"
-        if error_code_of(msg) == ERR_WRONG_PASSWORD {
-            return error(coded(ERR_WRONG_PASSWORD, "{copy_path} does not open with the master password of vault '{session.name}': it is another vault, or its password was changed on another machine"))
+        if domain.error_code_of(msg) == domain.ERR_WRONG_PASSWORD {
+            return error(domain.coded(domain.ERR_WRONG_PASSWORD, "{copy_path} does not open with the master password of vault '{session.name}': it is another vault, or its password was changed on another machine"))
         }
         return error(msg)
     }
     defer copy.vault_detach()
     // A copy from before milestone 40 has no id in meta yet: it had the one of its salt.
-    mut copy_id := try copy.vault_get_meta(VAULT_META_ID)
+    mut copy_id := try copy.vault_get_meta(domain.VAULT_META_ID)
     if copy_id.len() == 0 {
         copy_id = try salt_vault_id(crypto, salt)
     }
     if copy_id != session.id {
-        return error(coded(ERR_INVALID, "{copy_path} is another vault, not a copy of '{session.name}'"))
+        return error(domain.coded(domain.ERR_INVALID, "{copy_path} is another vault, not a copy of '{session.name}'"))
     }
     // Same vault, opened with the same password, but a salt of its own (the password
     // set again to the same text on another machine): its secrets are sealed under
     // another key, and they move as they are, so it is refused.
     if !crypto.equal(secrets, session.secrets_key) {
-        return error(coded(ERR_INVALID, "{copy_path} was re-keyed apart from vault '{session.name}'; merge it once both have the same master password"))
+        return error(domain.coded(domain.ERR_INVALID, "{copy_path} was re-keyed apart from vault '{session.name}'; merge it once both have the same master password"))
     }
     theirs := try copy.vault_records()
     mine := try store.vault_records()
-    merged := merge_vaults(mine, theirs)
+    merged := domain.merge_vaults(mine, theirs)
     try store.vault_begin()
     store.vault_replace_records(merged.records) or err {
         store.vault_rollback()

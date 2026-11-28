@@ -21,7 +21,7 @@ SYNC_INTERVAL_DEFAULT: i64 = 60
 // folder (`remotes.json`, D-030). Nothing from inside the vault: its path, its id,
 // the server's URL, the version last merged and a hash of the encrypted file as it
 // was then. The token is in the OS keychain, never here.
-type RemoteLink struct {
+pub type RemoteLink struct {
     path:        str `json:"path"`
     vault_id:    str `json:"vault_id"`
     url:         str `json:"url"`
@@ -40,7 +40,7 @@ type RemoteLink struct {
 // What a GET of the vault brought back. `found` is false while the server holds no
 // vault yet (404 empty); `changed` is false when it still holds `known_version` (304),
 // and then `data` is empty.
-type RemoteVault struct {
+pub type RemoteVault struct {
     found:    bool
     changed:  bool
     version:  i64
@@ -50,13 +50,13 @@ type RemoteVault struct {
 
 // What an upload brought back: `stored` with the new `version`, or not stored because
 // another machine uploaded first (409), `version` then being the server's newest.
-type RemoteStored struct {
+pub type RemoteStored struct {
     stored:  bool
     version: i64
 }
 
 // A blob downloaded from the server, opened: its records and the vault id in it.
-type BlobRecords struct {
+pub type BlobRecords struct {
     vault_id: str
     records:  VaultRecords
 }
@@ -86,7 +86,7 @@ fn is_loopback_host(host: str) -> bool {
 // The server's base URL, cleaned: `https://` (or `http://` to this machine only,
 // Principle 14), no path but an optional `/v1/vault` (dropped), no query, no user
 // in it, no trailing slash.
-fn check_remote_url(raw: str) -> str! {
+pub fn check_remote_url(raw: str) -> str! {
     mut u := raw.trim()
     mut rest := ""
     mut secure := false
@@ -146,22 +146,22 @@ fn check_remote_url(raw: str) -> str! {
 }
 
 // The URL of the vault `vault_id` on the server at `base` (check_remote_url's).
-fn remote_vault_url(base: str, vault_id: str) -> str {
+pub fn remote_vault_url(base: str, vault_id: str) -> str {
     return base + REMOTE_VAULTS_PATH + "/" + vault_id
 }
 
 // The URL of the list of vaults the server at `base` keeps.
-fn remote_vaults_url(base: str) -> str {
+pub fn remote_vaults_url(base: str) -> str {
     return base + REMOTE_VAULTS_PATH
 }
 
 // The URL of the label of the vault `vault_id` on the server at `base`.
-fn remote_label_url(base: str, vault_id: str) -> str {
+pub fn remote_label_url(base: str, vault_id: str) -> str {
     return remote_vault_url(base, vault_id) + "/label"
 }
 
 // The Argon2id salt of a vault file: its first 16 bytes, where SQLCipher keeps it.
-fn vault_blob_salt(data: []byte) -> []byte! {
+pub fn vault_blob_salt(data: []byte) -> []byte! {
     if data.len() < VAULT_SALT_LEN + 1 {
         return error(coded(ERR_INVALID, "the server's copy is not a Flint vault"))
     }
@@ -175,13 +175,13 @@ fn vault_blob_salt(data: []byte) -> []byte! {
 // Whether `merged` holds anything `theirs` lacks: a record added, changed or removed.
 // A merge that only took the server's changes leaves nothing to upload, so two
 // machines in step never hand each other empty versions.
-fn merge_adds_to(theirs: VaultRecords, merged: VaultRecords) -> bool {
+pub fn merge_adds_to(theirs: VaultRecords, merged: VaultRecords) -> bool {
     r := merge_report(theirs, merged, [])
     return r.added + r.updated + r.removed > 0
 }
 
 // The link for `path`, by index; -1 when the vault is not connected here.
-fn find_remote_link(links: []RemoteLink, path: str) -> i64 {
+pub fn find_remote_link(links: []RemoteLink, path: str) -> i64 {
     for i, l in links {
         if l.path == path {
             return i64(i)
@@ -191,7 +191,7 @@ fn find_remote_link(links: []RemoteLink, path: str) -> i64 {
 }
 
 // The keychain account that holds a connected vault's server token.
-fn remote_token_account(vault_id: str) -> str {
+pub fn remote_token_account(vault_id: str) -> str {
     return "remote-token:" + vault_id
 }
 
@@ -216,11 +216,11 @@ SYNC_BACKOFF_MS: i64 = 30000
 SYNC_BACKOFF_MAX_MS: i64 = 900000
 
 // Why the app was told to look: the window came back, or the person asked.
-SYNC_HINT_FOCUS: str = "focus"
-SYNC_HINT_NOW: str = "now"
+pub SYNC_HINT_FOCUS: str = "focus"
+pub SYNC_HINT_NOW: str = "now"
 
 // What the app's sync loop remembers between its ticks. Times are its monotonic clock.
-type SyncClock struct {
+pub type SyncClock struct {
     // The vault the last check was for ("" before the first): another one, or the
     // same one unlocked again, is checked at once.
     path: str
@@ -235,12 +235,12 @@ type SyncClock struct {
     refused: []str
 }
 
-fn new_sync_clock() -> SyncClock {
+pub fn new_sync_clock() -> SyncClock {
     return SyncClock{ path: "", last_check: 0, pending_since: 0, failures: 0, refused: [] }
 }
 
 // Whether the server refused the token of the vault at `path`.
-fn sync_refused(clock: SyncClock, path: str) -> bool {
+pub fn sync_refused(clock: SyncClock, path: str) -> bool {
     for p in clock.refused {
         if p == path {
             return true
@@ -251,7 +251,7 @@ fn sync_refused(clock: SyncClock, path: str) -> bool {
 
 // The server refused the vault at `path` outside the clock's own attempts (a Sync now
 // the person ran): it pauses as after one of the loop's.
-fn sync_pause(mut clock: SyncClock, path: str) {
+pub fn sync_pause(mut clock: SyncClock, path: str) {
     if !sync_refused(clock, path) {
         clock.refused.push(path)
     }
@@ -259,7 +259,7 @@ fn sync_pause(mut clock: SyncClock, path: str) {
 
 // The person acted on the vault at `path` (a Sync now that worked, a new token): it
 // syncs on its own again, with no back-off left from before.
-fn sync_resume(mut clock: SyncClock, path: str) {
+pub fn sync_resume(mut clock: SyncClock, path: str) {
     mut kept: []str = []
     for p in clock.refused {
         if p != path {
@@ -276,7 +276,7 @@ fn sync_resume(mut clock: SyncClock, path: str) {
 // while, once a change has settled, or when the interval has passed. After failures,
 // once the back-off has passed and never sooner, unless asked. A refused vault syncs
 // only when asked. Updates `pending_since`.
-fn sync_due(mut clock: SyncClock, path: str, now: i64, pending: bool, interval_s: i64, hint: str) -> bool {
+pub fn sync_due(mut clock: SyncClock, path: str, now: i64, pending: bool, interval_s: i64, hint: str) -> bool {
     if pending {
         if clock.pending_since == 0 {
             clock.pending_since = now
@@ -295,7 +295,7 @@ fn sync_due(mut clock: SyncClock, path: str, now: i64, pending: bool, interval_s
     }
     if clock.failures > 0 {
         mut wait := SYNC_BACKOFF_MS
-        for i in 1..clock.failures {
+        for _ in 1..clock.failures {
             if wait < SYNC_BACKOFF_MAX_MS {
                 wait = wait * 2
             }
@@ -319,7 +319,7 @@ fn sync_due(mut clock: SyncClock, path: str, now: i64, pending: bool, interval_s
 // it worked). ERR_AUTH (the server refused the token, or this machine holds none)
 // pauses the vault: neither mends itself, and every attempt counts against the
 // server's lockout for everyone behind the same address.
-fn sync_checked(mut clock: SyncClock, path: str, now: i64, code: str) {
+pub fn sync_checked(mut clock: SyncClock, path: str, now: i64, code: str) {
     clock.path = path
     clock.last_check = now
     if code.len() == 0 {

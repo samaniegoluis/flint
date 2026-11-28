@@ -20,7 +20,7 @@ import "../../domain"
 STATS_LOCKED_READ_MS: i32 = 5
 STATS_POLL_MS: i64 = 40
 
-type StatsLink struct {
+pub type StatsLink struct {
     session_id: str
     watch_id:   str
     link:       SshLink
@@ -29,7 +29,7 @@ type StatsLink struct {
 
 // Borrows the session `session_id` for the watch `watch_id`. Fails with `not_found`
 // when the tab's shell is not open (or is closing).
-fn borrow_stats(session_id: str, watch_id: str) -> StatsLink! {
+pub fn borrow_stats(session_id: str, watch_id: str) -> StatsLink! {
     link := try borrow_transfer(session_id, watch_id)
     return StatsLink{ session_id: session_id, watch_id: watch_id, link: link, open: false }
 }
@@ -55,7 +55,7 @@ fn (mut self: StatsLink) stats_read(timeout_ms: i64) -> domain.ExecChunk! {
         }
         time.sleep_ms(STATS_POLL_MS)
     }
-    return error(coded(ERR_INTERNAL, "unreachable"))
+    return error(domain.coded(domain.ERR_INTERNAL, "unreachable"))
 }
 
 fn (mut self: StatsLink) stats_stopped() -> bool {
@@ -97,6 +97,6 @@ fn (mut self: StatsLink) stats_release() {
 
 // Asks the watch `watch_id` to end (the setting turned off, or the page let go of
 // the tab); its loop sees it within a read.
-fn stats_cancel(watch_id: str) {
+pub fn stats_cancel(watch_id: str) {
     files_cancel(watch_id)
 }

@@ -148,16 +148,16 @@ fn check_command(p: ParsedArgs) -> void! {
     noun := p.positional(0)
     session_noun := noun == "connect" || noun == "exec" || noun == "cp"
     if !session_noun && noun != "vault" && noun != "group" && noun != "host" && noun != "key" && noun != "cred" && noun != "known-host" && noun != "token" && noun != "tunnel" {
-        return error(coded(ERR_USAGE, "unknown command '{noun}'; see `flint help`"))
+        return error(domain.coded(domain.ERR_USAGE, "unknown command '{noun}'; see `flint help`"))
     }
     if p.positional(1).len() == 0 {
         if noun == "cp" {
             return error(cp_usage())
         }
         if session_noun {
-            return error(coded(ERR_USAGE, "`flint {noun}` needs a host alias; see `flint help`"))
+            return error(domain.coded(domain.ERR_USAGE, "`flint {noun}` needs a host alias; see `flint help`"))
         }
-        return error(coded(ERR_USAGE, "`flint {noun}` needs a command; see `flint help`"))
+        return error(domain.coded(domain.ERR_USAGE, "`flint {noun}` needs a command; see `flint help`"))
     }
 }
 
@@ -207,7 +207,7 @@ fn run_command(p: ParsedArgs, sec: SecretInput, as_json: bool, c: flint_crypto.S
     } else if noun == "host" {
         try cmd_host(p, sec, as_json, c, mut store, src, recents)
     } else if noun == "key" {
-        try cmd_key(p, sec, as_json, c, mut store, src, recents, new_libssh_key_inspector())
+        try cmd_key(p, sec, as_json, c, mut store, src, recents, flint_ssh.new_libssh_key_inspector())
     } else if noun == "known-host" {
         try cmd_known_host(p, sec, as_json, c, mut store, src, recents)
     } else if noun == "token" {
@@ -225,23 +225,23 @@ fn run_command(p: ParsedArgs, sec: SecretInput, as_json: bool, c: flint_crypto.S
 // from the OS keychain (D-038, Principle 11): the keychain is reached only to remove
 // a cached key (`vault lock`, `vault forget`).
 fn run_local(p: ParsedArgs, sec: SecretInput, as_json: bool) -> i32! {
-    c := try new_sodium()
-    mut store := new_locked_vault_store(flint_config_dir() + "/activity")
+    c := try flint_crypto.new_sodium()
+    mut store := vault.new_locked_vault_store(config.flint_config_dir() + "/activity")
     verb := p.positional(1)
     removes_key := p.positional(0) == "vault" && (verb == "lock" || verb == "forget")
-    kc := new_os_keychain(removes_key && (os.getenv("FLINT_KEYCHAIN") or "") != "off")
-    recents := new_json_recent_store(flint_config_dir())
+    kc := flint_keychain.new_os_keychain(removes_key && (os.getenv("FLINT_KEYCHAIN") or "") != "off")
+    recents := config.new_json_recent_store(config.flint_config_dir())
     mut status: i32! = 0
     if is_session_command(p) {
         mut term_name := (os.getenv("TERM") or "")
         if term_name.len() == 0 {
             term_name = "xterm-256color"
         }
-        mut term := new_stdio_terminal()
-        mut sink := new_stdio_exec_sink()
-        mut local := new_local_fs()
-        mut progress := new_stderr_transfer_sink(as_json)
-        status = run_session_command(p, sec, as_json, c, mut store, local_vault_source(kc), recents, mut term, new_tty_prompter(), mut sink, mut local, mut progress, term_name)
+        mut term := process.new_stdio_terminal()
+        mut sink := process.new_stdio_exec_sink()
+        mut local := process.new_local_fs()
+        mut progress := process.new_stderr_transfer_sink(as_json)
+        status = run_session_command(p, sec, as_json, c, mut store, local_vault_source(kc), recents, mut term, process.new_tty_prompter(), mut sink, mut local, mut progress, term_name)
     } else {
         status = run_command(p, sec, as_json, c, mut store, local_vault_source(kc), recents)
     }
@@ -259,9 +259,9 @@ fn run_local(p: ParsedArgs, sec: SecretInput, as_json: bool) -> i32! {
 // password. With nobody to type it, Flint is asked to unlock and the command waits
 // for it within the approval wait (milestone 61), failing with `locked` when nobody
 // unlocks in time.
-fn run_cli(p: ParsedArgs, args: []str, as_json: bool) -> i32! {
+pub fn run_cli(p: ParsedArgs, args: []str, as_json: bool) -> i32! {
     if wants_help(p) {
-        write_stdout(usage_text())
+        process.write_stdout(usage_text())
         return 0
     }
     // Milestone 77: static text, no vault and no socket, as `help`.
@@ -278,8 +278,8 @@ fn run_cli(p: ParsedArgs, args: []str, as_json: bool) -> i32! {
     }
     mut sec := try read_stdin_secrets(p)
     if noun == "vault" && verb == "lock" {
-        recents := new_json_recent_store(flint_config_dir())
-        target := try resolve_vault(recents, vault_selector(p))
+        recents := config.new_json_recent_store(config.flint_config_dir())
+        target := try application.resolve_vault(recents, vault_selector(p))
         _ = lock_in_app(target)
     }
     // Twice at most: a second time once Flint, asked to unlock, says it has.
@@ -287,15 +287,15 @@ fn run_cli(p: ParsedArgs, args: []str, as_json: bool) -> i32! {
         if servable(p) {
             reply := try ask_app(p, args, as_json, mut sec)
             if reply.served {
-                write_stdout(reply.stdout)
-                write_stderr(reply.stderr)
+                process.write_stdout(reply.stdout)
+                process.write_stderr(reply.stderr)
                 return i32(reply.exit)
             }
         } else if is_session_command(p) {
             reply := try ask_app_session(p, args, as_json, sec)
             if reply.served {
-                write_stdout(reply.stdout)
-                write_stderr(reply.stderr)
+                process.write_stdout(reply.stdout)
+                process.write_stderr(reply.stderr)
                 return i32(reply.exit)
             }
         }
@@ -303,18 +303,18 @@ fn run_cli(p: ParsedArgs, args: []str, as_json: bool) -> i32! {
         // vault left locked with nobody to type its password turns to Flint.
         code := run_local(p, sec, as_json) or err {
             msg := "{err.message()}"
-            if attempt == 1 || sec.has_master || has_terminal() || !needs_unlocked_vault(p) || error_code_of(msg) != ERR_LOCKED {
+            if attempt == 1 || sec.has_master || process.has_terminal() || !needs_unlocked_vault(p) || domain.error_code_of(msg) != domain.ERR_LOCKED {
                 return error(msg)
             }
-            recents := new_json_recent_store(flint_config_dir())
-            target := try resolve_vault(recents, vault_selector(p))
+            recents := config.new_json_recent_store(config.flint_config_dir())
+            target := try application.resolve_vault(recents, vault_selector(p))
             mut st := request_unlock(target, p)
             if st.state == APP_ASKING {
                 // The vault waits for the unlock as an approval waits (milestone 61,
                 // D-134 (3)), then the command goes on to its approval.
                 wait_ms := unlock_wait_ms(st)
                 if !as_json {
-                    write_stderr("Waiting for vault '{target.name}' to be unlocked in Flint, up to {wait_text(wait_ms)}…\n")
+                    process.write_stderr("Waiting for vault '{target.name}' to be unlocked in Flint, up to {wait_text(wait_ms)}…\n")
                 }
                 st = wait_for_unlock(target, wait_ms)
                 if st.state == APP_ASKING || st.state == APP_LOCKED {

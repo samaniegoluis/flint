@@ -16,12 +16,12 @@ import "../ports"
 
 // How strong `password` is, with the vault's name counted as a common word: what
 // the person sees while typing a new master password. Not cryptography.
-fn password_strength(password: str, vault_name: str) -> domain.PasswordStrength {
+pub fn password_strength(password: str, vault_name: str) -> domain.PasswordStrength {
     mut words: []str = ["flint"]
     if vault_name.len() > 0 {
         words.push(vault_name)
     }
-    return estimate_password_strength(password, words)
+    return domain.estimate_password_strength(password, words)
 }
 
 // Every host, key and credential of the open vault with its secrets re-sealed under
@@ -65,18 +65,18 @@ fn reseal[C: ports.Crypto](crypto: C, session: VaultSession, next: VaultSession,
 // the activity file and the keychain as they were.
 fn change_master_password[C: ports.Crypto, S: ports.VaultStore, K: ports.Keychain](crypto: C, mut store: S, keychain: K, session: VaultSession, current: str, new_password: str) -> VaultSession! {
     if session.secrets_key.len() == 0 {
-        return error(coded(ERR_LOCKED, "the vault is locked"))
+        return error(domain.coded(domain.ERR_LOCKED, "the vault is locked"))
     }
     if !(try verify_master_password(crypto, store, session, current)) {
-        return error(coded(ERR_WRONG_PASSWORD, "the current master password is wrong"))
+        return error(domain.coded(domain.ERR_WRONG_PASSWORD, "the current master password is wrong"))
     }
     if new_password.len() < MIN_MASTER_PASSWORD_LEN {
-        return error(coded(ERR_INVALID, "the new master password must be at least {MIN_MASTER_PASSWORD_LEN} characters"))
+        return error(domain.coded(domain.ERR_INVALID, "the new master password must be at least {MIN_MASTER_PASSWORD_LEN} characters"))
     }
     if new_password == current {
-        return error(coded(ERR_INVALID, "the new master password is the same as the current one"))
+        return error(domain.coded(domain.ERR_INVALID, "the new master password is the same as the current one"))
     }
-    return try rekey_vault_to(crypto, mut store, keychain, session, new_password, crypto.random_bytes(VAULT_SALT_LEN))
+    return try rekey_vault_to(crypto, mut store, keychain, session, new_password, crypto.random_bytes(domain.VAULT_SALT_LEN))
 }
 
 // Re-keys the vault `session` holds to `new_password` with `salt`: a new random salt
@@ -86,12 +86,12 @@ fn change_master_password[C: ports.Crypto, S: ports.VaultStore, K: ports.Keychai
 // vault, the activity file and the keychain as they were.
 fn rekey_vault_to[C: ports.Crypto, S: ports.VaultStore, K: ports.Keychain](crypto: C, mut store: S, keychain: K, session: VaultSession, new_password: str, salt: []byte) -> VaultSession! {
     old_salt := try store.vault_read_salt(session.path)
-    master := try crypto.derive_key(new_password, salt, VAULT_ARGON2_OPS, VAULT_ARGON2_MEM)
+    master := try crypto.derive_key(new_password, salt, domain.VAULT_ARGON2_OPS, domain.VAULT_ARGON2_MEM)
     defer crypto.wipe(master)
     (page, secrets) := try derive_vault_keys(crypto, master)
     defer crypto.wipe(page)
     defer crypto.wipe(secrets)
-    act_key := try crypto.derive_subkey(master, VAULT_SUBKEY_ACTIVITY, VAULT_KDF_CONTEXT)
+    act_key := try crypto.derive_subkey(master, domain.VAULT_SUBKEY_ACTIVITY, domain.VAULT_KDF_CONTEXT)
     defer crypto.wipe(act_key)
     next := VaultSession{ path: session.path, name: session.name, id: session.id, secrets_key: secrets, cached: false }
     defer crypto.wipe(next.secrets_key)
@@ -101,7 +101,7 @@ fn rekey_vault_to[C: ports.Crypto, S: ports.VaultStore, K: ports.Keychain](crypt
         store.vault_rekey_abort(session.path)
         return error("{err.message()}")
     }
-    store.activity_rekey_prepare(act_key, crypto.random_bytes(VAULT_SALT_LEN)) or err {
+    store.activity_rekey_prepare(act_key, crypto.random_bytes(domain.VAULT_SALT_LEN)) or err {
         store.vault_rekey_abort(session.path)
         return error("{err.message()}")
     }
@@ -113,7 +113,7 @@ fn rekey_vault_to[C: ports.Crypto, S: ports.VaultStore, K: ports.Keychain](crypt
     mut remembered := session.cached
     if !remembered {
         held := keychain.keychain_load(vault_account(old_salt)) or []
-        remembered = held.len() == VAULT_KEY_LEN
+        remembered = held.len() == domain.VAULT_KEY_LEN
         crypto.wipe(held)
     }
     mut cached := false

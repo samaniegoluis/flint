@@ -10,7 +10,7 @@ import "../domain"
 import "../ports"
 
 // What `flint token create` asks for, by name.
-type TokenRequest struct {
+pub type TokenRequest struct {
     name:  str         `json:"name"`
     scope: ScopeByName `json:"scope"`
     read:  bool        `json:"read"`
@@ -20,7 +20,7 @@ type TokenRequest struct {
 }
 
 // A token as `token list` and the window show it: never its secret or its hash.
-type TokenView struct {
+pub type TokenView struct {
     id:         str   `json:"id"`
     name:       str   `json:"name"`
     all:        bool  `json:"all"`
@@ -36,34 +36,34 @@ type TokenView struct {
 }
 
 // A new token: its view and, this once, the text the program will hold.
-type CreatedToken struct {
+pub type CreatedToken struct {
     token:  TokenView `json:"token"`
     secret: str       `json:"secret"`
 }
 
 fn token_view(t: domain.Token, cat: domain.Catalog, now_s: i64) -> TokenView {
-    g := grant_view(token_as_grant(t, ""), cat)
-    return TokenView{ id: t.id, name: t.name, all: t.scope.all, groups: g.groups, hosts: g.hosts, read: t.read, exec: t.exec, write: t.write, created_at: t.created_at, expires_at: t.expires_at, revoked_at: t.revoked_at, status: token_status(t, now_s) }
+    g := grant_view(domain.token_as_grant(t, ""), cat)
+    return TokenView{ id: t.id, name: t.name, all: t.scope.all, groups: g.groups, hosts: g.hosts, read: t.read, exec: t.exec, write: t.write, created_at: t.created_at, expires_at: t.expires_at, revoked_at: t.revoked_at, status: domain.token_status(t, now_s) }
 }
 
 // Checks a request before the window asks for it: the same rules `create_token`
 // applies, so a bad request never reaches the owner. Returns the scope by id.
-fn check_token_request[S: ports.VaultStore](store: S, req: TokenRequest) -> domain.AccessScope! {
-    try check_token_name(req.name)
-    _ = try token_ttl_seconds(req.ttl)
+pub fn check_token_request[S: ports.VaultStore](store: S, req: TokenRequest) -> domain.AccessScope! {
+    try domain.check_token_name(req.name)
+    _ = try domain.token_ttl_seconds(req.ttl)
     if !req.read && !req.exec && !req.write {
-        return error(coded(ERR_USAGE, "say what the token allows: --allow read,exec,write"))
+        return error(domain.coded(domain.ERR_USAGE, "say what the token allows: --allow read,exec,write"))
     }
     mut by_name := req.scope
     if !by_name.all && by_name.groups.len() == 0 && by_name.hosts.len() == 0 {
         if req.exec || req.write {
-            return error(coded(ERR_USAGE, "say which hosts the token reaches: --hosts <alias,@group,...> or --all"))
+            return error(domain.coded(domain.ERR_USAGE, "say which hosts the token reaches: --hosts <alias,@group,...> or --all"))
         }
         // Reading is vault-wide anyway.
         by_name.all = true
     }
     if req.write && !by_name.all {
-        return error(coded(ERR_INVALID, "a token that changes the vault must reach all of it: --all"))
+        return error(domain.coded(domain.ERR_INVALID, "a token that changes the vault must reach all of it: --all"))
     }
     cat := try load_catalog(store)
     return try access_scope_from_names(cat, by_name)
@@ -71,27 +71,27 @@ fn check_token_request[S: ports.VaultStore](store: S, req: TokenRequest) -> doma
 
 // The hex hash stored for a token's secret.
 fn token_hash[C: ports.Crypto](crypto: C, id: str, secret: str) -> str! {
-    return hex.encode(try crypto.digest([]byte(token_hash_input(id, secret)), 32))
+    return hex.encode(try crypto.digest([]byte(domain.token_hash_input(id, secret)), 32))
 }
 
-fn create_token[C: ports.Crypto, S: ports.VaultStore, T: ports.TokenStore](crypto: C, store: S, mut tokens: T, req: TokenRequest, now_s: i64) -> CreatedToken! {
+pub fn create_token[C: ports.Crypto, S: ports.VaultStore, T: ports.TokenStore](crypto: C, store: S, mut tokens: T, req: TokenRequest, now_s: i64) -> CreatedToken! {
     scope := try check_token_request(store, req)
     name := req.name.trim()
     for t in try tokens.tokens_all() {
-        if token_status(t, now_s) == TOKEN_ACTIVE && t.name.to_lower() == name.to_lower() {
-            return error(coded(ERR_CONFLICT, "a live token is already named '{name}'; revoke it or pick another name"))
+        if domain.token_status(t, now_s) == domain.TOKEN_ACTIVE && t.name.to_lower() == name.to_lower() {
+            return error(domain.coded(domain.ERR_CONFLICT, "a live token is already named '{name}'; revoke it or pick another name"))
         }
     }
-    id := hex.encode(crypto.random_bytes(TOKEN_ID_HEX / 2))
-    secret := hex.encode(crypto.random_bytes(TOKEN_SECRET_HEX / 2))
-    ttl := try token_ttl_seconds(req.ttl)
+    id := hex.encode(crypto.random_bytes(domain.TOKEN_ID_HEX / 2))
+    secret := hex.encode(crypto.random_bytes(domain.TOKEN_SECRET_HEX / 2))
+    ttl := try domain.token_ttl_seconds(req.ttl)
     t := domain.Token{ id: id, name: name, hash: try token_hash(crypto, id, secret), scope: scope, read: req.read, exec: req.exec, write: req.write, created_at: now_s, expires_at: now_s + ttl, revoked_at: 0 }
     try tokens.token_put(t)
     cat := try load_catalog(store)
-    return CreatedToken{ token: token_view(t, cat, now_s), secret: token_text(id, secret) }
+    return CreatedToken{ token: token_view(t, cat, now_s), secret: domain.token_text(id, secret) }
 }
 
-fn list_tokens[S: ports.VaultStore, T: ports.TokenStore](store: S, tokens: T, now_s: i64) -> []TokenView! {
+pub fn list_tokens[S: ports.VaultStore, T: ports.TokenStore](store: S, tokens: T, now_s: i64) -> []TokenView! {
     cat := try load_catalog(store)
     mut views: []TokenView = []
     for t in try tokens.tokens_all() {
@@ -102,10 +102,10 @@ fn list_tokens[S: ports.VaultStore, T: ports.TokenStore](store: S, tokens: T, no
 
 // Revokes the token with id `key`, or the live one named `key`. Revoking twice is
 // not an error: the token stays revoked from the first time.
-fn revoke_token[S: ports.VaultStore, T: ports.TokenStore](store: S, mut tokens: T, key: str, now_s: i64) -> TokenView! {
+pub fn revoke_token[S: ports.VaultStore, T: ports.TokenStore](store: S, mut tokens: T, key: str, now_s: i64) -> TokenView! {
     all := try tokens.tokens_all()
-    mut t := find_token(all, key, now_s) or {
-        return error(coded(ERR_NOT_FOUND, "no token '{key}'; see `flint token list`"))
+    mut t := domain.find_token(all, key, now_s) or {
+        return error(domain.coded(domain.ERR_NOT_FOUND, "no token '{key}'; see `flint token list`"))
     }
     if t.revoked_at == 0 {
         t.revoked_at = now_s
@@ -115,20 +115,14 @@ fn revoke_token[S: ports.VaultStore, T: ports.TokenStore](store: S, mut tokens: 
     return token_view(t, cat, now_s)
 }
 
-// The live token `text` names, if its secret matches the stored hash (compared in
-// constant time). Every failure is `denied`, saying why without echoing the text.
-fn check_token[C: ports.Crypto, T: ports.TokenStore](crypto: C, tokens: T, text: str, now_s: i64) -> domain.Token! {
-    return try check_token_in(crypto, try tokens.tokens_all(), text, now_s)
-}
-
-fn check_token_in[C: ports.Crypto](crypto: C, all: []domain.Token, text: str, now_s: i64) -> domain.Token! {
+pub fn check_token_in[C: ports.Crypto](crypto: C, all: []domain.Token, text: str, now_s: i64) -> domain.Token! {
     t := try match_token(crypto, all, text)
-    status := token_status(t, now_s)
-    if status == TOKEN_REVOKED {
-        return error(coded(ERR_DENIED, "the token '{t.name}' was revoked"))
+    status := domain.token_status(t, now_s)
+    if status == domain.TOKEN_REVOKED {
+        return error(domain.coded(domain.ERR_DENIED, "the token '{t.name}' was revoked"))
     }
-    if status == TOKEN_EXPIRED {
-        return error(coded(ERR_DENIED, "the token '{t.name}' has expired; create a new one with `flint token create`"))
+    if status == domain.TOKEN_EXPIRED {
+        return error(domain.coded(domain.ERR_DENIED, "the token '{t.name}' has expired; create a new one with `flint token create`"))
     }
     return t
 }
@@ -136,34 +130,34 @@ fn check_token_in[C: ports.Crypto](crypto: C, all: []domain.Token, text: str, no
 // The token `text` names when its secret matches the stored hash (compared in
 // constant time), whether live, revoked or expired: the activity log names it even
 // when it is refused.
-fn match_token[C: ports.Crypto](crypto: C, all: []domain.Token, text: str) -> domain.Token! {
-    parts := split_token_text(text)
+pub fn match_token[C: ports.Crypto](crypto: C, all: []domain.Token, text: str) -> domain.Token! {
+    parts := domain.split_token_text(text)
     if !parts.ok {
-        return error(coded(ERR_DENIED, "FLINT_TOKEN is not a Flint token"))
+        return error(domain.coded(domain.ERR_DENIED, "FLINT_TOKEN is not a Flint token"))
     }
     for t in all {
         if t.id == parts.id {
             want := try token_hash(crypto, parts.id, parts.secret)
             if !crypto.equal([]byte(want), []byte(t.hash)) {
-                return error(coded(ERR_DENIED, "FLINT_TOKEN does not match a token of this vault"))
+                return error(domain.coded(domain.ERR_DENIED, "FLINT_TOKEN does not match a token of this vault"))
             }
             return t
         }
     }
-    return error(coded(ERR_DENIED, "FLINT_TOKEN does not match a token of this vault"))
+    return error(domain.coded(domain.ERR_DENIED, "FLINT_TOKEN does not match a token of this vault"))
 }
 
 // Appends `e`, pruning what the vault's retention no longer keeps (milestone 15).
 // Returns the entry's id.
-fn record_activity[T: ports.TokenStore](mut tokens: T, e: domain.ActivityEntry, now_s: i64) -> i64! {
+pub fn record_activity[T: ports.TokenStore](mut tokens: T, e: domain.ActivityEntry, now_s: i64) -> i64! {
     days := try activity_retention_days(tokens)
-    return try tokens.activity_add(e, activity_keep(days, now_s))
+    return try tokens.activity_add(e, domain.activity_keep(days, now_s))
 }
 
 // Records how the command of entry `id` ended (milestone 56, D-127 (3)): its exit
 // status, how long it ran, and the error code when Flint stopped it. False when the
 // entry was pruned meanwhile or never ran.
-fn finish_activity[T: ports.TokenStore](mut tokens: T, id: i64, end: domain.ActivityEnd) -> bool! {
+pub fn finish_activity[T: ports.TokenStore](mut tokens: T, id: i64, end: domain.ActivityEnd) -> bool! {
     if id <= 0 {
         return false
     }
@@ -174,31 +168,31 @@ fn finish_activity[T: ports.TokenStore](mut tokens: T, id: i64, end: domain.Acti
 GRANT_ACTIVITY_MAX: i64 = 500
 
 // What grant `grant_id` ran, newest first, for View (milestone 56).
-fn grant_activity[T: ports.TokenStore](tokens: T, grant_id: str) -> []domain.ActivityEntry! {
+pub fn grant_activity[T: ports.TokenStore](tokens: T, grant_id: str) -> []domain.ActivityEntry! {
     return try tokens.activity_of_grant(grant_id, GRANT_ACTIVITY_MAX)
 }
 
 // The vault's retention in days, ACTIVITY_RETENTION_DEFAULT when never set.
-fn activity_retention_days[T: ports.TokenStore](tokens: T) -> i64! {
+pub fn activity_retention_days[T: ports.TokenStore](tokens: T) -> i64! {
     days := try tokens.activity_retention()
-    if !retention_valid(days) {
-        return ACTIVITY_RETENTION_DEFAULT
+    if !domain.retention_valid(days) {
+        return domain.ACTIVITY_RETENTION_DEFAULT
     }
     return days
 }
 
 // Prunes the log to the vault's retention, at unlock; the number of entries removed.
-fn prune_activity[T: ports.TokenStore](mut tokens: T, now_s: i64) -> i64! {
+pub fn prune_activity[T: ports.TokenStore](mut tokens: T, now_s: i64) -> i64! {
     days := try activity_retention_days(tokens)
-    return try tokens.activity_prune(activity_keep(days, now_s))
+    return try tokens.activity_prune(domain.activity_keep(days, now_s))
 }
 
 // How many entries a retention of `days` would remove now.
-fn retention_would_remove[T: ports.TokenStore](tokens: T, days: i64, now_s: i64) -> i64! {
-    if !retention_valid(days) {
-        return error(coded(ERR_INVALID, "keep the activity log for 30, 90 or 365 days, or with no limit"))
+pub fn retention_would_remove[T: ports.TokenStore](tokens: T, days: i64, now_s: i64) -> i64! {
+    if !domain.retention_valid(days) {
+        return error(domain.coded(domain.ERR_INVALID, "keep the activity log for 30, 90 or 365 days, or with no limit"))
     }
-    keep := activity_keep(days, now_s)
+    keep := domain.activity_keep(days, now_s)
     if keep.since_at == 0 {
         return 0
     }
@@ -206,27 +200,27 @@ fn retention_would_remove[T: ports.TokenStore](tokens: T, days: i64, now_s: i64)
 }
 
 // Sets the vault's retention and prunes to it; the number of entries removed.
-fn set_activity_retention_days[T: ports.TokenStore](mut tokens: T, days: i64, now_s: i64) -> i64! {
-    if !retention_valid(days) {
-        return error(coded(ERR_INVALID, "keep the activity log for 30, 90 or 365 days, or with no limit"))
+pub fn set_activity_retention_days[T: ports.TokenStore](mut tokens: T, days: i64, now_s: i64) -> i64! {
+    if !domain.retention_valid(days) {
+        return error(domain.coded(domain.ERR_INVALID, "keep the activity log for 30, 90 or 365 days, or with no limit"))
     }
     try tokens.set_activity_retention(days)
-    return try tokens.activity_prune(activity_keep(days, now_s))
+    return try tokens.activity_prune(domain.activity_keep(days, now_s))
 }
 
 // Copies this machine's activity file, still encrypted, to `dest` (Settings →
 // Activity → Back up activity…, milestone 39). No export format: the copy opens only
 // with the vault's key.
-fn backup_activity[T: ports.TokenStore](tokens: T, dest: str) -> void! {
+pub fn backup_activity[T: ports.TokenStore](tokens: T, dest: str) -> void! {
     // "C:/..." on Windows, as the save dialog gives it (windows-port).
     if !domain.is_absolute_path(dest) {
-        return error(coded(ERR_INVALID, "the backup path must be absolute"))
+        return error(domain.coded(domain.ERR_INVALID, "the backup path must be absolute"))
     }
     try tokens.activity_backup(dest)
 }
 
 // The newest entries before `before_id` (0: the newest), at most `limit` (1-500).
-fn list_activity[T: ports.TokenStore](tokens: T, before_id: i64, limit: i64) -> []domain.ActivityEntry! {
+pub fn list_activity[T: ports.TokenStore](tokens: T, before_id: i64, limit: i64) -> []domain.ActivityEntry! {
     mut n := limit
     if n <= 0 || n > 500 {
         n = 200

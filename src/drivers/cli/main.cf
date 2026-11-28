@@ -22,22 +22,22 @@ type VersionInfo struct {
 fn print_version(as_json: bool) {
     info := VersionInfo{
         flint: version.FLINT_VERSION,
-        libssh: libssh_version(),
-        libsodium: sodium_version(),
-        sqlite: sqlcipher_version(),
+        libssh: flint_ssh.libssh_version(),
+        libsodium: flint_crypto.sodium_version(),
+        sqlite: vault.sqlcipher_version(),
     }
     if as_json {
-        say(json.stringify(info))
+        clicmd.say(json.stringify(info))
         return
     }
-    say("flint {info.flint}")
-    say("  libssh     {info.libssh}")
-    say("  libsodium  {info.libsodium}")
-    say("  sqlite     {info.sqlite}")
+    clicmd.say("flint {info.flint}")
+    clicmd.say("  libssh     {info.libssh}")
+    clicmd.say("  libsodium  {info.libsodium}")
+    clicmd.say("  sqlite     {info.sqlite}")
 }
 
 fn main() {
-    args := process_args()
+    args := process.process_args()
     // Decide the error format before parsing, so a parse error honours --json.
     // Stop at `--`: what follows is a remote command, not Flint's flags.
     mut as_json := false
@@ -52,11 +52,11 @@ fn main() {
     }
     // The self-update's swap (update_apply.cf): its own flags, no vault, no socket.
     if args.len() > 0 && args[0] == "update-apply" {
-        exit_process(run_update_apply(args, as_json))
+        process.exit_process(run_update_apply(args, as_json))
         return
     }
-    parsed := parse_cli_args(args) or err {
-        fail_with("{err.message()}", as_json)
+    parsed := clicmd.parse_cli_args(args) or err {
+        clicmd.fail_with("{err.message()}", as_json)
         return
     }
     p := parsed
@@ -64,11 +64,11 @@ fn main() {
         print_version(as_json)
         return
     }
-    done := run_cli(p, args, as_json) or err {
-        fail_with("{err.message()}", as_json)
+    done := clicmd.run_cli(p, args, as_json) or err {
+        clicmd.fail_with("{err.message()}", as_json)
         return
     }
     if done != 0 {
-        exit_process(done)
+        process.exit_process(done)
     }
 }

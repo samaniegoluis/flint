@@ -18,3 +18,6 @@ test "a keychain refusal is told apart from no cached key" {
     assert(locked_by_keychain(coded(ERR_LOCKED, "{KEYCHAIN_REFUSED_TEXT}; the master password is needed")))
     assert(!locked_by_keychain(coded(ERR_LOCKED, "the vault at /v is locked; the master password is needed")))
 }
+
+// Flint started and nobody has unlocked the vault since.
+LOCK_REASON_NOT_UNLOCKED: str = "not_unlocked"

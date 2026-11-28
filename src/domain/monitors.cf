@@ -9,7 +9,7 @@ package domain
 // frame crops are lists, never a fixed pair (D-089 (5)).
 
 // How many monitors a desktop may span in this release. RDP allows 16.
-MAX_MONITORS: i64 = 2
+pub MAX_MONITORS: i64 = 2
 RDP_MAX_MONITORS: i64 = 16
 
 // A monitor of this computer, as its system reports it. The frame is in logical points
@@ -18,7 +18,7 @@ RDP_MAX_MONITORS: i64 = 16
 // frame is physical and `physical` is set (logical_monitors converts it). `scale` is
 // the monitor's scale in percent (100, 150, 200). `id` is the system's own and stable
 // while the monitor stays connected; it names no vault data (Principle 5).
-type LocalMonitor struct {
+pub type LocalMonitor struct {
     id: str
     name: str
     x: i64
@@ -34,7 +34,7 @@ type LocalMonitor struct {
 // shown full screen there (CSS pixels): smaller than the monitor's frame where the
 // system keeps part of it (the notch's band in macOS's full screen). 0 x 0 takes the
 // frame.
-type MonitorPick struct {
+pub type MonitorPick struct {
     id: str
     width: i64
     height: i64
@@ -44,7 +44,7 @@ type MonitorPick struct {
 // the others placed around it as they are here. `local_id` is the monitor of this
 // computer that shows it. Orientation is always landscape with the size already
 // turned, which Windows accepts for a portrait monitor (D-089 (1)).
-type RdpMonitor struct {
+pub type RdpMonitor struct {
     local_id: str
     x: i64
     y: i64
@@ -54,7 +54,7 @@ type RdpMonitor struct {
 }
 
 // A rectangle of the desktop's one surface, in its pixels from its top-left.
-type DesktopRect struct {
+pub type DesktopRect struct {
     x: i64
     y: i64
     width: i64
@@ -192,7 +192,7 @@ fn rects_overlap(a: RdpMonitor, b: RdpMonitor) -> bool {
 // Each is the size its window measured, kept at the bottom of its monitor's frame (the
 // band macOS keeps is at the top), made a size RDP accepts; the primary is moved to
 // 0,0 and the others keep their places around it.
-fn desktop_layout(locals: []LocalMonitor, picks: []MonitorPick, main_id: str, max: i64) -> []RdpMonitor! {
+pub fn desktop_layout(locals: []LocalMonitor, picks: []MonitorPick, main_id: str, max: i64) -> []RdpMonitor! {
     if picks.len() == 0 {
         return error(coded(ERR_INVALID, "a desktop needs at least one monitor"))
     }
@@ -287,7 +287,7 @@ fn pack_layout(ms: []RdpMonitor) -> []RdpMonitor {
     for i in 0..res.len() {
         placed.push(i == 0)
     }
-    for round in 1..res.len() {
+    for _round in 1..res.len() {
         // The unplaced monitor nearest to a placed one, and that one.
         mut best := -1
         mut to := -1
@@ -372,7 +372,7 @@ fn layout_connected(ms: []RdpMonitor) -> bool {
 // A layout RDP accepts: 1 to 16 monitors, the first the primary at 0,0 and the only
 // one, every size one Display Control takes, none overlapping another, and all joined
 // by shared edges with no gap.
-fn check_rdp_layout(ms: []RdpMonitor) -> void! {
+pub fn check_rdp_layout(ms: []RdpMonitor) -> void! {
     if ms.len() == 0 || i64(ms.len()) > RDP_MAX_MONITORS {
         return error(coded(ERR_INVALID, "a layout has 1 to {RDP_MAX_MONITORS} monitors"))
     }
@@ -402,7 +402,7 @@ fn check_rdp_layout(ms: []RdpMonitor) -> void! {
 }
 
 // The desktop's one surface: the box around every monitor.
-fn layout_bounds(ms: []RdpMonitor) -> DesktopRect {
+pub fn layout_bounds(ms: []RdpMonitor) -> DesktopRect {
     if ms.len() == 0 {
         return DesktopRect{ x: 0, y: 0, width: 0, height: 0 }
     }
@@ -421,7 +421,7 @@ fn layout_bounds(ms: []RdpMonitor) -> DesktopRect {
 
 // Where each monitor's part lies in the surface, in the layout's order: what its
 // window draws and where its pointer lands.
-fn layout_crops(ms: []RdpMonitor) -> []DesktopRect {
+pub fn layout_crops(ms: []RdpMonitor) -> []DesktopRect {
     b := layout_bounds(ms)
     mut res: []DesktopRect = []
     for m in ms {
@@ -445,7 +445,7 @@ fn shared_edge(a: LocalMonitor, b: LocalMonitor) -> i64 {
 // one first, then those remembered from the last choice that are still connected, then
 // the main one's neighbours by the longest shared edge, then the nearest; at most
 // `max`. Ids in that order.
-fn default_monitor_picks(locals: []LocalMonitor, main_id: str, remembered: []str, max: i64) -> []str {
+pub fn default_monitor_picks(locals: []LocalMonitor, main_id: str, remembered: []str, max: i64) -> []str {
     mut res: []str = []
     mi := monitor_index(locals, main_id)
     if mi < 0 || max <= 0 {

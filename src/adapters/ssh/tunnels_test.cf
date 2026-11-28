@@ -11,7 +11,7 @@ import "core:time"
 import "core:sync"
 import "../../ports"
 
-fn accepts_tunnels[R: ports.TunnelRunner](r: R) -> bool {
+fn accepts_tunnels[R: ports.TunnelRunner](_r: R) -> bool {
     return true
 }
 
@@ -133,7 +133,7 @@ test "a port in use is refused with port_in_use, and a refused destination is co
     // The test sshd's own port is taken.
     mut r := ""
     runner.tunnel_listen(host, "busy", i64(port), "127.0.0.1", 22) or err { r = "{err.message()}" }
-    assert_eq(error_code_of(r), "port_in_use")
+    assert_eq(domain.error_code_of(r), "port_in_use")
     // A destination nothing listens on: the connection is accepted, its channel refused.
     local := try runner.tunnel_listen(host, "dead", 0, "127.0.0.1", 1)
     r = ""
@@ -156,14 +156,14 @@ test "a port in use is refused with port_in_use, and a refused destination is co
     assert_eq(runner.tunnel_host_state(host), 0)
     r = ""
     runner.tunnel_listen(host, "late", 0, "127.0.0.1", 22) or err { r = "{err.message()}" }
-    assert_eq(error_code_of(r), "network")
+    assert_eq(domain.error_code_of(r), "network")
 }
 
 test "a plain link with no hop cannot hand over" {
     mut link := new_ssh_link()
     mut r := ""
     link.link_hand_over("x") or err { r = "{err.message()}" }
-    assert_eq(error_code_of(r), "internal")
+    assert_eq(domain.error_code_of(r), "internal")
 }
 
 test "a taken port is seen before any listen, and the gate takes turns" {
@@ -269,7 +269,7 @@ test "a tunnel reads up only while the system lists its port, and says why when 
     // A bind the system does not list fails with why, instead of reading up.
     r = ""
     runner.tunnel_listen(host, "t", local, "127.0.0.1", inner_port()) or err { r = "{err.message()}" }
-    assert_eq(error_code_of(r), "io")
+    assert_eq(domain.error_code_of(r), "io")
     assert(r.contains("does not list"), r)
 
     // Listed again, the same tunnel starts on the same session and streams.

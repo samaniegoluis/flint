@@ -3,13 +3,12 @@ package fonts
 // The `FontCatalog` port over the OS font list (native/flint_fonts.hpp).
 
 import cpp "flint_fonts.hpp"
-import "../../domain"
 
-type OsFontCatalog struct {
+pub type OsFontCatalog struct {
     enabled: bool
 }
 
-fn new_os_font_catalog() -> OsFontCatalog {
+pub fn new_os_font_catalog() -> OsFontCatalog {
     return OsFontCatalog{ enabled: true }
 }
 

@@ -26,10 +26,10 @@ fn empty_sample(session: str) -> domain.ServerSample {
 // too large or it takes longer than STATS_SAMPLE_TIMEOUT_MS.
 fn read_stats_block[C: ports.ServerStats, K: ports.Clock](mut ch: C, mut clock: K, mut buf: str) -> str! {
     start := clock.clock_now_ms()
-    end_line := STATS_END + "\n"
+    end_line := domain.STATS_END + "\n"
     for true {
-        if buf.starts_with(STATS_UNSUPPORTED) || buf.contains("\n" + STATS_UNSUPPORTED) {
-            return error(coded(ERR_UNSUPPORTED, "not a Linux server"))
+        if buf.starts_with(domain.STATS_UNSUPPORTED) || buf.contains("\n" + domain.STATS_UNSUPPORTED) {
+            return error(domain.coded(domain.ERR_UNSUPPORTED, "not a Linux server"))
         }
         if at := buf.index_of(end_line) {
             cut := at + end_line.len()
@@ -37,25 +37,25 @@ fn read_stats_block[C: ports.ServerStats, K: ports.Clock](mut ch: C, mut clock: 
             buf = "{buf[cut..]}"
             return block
         }
-        if buf.len() > STATS_SAMPLE_MAX_BYTES {
-            return error(coded(ERR_INVALID, "a sample too large to read"))
+        if buf.len() > domain.STATS_SAMPLE_MAX_BYTES {
+            return error(domain.coded(domain.ERR_INVALID, "a sample too large to read"))
         }
         if ch.stats_stopped() {
             return error("stopped")
         }
-        if clock.clock_now_ms() - start > STATS_SAMPLE_TIMEOUT_MS {
-            return error(coded(ERR_TIMEOUT, "the server stopped answering"))
+        if clock.clock_now_ms() - start > domain.STATS_SAMPLE_TIMEOUT_MS {
+            return error(domain.coded(domain.ERR_TIMEOUT, "the server stopped answering"))
         }
         chunk := try ch.stats_read(STATS_READ_SLICE_MS)
         buf = buf + chunk.stdout
         if chunk.done {
             // What came with the end still counts; a block it holds is read next turn.
-            if !buf.contains(end_line) && !buf.contains(STATS_UNSUPPORTED) {
-                return error(coded(ERR_NETWORK, "the loop ended"))
+            if !buf.contains(end_line) && !buf.contains(domain.STATS_UNSUPPORTED) {
+                return error(domain.coded(domain.ERR_NETWORK, "the loop ended"))
             }
         }
     }
-    return error(coded(ERR_INTERNAL, "unreachable"))
+    return error(domain.coded(domain.ERR_INTERNAL, "unreachable"))
 }
 
 // Waits until `until_ms` on the clock, or until the watch stops. Output in the
@@ -83,8 +83,8 @@ fn stats_pause[C: ports.ServerStats, K: ports.Clock](mut ch: C, mut clock: K, mu
 }
 
 // The whole watch of one tab. Returns when it ends; see the file comment for why.
-fn watch_server_stats[C: ports.ServerStats, S: ports.StatsSink, K: ports.Clock](mut ch: C, mut sink: S, mut clock: K, session: str) {
-    ch.stats_open(stats_command()) or {
+pub fn watch_server_stats[C: ports.ServerStats, S: ports.StatsSink, K: ports.Clock](mut ch: C, mut sink: S, mut clock: K, session: str) {
+    ch.stats_open(domain.stats_command()) or {
         // The host refused a second channel (MaxSessions) or exec: nothing to show.
         sink.stats_emit(empty_sample(session))
         return
@@ -102,7 +102,7 @@ fn run_stats_loop[C: ports.ServerStats, S: ports.StatsSink, K: ports.Clock](mut 
     os_block := read_stats_block(mut ch, mut clock, mut buf) or err {
         return "{err.message()}" == "stopped"
     }
-    os := parse_os_name(os_block)
+    os := domain.parse_os_name(os_block)
     mut prev := domain.StatsReading{ net: [] }
     mut have_prev := false
     for true {
@@ -111,17 +111,17 @@ fn run_stats_loop[C: ports.ServerStats, S: ports.StatsSink, K: ports.Clock](mut 
         block := read_stats_block(mut ch, mut clock, mut buf) or err {
             return "{err.message()}" == "stopped"
         }
-        cur := parse_stats_reading(block)
+        cur := domain.parse_stats_reading(block)
         if have_prev {
-            s := server_sample(session, os, prev, cur)
-            if !sample_has_fields(s) {
+            s := domain.server_sample(session, os, prev, cur)
+            if !domain.sample_has_fields(s) {
                 return false
             }
             sink.stats_emit(s)
         }
         prev = cur
         have_prev = true
-        if !stats_pause(mut ch, mut clock, mut buf, asked + STATS_INTERVAL_MS) {
+        if !stats_pause(mut ch, mut clock, mut buf, asked + domain.STATS_INTERVAL_MS) {
             return ch.stats_stopped()
         }
     }

@@ -92,9 +92,9 @@ test "the package manager's failure carries its output" {
     os.command("chmod", ["+x", dir + "/fail.sh", dir + "/ok.sh"]) or {}
     mut bad := new_test_package_installer(dir + "/fail.sh")
     mut r := ""
-    bad.pkg_install(PACKAGE_DEB, "/x.deb") or err { r = "{err.message()}" }
+    bad.pkg_install(domain.PACKAGE_DEB, "/x.deb") or err { r = "{err.message()}" }
     assert(r.starts_with("io:") && r.contains("Could not get lock"))
     mut good := new_test_package_installer(dir + "/ok.sh")
-    try good.pkg_install(PACKAGE_RPM, "/x.rpm")
+    try good.pkg_install(domain.PACKAGE_RPM, "/x.rpm")
     os.command("rm", ["-rf", dir]) or {}
 }

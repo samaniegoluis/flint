@@ -7,7 +7,7 @@ package application
 
 import "../ports"
 
-type GroupView struct {
+pub type GroupView struct {
     path:      str `json:"path"`
     name:      str `json:"name"`
     hosts:     i64 `json:"hosts"`
@@ -15,7 +15,7 @@ type GroupView struct {
 }
 
 // What a driver sees of a host. Secrets appear only as `has_password`.
-type HostView struct {
+pub type HostView struct {
     alias:        str   `json:"alias"`
     label:        str   `json:"label"`
     hostname:     str   `json:"hostname"`
@@ -46,14 +46,14 @@ type HostView struct {
 
 // What a successful `host test` reports: the host, how many hops were dialled
 // (jump hosts included) and how long it took.
-type HostTestView struct {
+pub type HostTestView struct {
     host:        str `json:"host"`
     target:      str `json:"target"`
     hops:        i64 `json:"hops"`
     duration_ms: i64 `json:"duration_ms"`
 }
 
-type KeyView struct {
+pub type KeyView struct {
     name:           str  `json:"name"`
     key_type:       str  `json:"type"`
     public_key:     str  `json:"public_key"`
@@ -61,7 +61,7 @@ type KeyView struct {
     has_passphrase: bool `json:"has_passphrase"`
 }
 
-type CredView struct {
+pub type CredView struct {
     name:         str  `json:"name"`
     user:         str  `json:"user"`
     key:          str  `json:"key"`
@@ -69,7 +69,7 @@ type CredView struct {
 }
 
 // A known host as `known-host list` shows it.
-type KnownHostView struct {
+pub type KnownHostView struct {
     addr:        str `json:"addr"`
     host:        str `json:"host"`
     key_type:    str `json:"key_type"`
@@ -85,7 +85,7 @@ type CatalogView struct {
     known_hosts: []KnownHostView `json:"known_hosts"`
 }
 
-fn catalog_view[S: ports.VaultStore](store: S) -> CatalogView! {
+pub fn catalog_view[S: ports.VaultStore](store: S) -> CatalogView! {
     return CatalogView{
         groups: try list_groups(store),
         hosts: try list_hosts(store, "", ""),
@@ -97,6 +97,6 @@ fn catalog_view[S: ports.VaultStore](store: S) -> CatalogView! {
 
 // Closes the open vault: the file is detached and its keys leave memory with the
 // session the driver drops. The keychain cache is left alone (that is lock_vault).
-fn close_vault[S: ports.VaultStore](mut store: S) {
+pub fn close_vault[S: ports.VaultStore](mut store: S) {
     store.vault_detach()
 }

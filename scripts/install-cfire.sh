@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Installs the cfire release Flint is pinned to (D-154) from its release archive, checked
+# Installs the cfire release Flint is pinned to (D-164) from its release archive, checked
 # against a SHA-256 kept here rather than one downloaded beside the archive (milestone 51):
 #
 #   scripts/install-cfire.sh [prefix]     # default ~/.local
@@ -12,13 +12,13 @@
 # changes CFIRE_VERSION and the sums below together.
 set -euo pipefail
 
-CFIRE_VERSION=v0.12.7
+CFIRE_VERSION=v0.13.1
 # From the release's SHA256SUMS.txt.
 sum_for() {
   case "$1" in
-    macos-arm64)    echo 7003f681da1ca5e52cc4b4106b7ef966d052fe3cfa81f1d131682fe7383d57a3 ;;
-    linux-x86_64)   echo 7e2711ee16b4c6333a3e8635d0ebcd8709b14ac7f1fd9b113f4ef6a46392d0d7 ;;
-    windows-x86_64) echo b3fe5afe58be37e4c4f5d5dc274ae7d2b2276d514c8e54431cfd006ac0d3aea5 ;;
+    macos-arm64)    echo 05a160c295713775afd4bc1a23f5f21834f128da232cebd09776cf3149cc3a1d ;;
+    linux-x86_64)   echo 815fe2cb05b0ed247de8a7a4769caa3e0d69d45e21bfc81b011b103b1d46012c ;;
+    windows-x86_64) echo 88d0a125a94e3931d7be0594954acba02fc75b324cb3f15634c23d1f120a2bf7 ;;
     *) return 1 ;;
   esac
 }

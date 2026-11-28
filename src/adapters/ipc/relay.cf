@@ -17,21 +17,21 @@ import "core:time"
 import "core:json"
 import "../../domain"
 
-TAG_STDOUT: str = "o"
-TAG_STDERR: str = "e"
-TAG_RAW_ENTER: str = "R"
-TAG_RAW_LEAVE: str = "L"
-TAG_PROMPT: str = "p"
+pub TAG_STDOUT: str = "o"
+pub TAG_STDERR: str = "e"
+pub TAG_RAW_ENTER: str = "R"
+pub TAG_RAW_LEAVE: str = "L"
+pub TAG_PROMPT: str = "p"
 TAG_HEARTBEAT: str = "k"
-TAG_NOT_SERVED: str = "n"
-TAG_END: str = "x"
+pub TAG_NOT_SERVED: str = "n"
+pub TAG_END: str = "x"
 // The app waits for the owner to approve the caller (milestone 12): the payload is
 // what to tell the person, and the frame repeats while the wait lasts.
-TAG_WAIT: str = "w"
-TAG_INPUT: str = "i"
-TAG_RESIZE: str = "r"
-TAG_ANSWER: str = "a"
-TAG_INPUT_END: str = "z"
+pub TAG_WAIT: str = "w"
+pub TAG_INPUT: str = "i"
+pub TAG_RESIZE: str = "r"
+pub TAG_ANSWER: str = "a"
+pub TAG_INPUT_END: str = "z"
 
 // A frame is written within this time, or the client is gone (Principle 8).
 RELAY_SEND_MS: i32 = 5000
@@ -41,40 +41,40 @@ RELAY_HEARTBEAT_MS: i64 = 15000
 // How long the app waits for the person at the client to answer a prompt.
 RELAY_PROMPT_WAIT_MS: i64 = 300000
 
-type RelaySize struct {
+pub type RelaySize struct {
     cols: i64 `json:"cols"`
     rows: i64 `json:"rows"`
 }
 
-type RelayPrompt struct {
+pub type RelayPrompt struct {
     kind:     str             `json:"kind"`
     user:     str             `json:"user"`
     alias:    str             `json:"alias"`
     question: domain.HostKeyQuestion `json:"question"`
 }
 
-type RelayAnswer struct {
+pub type RelayAnswer struct {
     ok:    bool `json:"ok"`
     value: str  `json:"value"`
 }
 
-fn relay_frame(tag: str, payload: str) -> str {
+pub fn relay_frame(tag: str, payload: str) -> str {
     return tag + payload
 }
 
-fn relay_tag(frame: str) -> str {
+pub fn relay_tag(frame: str) -> str {
     if frame.len() == 0 {
         return ""
     }
     // A frame can carry a file's bytes: cut by byte (CF-155).
-    return byte_slice(frame, 0, 1)
+    return domain.byte_slice(frame, 0, 1)
 }
 
-fn relay_payload(frame: str) -> str {
+pub fn relay_payload(frame: str) -> str {
     if frame.len() <= 1 {
         return ""
     }
-    return byte_tail(frame, 1)
+    return domain.byte_tail(frame, 1)
 }
 
 // Each port holds its own copy of this: the connection (one descriptor, shared by
@@ -92,7 +92,7 @@ type RelayLink struct {
     broken:       bool
 }
 
-fn new_relay_link(conn: IpcConn, can_prompt: bool, cols: i32, rows: i32) -> RelayLink {
+pub fn new_relay_link(conn: IpcConn, can_prompt: bool, cols: i32, rows: i32) -> RelayLink {
     return RelayLink{ conn: conn, can_prompt: can_prompt, cols: cols, rows: rows, resized: false, input_ended: false, last_sent_ms: time.now_ms(), broken: false }
 }
 
@@ -121,14 +121,14 @@ fn (mut self: RelayLink) heartbeat() {
 fn (mut self: RelayLink) take(timeout_ms: i32, mut other: str) -> str! {
     other = ""
     if self.broken {
-        return error(coded(ERR_IO, "the flint client went away"))
+        return error(domain.coded(domain.ERR_IO, "the flint client went away"))
     }
     if !self.conn.readable(timeout_ms) {
         return ""
     }
-    frame := self.conn.recv(RELAY_SEND_MS) or err {
+    frame := self.conn.recv(RELAY_SEND_MS) or {
         self.broken = true
-        return error(coded(ERR_IO, "the flint client went away"))
+        return error(domain.coded(domain.ERR_IO, "the flint client went away"))
     }
     tag := relay_tag(frame)
     if tag == TAG_INPUT {
@@ -158,7 +158,7 @@ type SocketTerminal struct {
     link: RelayLink
 }
 
-fn new_socket_terminal(link: RelayLink) -> SocketTerminal {
+pub fn new_socket_terminal(link: RelayLink) -> SocketTerminal {
     return SocketTerminal{ link: link }
 }
 
@@ -169,7 +169,7 @@ fn (self: SocketTerminal) term_size() -> domain.TerminalSize {
 fn (mut self: SocketTerminal) term_raw_enter() -> void! {
     self.link.put(TAG_RAW_ENTER, "")
     if self.link.broken {
-        return error(coded(ERR_IO, "the flint client went away"))
+        return error(domain.coded(domain.ERR_IO, "the flint client went away"))
     }
 }
 
@@ -180,12 +180,12 @@ fn (mut self: SocketTerminal) term_raw_leave() {
 fn (mut self: SocketTerminal) term_input(timeout_ms: i32) -> str! {
     self.link.heartbeat()
     if self.link.input_ended {
-        return error(coded(ERR_IO, "end of input"))
+        return error(domain.coded(domain.ERR_IO, "end of input"))
     }
     mut other := ""
     typed := try self.link.take(timeout_ms, mut other)
     if self.link.input_ended {
-        return error(coded(ERR_IO, "end of input"))
+        return error(domain.coded(domain.ERR_IO, "end of input"))
     }
     return typed
 }
@@ -206,7 +206,7 @@ type SocketExecSink struct {
     link: RelayLink
 }
 
-fn new_socket_exec_sink(link: RelayLink) -> SocketExecSink {
+pub fn new_socket_exec_sink(link: RelayLink) -> SocketExecSink {
     return SocketExecSink{ link: link }
 }
 
@@ -229,7 +229,7 @@ type SocketPrompter struct {
     link: RelayLink
 }
 
-fn new_socket_prompter(link: RelayLink) -> SocketPrompter {
+pub fn new_socket_prompter(link: RelayLink) -> SocketPrompter {
     return SocketPrompter{ link: link }
 }
 
@@ -249,14 +249,14 @@ fn (self: SocketPrompter) ask(p: RelayPrompt) -> RelayAnswer! {
         if relay_tag(other) == TAG_ANSWER {
             // CFIRE-UPSTREAM: CF-164 (a labeled argument keeps libstdc++'s chrono::parse out)
             return json.parse[RelayAnswer](payload: relay_payload(other)) or {
-                return error(coded(ERR_INVALID, "the flint client sent an answer this Flint cannot read"))
+                return error(domain.coded(domain.ERR_INVALID, "the flint client sent an answer this Flint cannot read"))
             }
         }
         if link.input_ended {
-            return error(coded(ERR_IO, "the flint client stopped before answering"))
+            return error(domain.coded(domain.ERR_IO, "the flint client stopped before answering"))
         }
     }
-    return error(coded(ERR_TIMEOUT, "nobody answered the prompt within {RELAY_PROMPT_WAIT_MS / 1000}s"))
+    return error(domain.coded(domain.ERR_TIMEOUT, "nobody answered the prompt within {RELAY_PROMPT_WAIT_MS / 1000}s"))
 }
 
 fn (self: SocketPrompter) prompt_host_key(q: domain.HostKeyQuestion) -> bool! {
@@ -264,7 +264,7 @@ fn (self: SocketPrompter) prompt_host_key(q: domain.HostKeyQuestion) -> bool! {
     return a.ok
 }
 
-fn (self: SocketPrompter) host_key_changed(q: domain.HostKeyQuestion) {
+fn (self: SocketPrompter) host_key_changed(_q: domain.HostKeyQuestion) {
 }
 
 fn (self: SocketPrompter) prompt_password(user: str, alias: str) -> str! {

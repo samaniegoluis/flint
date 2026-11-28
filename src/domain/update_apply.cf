@@ -8,8 +8,8 @@ package domain
 // things go, what a package holds, and what each step's outcome means.
 
 // The page's states beyond the notice's (update.cf).
-UPDATE_DOWNLOADING: str = "downloading"
-UPDATE_READY: str = "ready"
+pub UPDATE_DOWNLOADING: str = "downloading"
+pub UPDATE_READY: str = "ready"
 
 // Beside the installed folder: `<parent>/.flint-update/`.
 UPDATE_STAGE_NAME: str = ".flint-update"
@@ -18,19 +18,19 @@ UPDATE_STAGE_NAME: str = ".flint-update"
 // folder, and for the new app to report it started.
 // Long enough for any quit: the app cuts the CLI's running commands after 5 s
 // (milestone 50, after a Relaunch that hung behind a long `flint exec`).
-UPDATE_WAIT_QUIT_MS: i64 = 600000
-UPDATE_WAIT_CLI_MS: i64 = 30000
-UPDATE_WAIT_START_MS: i64 = 60000
-UPDATE_POLL_MS: i64 = 200
+pub UPDATE_WAIT_QUIT_MS: i64 = 600000
+pub UPDATE_WAIT_CLI_MS: i64 = 30000
+pub UPDATE_WAIT_START_MS: i64 = 60000
+pub UPDATE_POLL_MS: i64 = 200
 // A rename that fails is tried again for this long (milestone 50): on Windows a file
 // inside the folder held open for a moment (Defender scanning what was just unpacked,
 // Explorer's preview) refuses the rename; held longer, the swap gives up and puts
 // everything back.
-UPDATE_RENAME_RETRY_MS: i64 = 10000
+pub UPDATE_RENAME_RETRY_MS: i64 = 10000
 
 // Where an update's files go, from the installed folder (the .app on macOS, the
 // `Flint` folder on Windows, the portable test layout's folder on Linux).
-type UpdatePaths struct {
+pub type UpdatePaths struct {
     installed: str
     // `<parent>/.flint-update`, removed once an update is applied or discarded.
     staging:   str
@@ -49,7 +49,7 @@ type UpdatePaths struct {
 }
 
 // The folder holding `path` ("/a/b/" -> "/a").
-fn update_parent(path: str) -> str {
+pub fn update_parent(path: str) -> str {
     p := trim_slashes(path)
     i := p.last_index_of("/") or {
         return "."
@@ -68,7 +68,7 @@ fn update_package_folder(os: str) -> str {
     return "Flint"
 }
 
-fn update_paths(installed: str, os: str) -> UpdatePaths {
+pub fn update_paths(installed: str, os: str) -> UpdatePaths {
     root := trim_slashes(installed)
     staging := update_parent(root) + "/" + UPDATE_STAGE_NAME
     new_dir := staging + "/new"
@@ -86,7 +86,7 @@ fn update_paths(installed: str, os: str) -> UpdatePaths {
 }
 
 // The app's executable and the CLI inside an installed (or unpacked) folder.
-fn update_app_exe(root: str, os: str) -> str {
+pub fn update_app_exe(root: str, os: str) -> str {
     if os == "mac" {
         return root + "/Contents/MacOS/Flint"
     }
@@ -96,7 +96,7 @@ fn update_app_exe(root: str, os: str) -> str {
     return root + "/Flint"
 }
 
-fn update_cli_exe(root: str, os: str) -> str {
+pub fn update_cli_exe(root: str, os: str) -> str {
     if os == "mac" {
         return root + "/Contents/Helpers/flint"
     }
@@ -107,14 +107,14 @@ fn update_cli_exe(root: str, os: str) -> str {
 }
 
 // A SHA-256 as printed (64 hex characters), compared without regard to case.
-fn sha256_matches(expected: str, got: str) -> bool {
+pub fn sha256_matches(expected: str, got: str) -> bool {
     return is_hex64(expected.to_lower()) && expected.to_lower() == got.to_lower()
 }
 
 // A bundle's code signature (milestone 79, D-158 (3)): the Team ID of a Developer ID
 // signature ("" when ad hoc, unsigned, or on a system whose packages carry none), and
 // whether the whole bundle verifies (`codesign --verify --deep --strict` on macOS).
-type CodeSignature struct {
+pub type CodeSignature struct {
     team:  str
     valid: bool
 }
@@ -123,7 +123,7 @@ type CodeSignature struct {
 // over a Developer ID install it must carry the same Team ID. An ad-hoc or unsigned
 // install (built from source, or a release before signing) takes either, so the first
 // signed update reaches it.
-fn update_signature_accepts(installed: CodeSignature, candidate: CodeSignature) -> bool {
+pub fn update_signature_accepts(installed: CodeSignature, candidate: CodeSignature) -> bool {
     if !candidate.valid {
         return false
     }
@@ -134,7 +134,7 @@ fn update_signature_accepts(installed: CodeSignature, candidate: CodeSignature) 
 }
 
 // What `flint update-apply` was asked to do.
-type ApplyRequest struct {
+pub type ApplyRequest struct {
     // The app's process, which must quit first (0: none to wait for).
     wait_pid: i64
     // The unpacked package's folder, and the installed one it replaces.
@@ -152,7 +152,7 @@ type ApplyRequest struct {
 
 // What update-apply did: written to `outcome.json` when it could not apply (the app it
 // starts reads it and says why), and printed by `--json`.
-type ApplyOutcome struct {
+pub type ApplyOutcome struct {
     applied: bool `json:"applied"`
     // The step that stopped it (APPLY_STEP_*), "" when applied.
     step:    str  `json:"step"`
@@ -164,13 +164,13 @@ type ApplyOutcome struct {
 
 // A program holding a file open in the installed folder (milestone 65): what a failed
 // swap names, as the Restart Manager reports it.
-type FolderHolder struct {
+pub type FolderHolder struct {
     name: str
     pid:  i64
 }
 
 // The adapter's "pid\tname" lines; a line that does not parse is left out.
-fn parse_folder_holders(lines: str) -> []FolderHolder {
+pub fn parse_folder_holders(lines: str) -> []FolderHolder {
     mut out: []FolderHolder = []
     for line in lines.split("\n") {
         tab := line.index_of("\t") or {
@@ -195,7 +195,7 @@ FOLDER_HOLDERS_SHOWN: i64 = 3
 
 // Why a rename failed, in words a person can act on: the programs that hold the
 // folder when Windows could say, else that one does.
-fn held_message(why: str, folder: str, holders: []FolderHolder) -> str {
+pub fn held_message(why: str, folder: str, holders: []FolderHolder) -> str {
     if holders.len() == 0 {
         return "a program has a file in {path_base(folder)} open, so it could not be replaced (close it and Relaunch again): {why}"
     }
@@ -220,26 +220,26 @@ fn held_message(why: str, folder: str, holders: []FolderHolder) -> str {
     return "close {names} and Relaunch again: {verb} in {path_base(folder)} open, so it could not be replaced"
 }
 
-APPLY_STEP_ARGS: str = "args"
-APPLY_STEP_QUIT: str = "quit"
-APPLY_STEP_CLI: str = "cli"
-APPLY_STEP_SWAP: str = "swap"
-APPLY_STEP_START: str = "start"
+pub APPLY_STEP_ARGS: str = "args"
+pub APPLY_STEP_QUIT: str = "quit"
+pub APPLY_STEP_CLI: str = "cli"
+pub APPLY_STEP_SWAP: str = "swap"
+pub APPLY_STEP_START: str = "start"
 // Milestone 54: a package root installed whose app did not say it started (no rollback).
-APPLY_STEP_PACKAGE_START: str = "package_start"
+pub APPLY_STEP_PACKAGE_START: str = "package_start"
 
-fn apply_ok() -> ApplyOutcome {
+pub fn apply_ok() -> ApplyOutcome {
     return ApplyOutcome{ applied: true, step: "", code: "", message: "", kept: false }
 }
 
-fn apply_failed(step: str, code: str, message: str, kept: bool) -> ApplyOutcome {
+pub fn apply_failed(step: str, code: str, message: str, kept: bool) -> ApplyOutcome {
     return ApplyOutcome{ applied: false, step: step, code: code, message: message, kept: kept }
 }
 
 // Checks update-apply's request against the folders it may touch: `from` must be the
 // staging folder of `to` (update_paths), so the command can never be pointed at
 // another folder to move it.
-fn check_apply_request(r: ApplyRequest) -> void! {
+pub fn check_apply_request(r: ApplyRequest) -> void! {
     if r.start_only {
         if r.to.len() == 0 || r.staging.len() == 0 || r.from.len() > 0 {
             return error(coded(ERR_USAGE, "update-apply --start needs --to and --staging, and no --from"))
@@ -263,7 +263,7 @@ fn check_apply_request(r: ApplyRequest) -> void! {
 }
 
 // The page's text for an outcome that did not apply (the app shows it at launch).
-fn apply_outcome_text(o: ApplyOutcome) -> str {
+pub fn apply_outcome_text(o: ApplyOutcome) -> str {
     if o.step == APPLY_STEP_CLI {
         return "The update was not applied: {o.message}. Close it and choose Relaunch again."
     }

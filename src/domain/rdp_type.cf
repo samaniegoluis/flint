@@ -9,23 +9,23 @@ package domain
 
 // One input event of a Type: a key's scan code ("key", 0x100 for an extended key), a
 // UTF-16 code unit ("unicode") or the lock keys' state ("sync", KBD_SYNC_* flags).
-type RdpKeyEvent struct {
+pub type RdpKeyEvent struct {
     kind: str
     code: i64
     down: bool
 }
 
-RDP_KEY_EVENT_KEY: str = "key"
-RDP_KEY_EVENT_UNICODE: str = "unicode"
-RDP_KEY_EVENT_SYNC: str = "sync"
+pub RDP_KEY_EVENT_KEY: str = "key"
+pub RDP_KEY_EVENT_UNICODE: str = "unicode"
+pub RDP_KEY_EVENT_SYNC: str = "sync"
 
 // The lock keys of RDP's synchronize event.
-RDP_LOCK_SCROLL: i64 = 1
-RDP_LOCK_NUM: i64 = 2
-RDP_LOCK_CAPS: i64 = 4
+pub RDP_LOCK_SCROLL: i64 = 1
+pub RDP_LOCK_NUM: i64 = 2
+pub RDP_LOCK_CAPS: i64 = 4
 
 // The most a Type sends: a clipboard longer than this is refused, not cut.
-RDP_TYPE_MAX_CHARS: i64 = 2000
+pub RDP_TYPE_MAX_CHARS: i64 = 2000
 
 SC_SHIFT: i64 = 0x2A
 SC_ALTGR: i64 = 0x138
@@ -91,11 +91,6 @@ fn rdp_layout(klid: i64) -> RdpLayout {
     return RdpLayout{ plain: "", shifted: "", dead: "", altgr_keys: [], altgr: "" }
 }
 
-// Whether Flint types layout `klid` by scan code.
-fn rdp_layout_known(klid: i64) -> bool {
-    return rdp_layout(klid).plain.len() > 0
-}
-
 // The code points of UTF-8 text (an invalid byte is U+FFFD).
 fn utf8_code_points(s: str) -> []i64 {
     mut out: []i64 = []
@@ -159,7 +154,7 @@ fn push_unicode(mut out: []RdpKeyEvent, cp: i64) {
 
 // How many characters a Type of `text` counts (what the menu and the toast say): its
 // code points, a CR LF as one.
-fn rdp_type_count(text: str) -> i64 {
+pub fn rdp_type_count(text: str) -> i64 {
     cps := utf8_code_points(text)
     mut n: i64 = 0
     for i, c in cps {
@@ -174,7 +169,7 @@ fn rdp_type_count(text: str) -> i64 {
 // The events that type `text` on a session whose layout is `klid`, its lock keys
 // `locks` (KBD_SYNC_* flags; -1: not known). A line break is Enter, a tab is Tab;
 // other control characters are left out.
-fn rdp_type_events(text: str, klid: i64, locks: i64) -> []RdpKeyEvent {
+pub fn rdp_type_events(text: str, klid: i64, locks: i64) -> []RdpKeyEvent {
     mut out: []RdpKeyEvent = []
     known := if locks < 0 { 0 } else { locks }
     if locks < 0 || (locks & RDP_LOCK_CAPS) != 0 {

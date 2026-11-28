@@ -1,12 +1,11 @@
 package config
 
-import "core:os"
 import "core:fs"
 import "core:crypto/sha256"
 import "../../ports"
 
 fn ui_state_port_check[U: ports.UiStateStore](u: U) -> bool {
-    s := u.ui_state_load() or err { return false }
+    s := u.ui_state_load() or { return false }
     return s.sidebar_open && s.vaults.len() == 0
 }
 
@@ -29,7 +28,7 @@ test "ui state round-trips through an atomic JSON file and survives damage" {
     old := try store.ui_state_load()
     assert(!old.sidebar_open)
     assert_eq(old.sidebar_width, i64(280))
-    assert_eq(old.files_width, FILES_WIDTH_DEFAULT)
+    assert_eq(old.files_width, domain.FILES_WIDTH_DEFAULT)
     // ... and none before milestone 37: the full-screen note was not seen.
     assert(!old.fullscreen_note_seen)
     // ... and none before milestone 59: no RDP host remembered as pipeline-only.
@@ -44,6 +43,6 @@ test "ui state round-trips through an atomic JSON file and survives damage" {
     try fs.write_text(dir + "/ui-state.json", "{\"version\":1,\"sidebar_op")
     damaged := try store.ui_state_load()
     assert(damaged.sidebar_open)
-    assert_eq(damaged.sidebar_width, SIDEBAR_WIDTH_DEFAULT)
+    assert_eq(damaged.sidebar_width, domain.SIDEBAR_WIDTH_DEFAULT)
     try fs.remove(dir)
 }

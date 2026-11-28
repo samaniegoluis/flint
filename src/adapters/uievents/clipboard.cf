@@ -8,11 +8,11 @@ import cpp "flint_clipboard.hpp"
 import "../../domain"
 
 // `board` is "" for the system clipboard; the tests use a private named one on macOS.
-type OsClipboard struct {
+pub type OsClipboard struct {
     board: str
 }
 
-fn new_os_clipboard() -> OsClipboard {
+pub fn new_os_clipboard() -> OsClipboard {
     return OsClipboard{ board: "" }
 }
 
@@ -26,10 +26,10 @@ fn (mut self: OsClipboard) clipboard_copy_secret(text: str, clear_after_ms: i64)
         rc = flint_clip::copy_secret(name, text, clear_after_ms);
     }
     if rc == 2 {
-        return error(coded(ERR_IO, "no clipboard is available"))
+        return error(domain.coded(domain.ERR_IO, "no clipboard is available"))
     }
     if rc != 0 {
-        return error(coded(ERR_IO, "the clipboard refused the copy"))
+        return error(domain.coded(domain.ERR_IO, "the clipboard refused the copy"))
     }
 }
 
@@ -43,10 +43,10 @@ fn (mut self: OsClipboard) clipboard_copy_text(text: str) -> void! {
         rc = flint_clip::copy_text(name, text);
     }
     if rc == 2 {
-        return error(coded(ERR_IO, "no clipboard is available"))
+        return error(domain.coded(domain.ERR_IO, "no clipboard is available"))
     }
     if rc != 0 {
-        return error(coded(ERR_IO, "the clipboard refused the copy"))
+        return error(domain.coded(domain.ERR_IO, "the clipboard refused the copy"))
     }
 }
 
@@ -63,7 +63,7 @@ fn (mut self: OsClipboard) clipboard_read() -> domain.ClipboardContent! {
         rc = flint_clip::read_paste(name, text, mime, image);
     }
     if rc == 2 {
-        return error(coded(ERR_IO, "no clipboard is available"))
+        return error(domain.coded(domain.ERR_IO, "no clipboard is available"))
     }
     return domain.ClipboardContent{ text: text, mime: mime, image: image }
 }
@@ -86,7 +86,7 @@ fn (self: OsClipboard) clipboard_holds_secret() -> bool {
 
 // ---- For the tests -----------------------------------------------------------------
 
-fn clipboard_copy_png(board: str, png: str) -> i32 {
+pub fn clipboard_copy_png(board: str, png: str) -> i32 {
     mut rc: i32 = 0
     // CFIRE-UPSTREAM: CF-053
     cpp {
@@ -95,7 +95,7 @@ fn clipboard_copy_png(board: str, png: str) -> i32 {
     return rc
 }
 
-fn clipboard_read_text(board: str) -> str {
+pub fn clipboard_read_text(board: str) -> str {
     mut s := ""
     // CFIRE-UPSTREAM: CF-053
     cpp {

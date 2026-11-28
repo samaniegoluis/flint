@@ -13,25 +13,25 @@ package domain
 // /proc/uptime, so the link's jitter does not bend them.
 
 // How often Flint asks for a sample.
-STATS_INTERVAL_MS: i64 = 2000
+pub STATS_INTERVAL_MS: i64 = 2000
 // A sample that has not arrived this long after its request ends the loop
 // (Principle 8): the channel is closed and the tab shows nothing.
-STATS_SAMPLE_TIMEOUT_MS: i64 = 10000
+pub STATS_SAMPLE_TIMEOUT_MS: i64 = 10000
 // The most a sample may hold before it is thrown away as unparsable (a sample of a
 // 64-core host is ~5 KB).
-STATS_SAMPLE_MAX_BYTES: usize = 65536
+pub STATS_SAMPLE_MAX_BYTES: usize = 65536
 
 // The end of the OS block and of every sample.
-STATS_END: str = "@@end"
+pub STATS_END: str = "@@end"
 // What a server that is not Linux answers instead of the OS block.
-STATS_UNSUPPORTED: str = "@@unsupported"
+pub STATS_UNSUPPORTED: str = "@@unsupported"
 
 // The loop, run as `sh -c '<script>'` so the login shell (zsh, fish) never parses
 // it. No single quote inside. `read` waits for Flint's next line; on EOF it fails
 // and the loop ends.
 STATS_SCRIPT: str = "exec 2>/dev/null; [ \"$(uname -s)\" = Linux ] || { echo @@unsupported; exit 0; }; echo @@os; cat /etc/os-release; echo @@end; while read -r _; do echo @@stat; grep \"^cpu\" /proc/stat; echo @@mem; grep -E \"^(MemTotal|MemFree|MemAvailable|Buffers|Cached|SwapTotal|SwapFree):\" /proc/meminfo; echo @@net; cat /proc/net/dev; echo @@load; cat /proc/loadavg; echo @@up; cat /proc/uptime; echo @@df; df -Pk /; echo @@end; done"
 
-fn stats_command() -> str {
+pub fn stats_command() -> str {
     return "sh -c '{STATS_SCRIPT}'"
 }
 
@@ -66,7 +66,7 @@ type NetCounter struct {
 
 // One sample as the server printed it. A section the server did not give (or gave
 // in a shape Flint cannot read) leaves its `has_` false: the bar shows fewer fields.
-type StatsReading struct {
+pub type StatsReading struct {
     has_cpu:    bool
     cpu:        CpuTimes
     cores:      i64
@@ -91,7 +91,7 @@ type StatsReading struct {
 
 // What the page shows: one per tab and sample (`stats:sample`). Sizes in bytes,
 // rates in bytes per second.
-type ServerSample struct {
+pub type ServerSample struct {
     session:     str   `json:"session"`
     os:          str   `json:"os"`
     cores:       i64   `json:"cores"`
@@ -119,7 +119,7 @@ type ServerSample struct {
 }
 
 // Whether a sample has anything to show: a host that gives none shows nothing (25a6).
-fn sample_has_fields(s: ServerSample) -> bool {
+pub fn sample_has_fields(s: ServerSample) -> bool {
     return s.has_cpu || s.has_mem || s.has_net || s.has_disk || s.has_uptime || s.has_load
 }
 
@@ -368,7 +368,7 @@ fn parse_df(lines: []str, mut r: StatsReading) {
 }
 
 // One sample's text, up to (not including) its "@@end".
-fn parse_stats_reading(text: str) -> StatsReading {
+pub fn parse_stats_reading(text: str) -> StatsReading {
     mut r := StatsReading{ net: [] }
     for sec in stats_sections(text) {
         if sec.name == "stat" {
@@ -398,7 +398,7 @@ fn os_release_value(raw: str) -> str {
 
 // The OS block: /etc/os-release's NAME and VERSION_ID ("Ubuntu 24.04"), else its
 // PRETTY_NAME, else "Linux".
-fn parse_os_name(text: str) -> str {
+pub fn parse_os_name(text: str) -> str {
     mut name := ""
     mut version := ""
     mut pretty := ""
@@ -446,7 +446,7 @@ fn counter_of(list: []NetCounter, name: str) -> NetCounter? {
 // What the bar shows from the sample before (`prev`) and this one (`cur`). CPU and
 // the rates need both, over a positive stretch of the server's uptime; a counter
 // that went back (a reset interface, a reboot) adds nothing. The rest is `cur`'s.
-fn server_sample(session: str, os: str, prev: StatsReading, cur: StatsReading) -> ServerSample {
+pub fn server_sample(session: str, os: str, prev: StatsReading, cur: StatsReading) -> ServerSample {
     mut s := ServerSample{ session: session, os: os, cores: cur.cores, interfaces: [] }
     mut dt := 0.0
     if prev.has_uptime && cur.has_uptime {

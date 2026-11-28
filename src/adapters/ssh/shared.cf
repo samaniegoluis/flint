@@ -18,12 +18,12 @@ import cpp "flint_files.hpp"
 import "../../domain"
 
 // An `SshLink` that lends its session to the Files view while its shell runs.
-type SharedLink struct {
+pub type SharedLink struct {
     inner:      SshLink
     session_id: str
 }
 
-fn new_shared_link(session_id: str) -> SharedLink {
+pub fn new_shared_link(session_id: str) -> SharedLink {
     return SharedLink{ inner: new_ssh_link(), session_id: session_id }
 }
 
@@ -66,8 +66,8 @@ fn (mut self: SharedLink) link_lend() -> void! {
 }
 
 // A GUI tab's link keeps its session for its terminal and Files view.
-fn (mut self: SharedLink) link_hand_over(key: str) -> void! {
-    return error(coded(ERR_INTERNAL, "a tab's link cannot hand its session over"))
+fn (mut self: SharedLink) link_hand_over(_key: str) -> void! {
+    return error(domain.coded(domain.ERR_INTERNAL, "a tab's link cannot hand its session over"))
 }
 
 fn (mut self: SharedLink) link_exec_start(command: str) -> void! {
@@ -132,9 +132,9 @@ fn files_available(session_id: str) -> bool {
 
 fn borrow_failure(rc: i32, session_id: str) -> str {
     if rc == 2 {
-        return coded(ERR_NETWORK, "the host is still answering an earlier request; try again")
+        return domain.coded(domain.ERR_NETWORK, "the host is still answering an earlier request; try again")
     }
-    return coded(ERR_NOT_FOUND, "session '{session_id}' is not connected")
+    return domain.coded(domain.ERR_NOT_FOUND, "session '{session_id}' is not connected")
 }
 
 // A link over a borrowed session: the session's last hop with no channel of its
@@ -157,7 +157,7 @@ fn borrowed_link(session: cpp.flint_ssh::SshSession, lock: shared[cpp.std::mutex
 
 // The session's shared SFTP channel (opened on first use). One browse request at
 // a time per session; give it back with `give_back_browse`, whatever happened.
-fn borrow_browse(session_id: str) -> SshLink! {
+pub fn borrow_browse(session_id: str) -> SshLink! {
     mut rc: i32 = 0
     mut session: cpp.flint_ssh::SshSession
     mut lock: shared[cpp.std::mutex]
@@ -184,7 +184,7 @@ fn borrow_browse(session_id: str) -> SshLink! {
 
 // Gives the browse channel back. A request that lost the connection drops the
 // channel, so the next one opens a fresh one.
-fn give_back_browse(session_id: str, link: SshLink) {
+pub fn give_back_browse(session_id: str, link: SshLink) {
     channel := link.sftp
     // CFIRE-UPSTREAM: CF-026
     cpp {
@@ -193,14 +193,14 @@ fn give_back_browse(session_id: str, link: SshLink) {
 }
 
 // Like `give_back_browse` after a failure that may have broken the channel.
-fn drop_browse(session_id: str, mut link: SshLink) {
+pub fn drop_browse(session_id: str, mut link: SshLink) {
     link.sftp_close()
     give_back_browse(session_id, link)
 }
 
 // The session for transfer `transfer_id`, with no SFTP channel yet: the copy opens
 // its own and `give_back_transfer` closes it.
-fn borrow_transfer(session_id: str, transfer_id: str) -> SshLink! {
+pub fn borrow_transfer(session_id: str, transfer_id: str) -> SshLink! {
     mut rc: i32 = 0
     mut session: cpp.flint_ssh::SshSession
     mut lock: shared[cpp.std::mutex]
@@ -219,7 +219,7 @@ fn borrow_transfer(session_id: str, transfer_id: str) -> SshLink! {
     return borrowed_link(session, lock, timeout, channel)
 }
 
-fn give_back_transfer(session_id: str, transfer_id: str, mut link: SshLink) {
+pub fn give_back_transfer(session_id: str, transfer_id: str, mut link: SshLink) {
     link.sftp_close()
     // CFIRE-UPSTREAM: CF-026
     cpp {
@@ -228,7 +228,7 @@ fn give_back_transfer(session_id: str, transfer_id: str, mut link: SshLink) {
 }
 
 // Asks a running transfer to stop; it removes its partial file on the way out.
-fn files_cancel(transfer_id: str) {
+pub fn files_cancel(transfer_id: str) {
     // CFIRE-UPSTREAM: CF-026
     cpp {
         flint_files::cancel(transfer_id);

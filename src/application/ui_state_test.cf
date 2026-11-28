@@ -3,20 +3,20 @@ package application
 import "../domain"
 
 test "ui state is kept per vault, most recent first, and cleaned" {
-    mut store := FakeUiStateStore{ saved: default_ui_state(), saves: 0 }
+    mut store := FakeUiStateStore{ saved: domain.default_ui_state(), saves: 0 }
     a := "0123456789abcdef0123456789abcdef"
     b := "fedcba9876543210fedcba9876543210"
     g := "00112233445566778899aabbccddeeff"
 
     fresh := ui_state_for(store, a)
     assert(fresh.sidebar_open)
-    assert_eq(fresh.sidebar_width, SIDEBAR_WIDTH_DEFAULT)
+    assert_eq(fresh.sidebar_width, domain.SIDEBAR_WIDTH_DEFAULT)
     assert_eq(fresh.collapsed.len(), usize(0))
 
     _ = try save_ui_state(mut store, a, UiStateView{ sidebar_open: false, sidebar_width: 320, collapsed: [g] })
     _ = try save_ui_state(mut store, b, UiStateView{ sidebar_open: false, sidebar_width: 1000, collapsed: [] })
     assert_eq(store.saved.vaults[0].vault, b)
-    assert_eq(store.saved.sidebar_width, SIDEBAR_WIDTH_MAX)
+    assert_eq(store.saved.sidebar_width, domain.SIDEBAR_WIDTH_MAX)
 
     back := ui_state_for(store, a)
     assert(!back.sidebar_open)
@@ -35,17 +35,17 @@ test "ui state is kept per vault, most recent first, and cleaned" {
 }
 
 fn test_vault_id(i: i64) -> str {
-    digits := "0123456789abcdef"
-    return "000000000000000000000000000000" + digits[usize(i / 16)..usize(i / 16) + 1] + digits[usize(i % 16)..usize(i % 16) + 1]
+    hex_digits := "0123456789abcdef"
+    return "000000000000000000000000000000" + hex_digits[usize(i / 16)..usize(i / 16) + 1] + hex_digits[usize(i % 16)..usize(i % 16) + 1]
 }
 
 test "ui state keeps at most the cap of vaults" {
-    mut store := FakeUiStateStore{ saved: default_ui_state(), saves: 0 }
+    mut store := FakeUiStateStore{ saved: domain.default_ui_state(), saves: 0 }
     for i in 0..40 {
         id := test_vault_id(i64(i))
         _ = try save_ui_state(mut store, id, UiStateView{ sidebar_open: true, sidebar_width: 264, collapsed: [] })
     }
-    assert_eq(store.saved.vaults.len(), UI_STATE_MAX_VAULTS)
+    assert_eq(store.saved.vaults.len(), domain.UI_STATE_MAX_VAULTS)
     assert_eq(store.saved.vaults[0].vault, test_vault_id(39))
 }
 
@@ -55,12 +55,12 @@ test "the GUI's group paths are stored as ids and survive a rename" {
     s := try create_vault(crypto, mut store, new_fake_keychain(), new_fake_recents(), "/v/Ui.flint", "", "correct horse", false)
     _ = try add_group(crypto, mut store, "homelab/proxmox")
     _ = try add_group(crypto, mut store, "work")
-    mut ui := FakeUiStateStore{ saved: default_ui_state(), saves: 0 }
+    mut ui := FakeUiStateStore{ saved: domain.default_ui_state(), saves: 0 }
 
     saved := try save_ui_state_paths(mut ui, store, s.id, UiStateView{ sidebar_open: true, sidebar_width: 264, collapsed: ["homelab/proxmox", "work", "nope"] })
     assert_eq(saved.collapsed.len(), usize(2))
     for id in ui.saved.vaults[0].collapsed {
-        assert(is_hex_id(id), "only ids are stored")
+        assert(domain.is_hex_id(id), "only ids are stored")
     }
 
     _ = try rename_group(mut store, "work", "office")
@@ -70,7 +70,7 @@ test "the GUI's group paths are stored as ids and survive a rename" {
 }
 
 test "the full-screen note, once seen, stays seen" {
-    mut store := FakeUiStateStore{ saved: default_ui_state(), saves: 0 }
+    mut store := FakeUiStateStore{ saved: domain.default_ui_state(), saves: 0 }
     a := "0123456789abcdef0123456789abcdef"
     assert(!ui_state_for(store, a).fullscreen_note_seen)
     _ = try save_ui_state(mut store, a, UiStateView{ sidebar_open: true, sidebar_width: 264, fullscreen_note_seen: true, collapsed: [] })
@@ -80,7 +80,7 @@ test "the full-screen note, once seen, stays seen" {
 
 test "the page's layout saves keep the RDP hosts remembered as pipeline-only (milestone 59)" {
     a := "0123456789abcdef0123456789abcdef"
-    mut store := FakeUiStateStore{ saved: remember_rdp_pipeline(default_ui_state(), a), saves: 0 }
+    mut store := FakeUiStateStore{ saved: domain.remember_rdp_pipeline(domain.default_ui_state(), a), saves: 0 }
     _ = try save_ui_state(mut store, a, UiStateView{ sidebar_open: false, sidebar_width: 300, collapsed: [] })
-    assert(rdp_pipeline_remembered(store.saved, a))
+    assert(domain.rdp_pipeline_remembered(store.saved, a))
 }

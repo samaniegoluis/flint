@@ -5,7 +5,7 @@ import "core:fs"
 import "../../ports"
 
 // Compiles only if SshConn satisfies the ShellSession port.
-fn accepts_shell[S: ports.ShellSession](s: S) -> bool {
+fn accepts_shell[S: ports.ShellSession](_s: S) -> bool {
     return true
 }
 
@@ -86,7 +86,7 @@ test "a zero-initialised SshConn owns no socket" {
 }
 
 test "the dialler falls back to the next address when the first has no server" {
-    (port, key_path) := test_target()
+    (port, _key_path) := test_target()
     if port == 0 {
         println("SKIP: FLINT_TEST_SSH_PORT / FLINT_TEST_SSH_KEY not set")
         return
@@ -97,7 +97,7 @@ test "the dialler falls back to the next address when the first has no server" {
     mut only_v6 := ""
     tcp_dial_first(["::1"], port, 5) or err { only_v6 = "{err.message()}" }
     assert(only_v6.len() > 0)
-    assert_eq(error_code_of("{only_v6}"), "network")
+    assert_eq(domain.error_code_of("{only_v6}"), "network")
 }
 
 // Names (`localhost`, one that does not resolve) are dialled by scripts/cli-e2e.sh: on

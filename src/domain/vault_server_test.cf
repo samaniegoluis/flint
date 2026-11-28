@@ -32,7 +32,7 @@ test "a vault id is 32 lowercase hex characters" {
 }
 
 test "a short server token is refused" {
-    check_server_token("0123456789abcdef0123456789abcdef") or err {
+    check_server_token("0123456789abcdef0123456789abcdef") or {
         assert(false)
     }
     mut refused := false
@@ -41,7 +41,7 @@ test "a short server token is refused" {
     }
     assert(refused)
     mut spaced := false
-    check_server_token(" 0123456789abcdef0123456789abcdef") or err {
+    check_server_token(" 0123456789abcdef0123456789abcdef") or {
         spaced = true
     }
     assert(spaced)
@@ -49,7 +49,7 @@ test "a short server token is refused" {
 
 test "the gate lets a client through up to its rate, then names the wait" {
     mut g := new_server_gate()
-    for i in 0..GATE_RATE_MAX {
+    for _ in 0..GATE_RATE_MAX {
         assert_eq(g.gate_admit("a", 1000), i64(0))
     }
     assert_eq(g.gate_admit("a", 1500), GATE_RATE_WINDOW_MS - 500)
@@ -61,7 +61,7 @@ test "the gate lets a client through up to its rate, then names the wait" {
 
 test "repeated bad tokens lock a client out, and the lockout ends" {
     mut g := new_server_gate()
-    for i in 0..(GATE_BAD_MAX - 1) {
+    for _ in 0..(GATE_BAD_MAX - 1) {
         assert(!g.gate_bad_token("x", 100))
     }
     assert(g.gate_bad_token("x", 200))
@@ -73,7 +73,7 @@ test "repeated bad tokens lock a client out, and the lockout ends" {
 test "bad tokens spread over more than the window never lock out" {
     mut g := new_server_gate()
     mut t: i64 = 0
-    for i in 0..(GATE_BAD_MAX * 3) {
+    for _ in 0..(GATE_BAD_MAX * 3) {
         assert(!g.gate_bad_token("x", t))
         t += GATE_BAD_WINDOW_MS / (GATE_BAD_MAX - 1) + 1
     }
@@ -81,7 +81,7 @@ test "bad tokens spread over more than the window never lock out" {
 
 test "the gate forgets the client seen longest ago, never a locked-out one" {
     mut g := new_server_gate()
-    for i in 0..GATE_BAD_MAX {
+    for _ in 0..GATE_BAD_MAX {
         _ = g.gate_bad_token("locked", 0)
     }
     for i in 0..(GATE_CLIENTS_MAX + 10) {
@@ -102,7 +102,7 @@ test "a vault's label is short, printable and trimmed; empty clears it" {
         codes.push(error_code_of(err.message()))
     }
     mut long := ""
-    for i in 0..65 {
+    for _ in 0..65 {
         long += "x"
     }
     check_vault_label(long) or err {

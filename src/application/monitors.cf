@@ -24,7 +24,7 @@ MONITORS_ONLY_ONE: str = "Only one monitor connected"
 // The monitors, why the desktop cannot span them here (if it cannot), and the default
 // choice: the remembered monitors that are still connected, else the main one's
 // nearest neighbours.
-fn desktop_monitors[M: ports.Screens, U: ports.UiStateStore](screens: M, ui: U) -> MonitorsView {
+pub fn desktop_monitors[M: ports.Screens, U: ports.UiStateStore](screens: M, ui: U) -> MonitorsView {
     list := screens.screens_list()
     main := screens.screens_main()
     mut reason := screens.screens_unsupported()
@@ -32,7 +32,7 @@ fn desktop_monitors[M: ports.Screens, U: ports.UiStateStore](screens: M, ui: U) 
         reason = MONITORS_ONLY_ONE
     }
     s := load_ui_state(ui)
-    return MonitorsView{ reason: reason, monitors: list, main: main, picks: default_monitor_picks(list, main, s.monitors, MAX_MONITORS), max: MAX_MONITORS }
+    return MonitorsView{ reason: reason, monitors: list, main: main, picks: domain.default_monitor_picks(list, main, s.monitors, domain.MAX_MONITORS), max: domain.MAX_MONITORS }
 }
 
 // The layout the page draws: each monitor, where its part lies in the one surface,
@@ -48,16 +48,16 @@ type DesktopSpan struct {
 // the main window's monitor the primary. Refused where this system cannot, past the
 // cap, or for a monitor that is gone. The extra monitors are remembered for next time;
 // failing to write that never fails the span.
-fn span_remote_desktop[R: ports.RemoteDesktop, M: ports.Screens, U: ports.UiStateStore](mut rd: R, screens: M, mut ui: U, tab: str, picks: []domain.MonitorPick) -> DesktopSpan! {
+pub fn span_remote_desktop[R: ports.RemoteDesktop, M: ports.Screens, U: ports.UiStateStore](mut rd: R, screens: M, mut ui: U, tab: str, picks: []domain.MonitorPick) -> DesktopSpan! {
     if tab.len() == 0 {
-        return error(coded(ERR_INVALID, "a remote desktop needs a tab id"))
+        return error(domain.coded(domain.ERR_INVALID, "a remote desktop needs a tab id"))
     }
     reason := screens.screens_unsupported()
     if reason.len() > 0 {
-        return error(coded(ERR_UNSUPPORTED, reason))
+        return error(domain.coded(domain.ERR_UNSUPPORTED, reason))
     }
     main := screens.screens_main()
-    layout := try desktop_layout(screens.screens_list(), picks, main, MAX_MONITORS)
+    layout := try domain.desktop_layout(screens.screens_list(), picks, main, domain.MAX_MONITORS)
     try rd.rd_set_layout(tab, layout)
     mut extra: []str = []
     for m in layout {
@@ -67,7 +67,7 @@ fn span_remote_desktop[R: ports.RemoteDesktop, M: ports.Screens, U: ports.UiStat
     }
     mut s := load_ui_state(ui)
     s.monitors = extra
-    ui.ui_state_save(clean_ui_state(s)) or {}
-    b := layout_bounds(layout)
-    return DesktopSpan{ monitors: layout, crops: layout_crops(layout), width: b.width, height: b.height }
+    ui.ui_state_save(domain.clean_ui_state(s)) or {}
+    b := domain.layout_bounds(layout)
+    return DesktopSpan{ monitors: layout, crops: domain.layout_crops(layout), width: b.width, height: b.height }
 }

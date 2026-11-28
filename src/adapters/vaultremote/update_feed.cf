@@ -13,12 +13,12 @@ import "../../domain"
 UPDATE_CONNECT_MS: i64 = 10000
 UPDATE_REQUEST_MS: i64 = 30000
 
-type HttpUpdateFeed struct {
+pub type HttpUpdateFeed struct {
     connect_ms: i64
     request_ms: i64
 }
 
-fn new_http_update_feed() -> HttpUpdateFeed {
+pub fn new_http_update_feed() -> HttpUpdateFeed {
     return HttpUpdateFeed{ connect_ms: UPDATE_CONNECT_MS, request_ms: UPDATE_REQUEST_MS }
 }
 
@@ -33,7 +33,7 @@ fn update_url_allowed(url: str) -> bool {
 fn (self: HttpUpdateFeed) update_get(url: str, max_bytes: i64) -> []byte! {
     host := url_host(url)
     if !update_url_allowed(url) {
-        return error(coded(ERR_INVALID, "updates are fetched over HTTPS only (not from {host})"))
+        return error(domain.coded(domain.ERR_INVALID, "updates are fetched over HTTPS only (not from {host})"))
     }
     mut rc: i32 = 0
     mut status: i64 = 0
@@ -46,22 +46,22 @@ fn (self: HttpUpdateFeed) update_get(url: str, max_bytes: i64) -> []byte! {
         rc = flint_remote::get_following(url, connect_ms, request_ms, max_bytes, status, got, reason);
     }
     if rc == 2 || rc == 4 {
-        return error(coded(ERR_NETWORK, "cannot reach {host}: {reason}"))
+        return error(domain.coded(domain.ERR_NETWORK, "cannot reach {host}: {reason}"))
     }
     if rc == 3 {
-        return error(coded(ERR_TIMEOUT, "{host} did not answer in time"))
+        return error(domain.coded(domain.ERR_TIMEOUT, "{host} did not answer in time"))
     }
     if rc == 5 {
-        return error(coded(ERR_REFUSED, "{host} sent more than the update information may be"))
+        return error(domain.coded(domain.ERR_REFUSED, "{host} sent more than the update information may be"))
     }
     if rc != 0 {
-        return error(coded(ERR_NETWORK, "the request to {host} failed: {reason}"))
+        return error(domain.coded(domain.ERR_NETWORK, "the request to {host} failed: {reason}"))
     }
     if status == 404 {
-        return error(coded(ERR_NOT_FOUND, "no published release has update information yet"))
+        return error(domain.coded(domain.ERR_NOT_FOUND, "no published release has update information yet"))
     }
     if status != 200 {
-        return error(coded(ERR_REFUSED, "{host} answered {status}"))
+        return error(domain.coded(domain.ERR_REFUSED, "{host} answered {status}"))
     }
     return got
 }
@@ -71,17 +71,17 @@ fn (self: HttpUpdateFeed) update_get(url: str, max_bytes: i64) -> []byte! {
 // (Principle 8): a download may take minutes, but 30 s with nothing received ends it.
 UPDATE_STALL_MS: i64 = 30000
 
-type HttpUpdateDownloader struct {
+pub type HttpUpdateDownloader struct {
     connect_ms: i64
     stall_ms:   i64
 }
 
-fn new_http_update_downloader() -> HttpUpdateDownloader {
+pub fn new_http_update_downloader() -> HttpUpdateDownloader {
     return HttpUpdateDownloader{ connect_ms: UPDATE_CONNECT_MS, stall_ms: UPDATE_STALL_MS }
 }
 
 // Bytes the download running now has received (any thread may ask).
-fn update_download_received() -> i64 {
+pub fn update_download_received() -> i64 {
     mut n: i64 = 0
     // CFIRE-UPSTREAM: CF-146
     cpp {
@@ -93,7 +93,7 @@ fn update_download_received() -> i64 {
 fn (mut self: HttpUpdateDownloader) update_download(url: str, path: str, max_bytes: i64) -> void! {
     host := url_host(url)
     if !update_url_allowed(url) {
-        return error(coded(ERR_INVALID, "updates are fetched over HTTPS only (not from {host})"))
+        return error(domain.coded(domain.ERR_INVALID, "updates are fetched over HTTPS only (not from {host})"))
     }
     mut rc: i32 = 0
     mut status: i64 = 0
@@ -105,24 +105,24 @@ fn (mut self: HttpUpdateDownloader) update_download(url: str, path: str, max_byt
         rc = flint_remote::download_to_file(url, connect_ms, stall_ms, max_bytes, path, status, reason);
     }
     if rc == 2 || rc == 4 {
-        return error(coded(ERR_NETWORK, "the download from {host} failed: {reason}"))
+        return error(domain.coded(domain.ERR_NETWORK, "the download from {host} failed: {reason}"))
     }
     if rc == 3 {
-        return error(coded(ERR_TIMEOUT, "the download from {host} stalled"))
+        return error(domain.coded(domain.ERR_TIMEOUT, "the download from {host} stalled"))
     }
     if rc == 5 {
-        return error(coded(ERR_REFUSED, "{host} sent more than the release's package"))
+        return error(domain.coded(domain.ERR_REFUSED, "{host} sent more than the release's package"))
     }
     if rc == 7 {
-        return error(coded(ERR_IO, "{reason}"))
+        return error(domain.coded(domain.ERR_IO, "{reason}"))
     }
     if rc != 0 {
-        return error(coded(ERR_NETWORK, "the download from {host} failed: {reason}"))
+        return error(domain.coded(domain.ERR_NETWORK, "the download from {host} failed: {reason}"))
     }
     if status == 404 {
-        return error(coded(ERR_NOT_FOUND, "the release has no such package"))
+        return error(domain.coded(domain.ERR_NOT_FOUND, "the release has no such package"))
     }
     if status != 200 {
-        return error(coded(ERR_REFUSED, "{host} answered {status}"))
+        return error(domain.coded(domain.ERR_REFUSED, "{host} answered {status}"))
     }
 }

@@ -33,7 +33,7 @@ type GuiTransferSink struct {
     last_done:  i64
 }
 
-fn new_gui_transfer_sink(app: webui.App, session_id: str, transfer_id: str) -> GuiTransferSink {
+pub fn new_gui_transfer_sink(app: webui.App, session_id: str, transfer_id: str) -> GuiTransferSink {
     return GuiTransferSink{ app: app, session: session_id, id: transfer_id, last_ms: 0, last_file: "", last_done: -1 }
 }
 

@@ -1,12 +1,11 @@
 package config
 
-import "core:os"
 import "core:fs"
 import "core:crypto/sha256"
 import "../../ports"
 
 fn recents_port_check[R: ports.RecentStore](r: R) -> bool {
-    list := r.recents_load() or err { return false }
+    list := r.recents_load() or { return false }
     return list.len() == 0
 }
 

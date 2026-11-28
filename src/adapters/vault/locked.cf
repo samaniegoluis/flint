@@ -10,13 +10,13 @@ package vault
 import cpp "flint_vault_lock.hpp"
 import "../../domain"
 
-type LockedVaultStore struct {
+pub type LockedVaultStore struct {
     cell: shared[cpp.flint_vault::VaultCell]
 }
 
 // `act_dir`: where this machine's activity files live (milestone 39), the config
 // folder's `activity`.
-fn new_locked_vault_store(act_dir: str) -> LockedVaultStore {
+pub fn new_locked_vault_store(act_dir: str) -> LockedVaultStore {
     mut s := LockedVaultStore{}
     // CFIRE-UPSTREAM: CF-026
     cpp {
@@ -395,8 +395,8 @@ fn (self: LockedVaultStore) vault_replace_records(r: domain.VaultRecords) -> voi
 
 // The app and the CLI merge a copy through a `new_copy_vault_store`, never through
 // the shared connection.
-fn (mut self: LockedVaultStore) vault_attach_copy(path: str, page_key: []byte, salt: []byte) -> void! {
-    return error(coded(ERR_INTERNAL, "a conflict copy opens in a store of its own"))
+fn (mut self: LockedVaultStore) vault_attach_copy(_path: str, _page_key: []byte, _salt: []byte) -> void! {
+    return error(domain.coded(domain.ERR_INTERNAL, "a conflict copy opens in a store of its own"))
 }
 
 // Milestone 43: read under the mutex, so never in the middle of a transaction.

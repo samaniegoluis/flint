@@ -15,7 +15,6 @@ import "core:time"
 import "core:json"
 import "../../adapters/config"
 import "../../adapters/crypto" as flint_crypto
-import "../../adapters/keychain" as flint_keychain
 import "../../adapters/vault"
 import "../../application"
 import "../../domain"
@@ -38,51 +37,51 @@ fn token_scope_from_flags(p: ParsedArgs) -> application.ScopeByName {
     return s
 }
 
-fn token_request_from_flags(p: ParsedArgs) -> application.TokenRequest! {
-    mut req := application.TokenRequest{ name: p.flag_value("--name"), scope: token_scope_from_flags(p), read: false, exec: false, write: false, ttl: TOKEN_DEFAULT_TTL }
+pub fn token_request_from_flags(p: ParsedArgs) -> application.TokenRequest! {
+    mut req := application.TokenRequest{ name: p.flag_value("--name"), scope: token_scope_from_flags(p), read: false, exec: false, write: false, ttl: domain.TOKEN_DEFAULT_TTL }
     if p.has_flag("--ttl") {
         req.ttl = p.flag_value("--ttl")
     }
     if !p.has_flag("--allow") {
-        return error(coded(ERR_USAGE, "say what the token allows: --allow read,exec,write"))
+        return error(domain.coded(domain.ERR_USAGE, "say what the token allows: --allow read,exec,write"))
     }
     for v in p.flag_values_of("--allow") {
         for part in v.split(",") {
             a := part.trim()
-            if a == ACCESS_READ {
+            if a == domain.ACCESS_READ {
                 req.read = true
-            } else if a == ACCESS_EXEC {
+            } else if a == domain.ACCESS_EXEC {
                 req.exec = true
-            } else if a == ACCESS_WRITE {
+            } else if a == domain.ACCESS_WRITE {
                 req.write = true
             } else if a.len() > 0 {
-                return error(coded(ERR_USAGE, "--allow takes read, exec and write, not '{a}'"))
+                return error(domain.coded(domain.ERR_USAGE, "--allow takes read, exec and write, not '{a}'"))
             }
         }
     }
     if req.scope.all && (req.scope.hosts.len() > 0 || req.scope.groups.len() > 0) {
-        return error(coded(ERR_USAGE, "--all and --hosts do not go together"))
+        return error(domain.coded(domain.ERR_USAGE, "--all and --hosts do not go together"))
     }
     return req
 }
 
 // The words `token create` sends to the window's approval, without the name's value
 // being anything but what the owner reads.
-fn token_allows_text(read: bool, exec: bool, write: bool) -> str {
+pub fn token_allows_text(read: bool, exec: bool, write: bool) -> str {
     mut parts: []str = []
     if read {
-        parts.push(ACCESS_READ)
+        parts.push(domain.ACCESS_READ)
     }
     if exec {
-        parts.push(ACCESS_EXEC)
+        parts.push(domain.ACCESS_EXEC)
     }
     if write {
-        parts.push(ACCESS_WRITE)
+        parts.push(domain.ACCESS_WRITE)
     }
     return parts.join(",")
 }
 
-fn token_reach_text(all: bool, groups: []str, hosts: []str) -> str {
+pub fn token_reach_text(all: bool, groups: []str, hosts: []str) -> str {
     if all {
         return "whole vault"
     }
@@ -150,18 +149,18 @@ fn cmd_token(p: ParsedArgs, sec: SecretInput, as_json: bool, c: flint_crypto.Sod
         try p.expect_args("token create", 0, "")
         req := try token_request_from_flags(p)
         if !src.served {
-            return error(coded(ERR_LOCKED, "`flint token create` runs in Flint, which asks you to approve it: open Flint, unlock this vault and run it again"))
+            return error(domain.coded(domain.ERR_LOCKED, "`flint token create` runs in Flint, which asks you to approve it: open Flint, unlock this vault and run it again"))
         }
         _ = try open_target(p, sec, c, mut store, src, recents)
         mut ts := tokens
-        made := try create_token(c, store, mut ts, req, time.unix_seconds())
+        made := try application.create_token(c, store, mut ts, req, time.unix_seconds())
         if as_json {
             say(json.stringify(made))
             return
         }
         t := made.token
-        write_stderr("Created token '{t.name}' ({token_allows_text(t.read, t.exec, t.write)} on {token_reach_text(t.all, t.groups, t.hosts)}), until {utc_text(t.expires_at)}.\n")
-        write_stderr("Flint shows it this once, above. Give it to the program in the FLINT_TOKEN environment variable.\n")
+        process.write_stderr("Created token '{t.name}' ({token_allows_text(t.read, t.exec, t.write)} on {token_reach_text(t.all, t.groups, t.hosts)}), until {utc_text(t.expires_at)}.\n")
+        process.write_stderr("Flint shows it this once, above. Give it to the program in the FLINT_TOKEN environment variable.\n")
         say(made.secret)
         return
     }
@@ -169,7 +168,7 @@ fn cmd_token(p: ParsedArgs, sec: SecretInput, as_json: bool, c: flint_crypto.Sod
         try p.allow_flags("token list", [])
         try p.expect_args("token list", 0, "")
         _ = try open_target(p, sec, c, mut store, src, recents)
-        list := try list_tokens(store, tokens, time.unix_seconds())
+        list := try application.list_tokens(store, tokens, time.unix_seconds())
         if as_json {
             say(json.stringify(list))
         } else {
@@ -182,7 +181,7 @@ fn cmd_token(p: ParsedArgs, sec: SecretInput, as_json: bool, c: flint_crypto.Sod
         try p.expect_args("token revoke", 1, "<id|name>")
         _ = try open_target(p, sec, c, mut store, src, recents)
         mut ts := tokens
-        t := try revoke_token(store, mut ts, p.positional(2), time.unix_seconds())
+        t := try application.revoke_token(store, mut ts, p.positional(2), time.unix_seconds())
         if as_json {
             say(json.stringify(t))
         } else {
@@ -190,5 +189,5 @@ fn cmd_token(p: ParsedArgs, sec: SecretInput, as_json: bool, c: flint_crypto.Sod
         }
         return
     }
-    return error(coded(ERR_USAGE, "unknown command `flint token {verb}`; see `flint help`"))
+    return error(domain.coded(domain.ERR_USAGE, "unknown command `flint token {verb}`; see `flint help`"))
 }

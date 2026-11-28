@@ -4,16 +4,16 @@ package domain
 // exec returns. Plain types and rules, no I/O (Principle 1).
 
 // Default timeouts (Principle 8). Every dial, auth and exec is bounded.
-SSH_CONNECT_TIMEOUT_SECS: i64 = 15
-SSH_EXEC_TIMEOUT_SECS: i64 = 600
+pub SSH_CONNECT_TIMEOUT_SECS: i64 = 15
+pub SSH_EXEC_TIMEOUT_SECS: i64 = 600
 // An interactive session that has heard nothing from the server for this long sends
 // a keepalive request (OpenSSH's ServerAliveInterval), so routers, NATs and firewalls
 // that drop idle connections keep it open. Tether used the same interval.
-SSH_KEEPALIVE_SECS: i64 = 30
+pub SSH_KEEPALIVE_SECS: i64 = 30
 
 // A recorded server host key. One per address: a key of another type at the same
 // address counts as a changed key.
-type KnownHost struct {
+pub type KnownHost struct {
     addr: str
     key_type: str
     fingerprint: str
@@ -25,19 +25,19 @@ type KnownHost struct {
 }
 
 // What a server presented during the handshake.
-type ServerKey struct {
+pub type ServerKey struct {
     key_type: str
     fingerprint: str
 }
 
 // The outcome of checking a server key against the known hosts.
-HOST_KEY_KNOWN: str = "known"
+pub HOST_KEY_KNOWN: str = "known"
 HOST_KEY_NEW: str = "new"
-HOST_KEY_CHANGED: str = "changed"
+pub HOST_KEY_CHANGED: str = "changed"
 
 // A server key the person is asked about (a new key) or told about (a changed key,
 // which is always refused, D-019). `known_*` are empty for a new key.
-type HostKeyQuestion struct {
+pub type HostKeyQuestion struct {
     alias:             str `json:"alias"`
     addr:              str `json:"addr"`
     key_type:          str `json:"key_type"`
@@ -54,7 +54,7 @@ type HostKeyQuestion struct {
 // One way to authenticate, tried in order. `kind` is "key", "password" or "agent".
 // `source` says where the secret lives ("host" or "credential") and `ref_id` the row
 // that holds it (a key id for "key", a host or credential id for "password").
-type AuthStep struct {
+pub type AuthStep struct {
     kind: str
     source: str
     ref_id: str
@@ -62,7 +62,7 @@ type AuthStep struct {
 
 // The result of a remote command. `exit_code` is -1 when the command died by a
 // signal (then `signal` names it, e.g. "TERM").
-type ExecResult struct {
+pub type ExecResult struct {
     host:        str `json:"host"`
     exit_code:   i64 `json:"exit_code"`
     signal:      str `json:"signal"`
@@ -72,7 +72,7 @@ type ExecResult struct {
 }
 
 // One read from a running exec channel.
-type ExecChunk struct {
+pub type ExecChunk struct {
     stdout: str
     stderr: str
     done: bool
@@ -82,7 +82,7 @@ type ExecChunk struct {
 
 // The known_hosts address of a host: "name" on port 22, "[name]:port" otherwise,
 // lower-cased (DNS names are case-insensitive).
-fn known_host_addr(hostname: str, port: i64) -> str {
+pub fn known_host_addr(hostname: str, port: i64) -> str {
     mut name := ""
     for b in hostname.bytes() {
         c := u8(b)
@@ -99,7 +99,7 @@ fn known_host_addr(hostname: str, port: i64) -> str {
 }
 
 // Compares a presented key with the record for its address (if any).
-fn check_server_key(known: []KnownHost, addr: str, key: ServerKey) -> str {
+pub fn check_server_key(known: []KnownHost, addr: str, key: ServerKey) -> str {
     for k in known {
         if k.addr == addr {
             if k.key_type == key.key_type && k.fingerprint == key.fingerprint {
@@ -115,7 +115,7 @@ fn check_server_key(known: []KnownHost, addr: str, key: ServerKey) -> str {
 // (prepend to the defaults), or "" when no key is recorded for it. A server with
 // several host keys then presents the type that was trusted, as OpenSSH does,
 // instead of whichever type the client library happens to prefer (D-022).
-fn preferred_host_key_algos(known: []KnownHost, addr: str) -> str {
+pub fn preferred_host_key_algos(known: []KnownHost, addr: str) -> str {
     for k in known {
         if k.addr == addr && k.key_type.len() > 0 {
             if k.key_type == "ssh-rsa" {
@@ -130,7 +130,7 @@ fn preferred_host_key_algos(known: []KnownHost, addr: str) -> str {
 
 // Quotes `s` as one POSIX shell word: '…' with every ' written as '\''. fish reads
 // the same form (\' outside quotes is a literal quote).
-fn shell_single_quote(s: str) -> str {
+pub fn shell_single_quote(s: str) -> str {
     mut q := "'"
     for b in s.bytes() {
         if u8(b) == 39 {
@@ -148,7 +148,7 @@ fn shell_single_quote(s: str) -> str {
 // set PATH load as in a typed session. With `keep_shell`, a login shell follows
 // when the command exits; without it, the session ends with the command. ""
 // means a plain login shell.
-fn initial_command_line(command: str, keep_shell: bool) -> str {
+pub fn initial_command_line(command: str, keep_shell: bool) -> str {
     if command.len() == 0 {
         return ""
     }

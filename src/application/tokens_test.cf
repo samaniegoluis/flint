@@ -1,6 +1,5 @@
 package application
 
-import "core:os"
 import "../domain"
 
 // ---- Token store ---------------------------------------------------------------
@@ -15,7 +14,7 @@ type FakeTokenStore struct {
 // Fails for a path naming "unwritable", as a full disk would.
 fn (self: FakeTokenStore) activity_backup(dest: str) -> void! {
     if dest.contains("unwritable") {
-        return error(coded(ERR_IO, "cannot write {dest}"))
+        return error(domain.coded(domain.ERR_IO, "cannot write {dest}"))
     }
 }
 
@@ -48,8 +47,8 @@ fn (mut self: FakeTokenStore) activity_add(e: domain.ActivityEntry, keep: domain
 
 fn (mut self: FakeTokenStore) activity_finish(id: i64, end: domain.ActivityEnd) -> bool! {
     for i in 0..self.activity.len() {
-        if self.activity[i].id == id && self.activity[i].state == ACTIVITY_RUNNING {
-            self.activity[i].state = ACTIVITY_ENDED
+        if self.activity[i].id == id && self.activity[i].state == domain.ACTIVITY_RUNNING {
+            self.activity[i].state = domain.ACTIVITY_ENDED
             self.activity[i].exit = end.exit
             self.activity[i].duration_ms = end.duration_ms
             self.activity[i].result = end.result
@@ -140,29 +139,29 @@ test "a token is created once, stored hashed, and checked by its text" {
     assert_eq(made.token.name, "nightly")
     assert_eq(made.token.hosts[0], "codebox")
     assert_eq(made.token.expires_at, 1000 + 86400)
-    assert_eq(made.token.status, TOKEN_ACTIVE)
+    assert_eq(made.token.status, domain.TOKEN_ACTIVE)
     // The store holds a hash, never the text or its secret.
     stored := tokens.tokens[0]
     assert(stored.hash.len() == 64)
     assert(!made.secret.contains(stored.hash))
-    assert(!stored.hash.contains(split_token_text(made.secret).secret))
+    assert(!stored.hash.contains(domain.split_token_text(made.secret).secret))
 
     t := try check_token(crypto, tokens, made.secret, 2000)
     assert_eq(t.id, made.token.id)
     // A changed secret, an unknown id, garbage: all denied.
-    parts := split_token_text(made.secret)
+    parts := domain.split_token_text(made.secret)
     mut flipped := parts.secret[1..] + "0"
     if flipped == parts.secret {
         flipped = parts.secret[1..] + "1"
     }
     mut bad := ""
-    check_token(crypto, tokens, token_text(parts.id, flipped), 2000) or err { bad = "{err.message()}" }
-    assert_eq(error_code_of("{bad}"), ERR_DENIED)
-    check_token(crypto, tokens, token_text("ffffffffffffffff", parts.secret), 2000) or { refused += 1 }
+    check_token(crypto, tokens, domain.token_text(parts.id, flipped), 2000) or err { bad = "{err.message()}" }
+    assert_eq(domain.error_code_of("{bad}"), domain.ERR_DENIED)
+    check_token(crypto, tokens, domain.token_text("ffffffffffffffff", parts.secret), 2000) or { refused += 1 }
     assert_eq(refused, 1)
     mut junk := ""
     check_token(crypto, tokens, "hunter2", 2000) or err { junk = "{err.message()}" }
-    assert_eq(error_code_of("{junk}"), ERR_DENIED)
+    assert_eq(domain.error_code_of("{junk}"), domain.ERR_DENIED)
     assert(!"{junk}".contains("hunter2"))
     // Expired.
     mut late := ""
@@ -178,9 +177,9 @@ test "a revoked token is refused and its name can be used again" {
     made := try create_token(crypto, store, mut tokens, token_req("ci", [], true, false, false), 1000)
     mut clash := ""
     create_token(crypto, store, mut tokens, token_req("CI", [], true, false, false), 1001) or err { clash = "{err.message()}" }
-    assert_eq(error_code_of("{clash}"), ERR_CONFLICT)
+    assert_eq(domain.error_code_of("{clash}"), domain.ERR_CONFLICT)
     v := try revoke_token(store, mut tokens, "ci", 1100)
-    assert_eq(v.status, TOKEN_REVOKED)
+    assert_eq(v.status, domain.TOKEN_REVOKED)
     assert_eq(v.revoked_at, 1100)
     again := try revoke_token(store, mut tokens, made.token.id, 1200)
     assert_eq(again.revoked_at, 1100)
@@ -192,11 +191,11 @@ test "a revoked token is refused and its name can be used again" {
     _ = try create_token(crypto, store, mut tokens, token_req("ci", [], true, false, false), 1400)
     list := try list_tokens(store, tokens, 1500)
     assert_eq(list.len(), 2)
-    assert_eq(list[0].status, TOKEN_REVOKED)
-    assert_eq(list[1].status, TOKEN_ACTIVE)
+    assert_eq(list[0].status, domain.TOKEN_REVOKED)
+    assert_eq(list[1].status, domain.TOKEN_ACTIVE)
     mut missing := ""
     revoke_token(store, mut tokens, "nope", 1500) or err { missing = "{err.message()}" }
-    assert_eq(error_code_of("{missing}"), ERR_NOT_FOUND)
+    assert_eq(domain.error_code_of("{missing}"), domain.ERR_NOT_FOUND)
 }
 
 test "a token request says what it allows and where" {
@@ -205,19 +204,19 @@ test "a token request says what it allows and where" {
     try token_vault(mut store)
     mut none_allowed := ""
     check_token_request(store, token_req("x", ["codebox"], false, false, false)) or err { none_allowed = "{err.message()}" }
-    assert_eq(error_code_of("{none_allowed}"), ERR_USAGE)
+    assert_eq(domain.error_code_of("{none_allowed}"), domain.ERR_USAGE)
     mut no_hosts := ""
     check_token_request(store, token_req("x", [], false, true, false)) or err { no_hosts = "{err.message()}" }
-    assert_eq(error_code_of("{no_hosts}"), ERR_USAGE)
+    assert_eq(domain.error_code_of("{no_hosts}"), domain.ERR_USAGE)
     // Reading alone needs no hosts: it is vault-wide.
     reader := try check_token_request(store, token_req("x", [], true, false, false))
     assert(reader.all)
     mut narrow_write := ""
     check_token_request(store, token_req("x", ["codebox"], true, false, true)) or err { narrow_write = "{err.message()}" }
-    assert_eq(error_code_of("{narrow_write}"), ERR_INVALID)
+    assert_eq(domain.error_code_of("{narrow_write}"), domain.ERR_INVALID)
     mut ghost := ""
     check_token_request(store, token_req("x", ["ghost"], false, true, false)) or err { ghost = "{err.message()}" }
-    assert_eq(error_code_of("{ghost}"), ERR_NOT_FOUND)
+    assert_eq(domain.error_code_of("{ghost}"), domain.ERR_NOT_FOUND)
     mut bad_ttl := token_req("x", ["codebox"], false, true, false)
     bad_ttl.ttl = "never"
     check_token_request(store, bad_ttl) or { refused += 1 }
@@ -229,7 +228,7 @@ test "a token request says what it allows and where" {
 }
 
 fn day_entry(day: i64) -> domain.ActivityEntry {
-    return domain.ActivityEntry{ id: 0, at: day * 86400, caller: "c", via: ACTIVITY_VIA_GRANT, token: "", action: ACCESS_EXEC, host: "h", command: "flint exec h -- true", outcome: ACTIVITY_ALLOWED, cut: 0 }
+    return domain.ActivityEntry{ id: 0, at: day * 86400, caller: "c", via: domain.ACTIVITY_VIA_GRANT, token: "", action: domain.ACCESS_EXEC, host: "h", command: "flint exec h -- true", outcome: domain.ACTIVITY_ALLOWED, cut: 0 }
 }
 
 test "the activity log keeps 90 days by default and pages back" {
@@ -273,30 +272,36 @@ test "an activity backup goes to an absolute path, and its failure is reported" 
     t := new_fake_token_store()
     try backup_activity(t, test_tmp() + "/flint-activity-backup.db")
     mut code := ""
-    backup_activity(t, "relative.db") or err { code = error_code_of("{err.message()}") }
-    assert_eq(code, ERR_INVALID)
+    backup_activity(t, "relative.db") or err { code = domain.error_code_of("{err.message()}") }
+    assert_eq(code, domain.ERR_INVALID)
     code = ""
-    backup_activity(t, "/unwritable/a.db") or err { code = error_code_of("{err.message()}") }
-    assert_eq(code, ERR_IO)
+    backup_activity(t, "/unwritable/a.db") or err { code = domain.error_code_of("{err.message()}") }
+    assert_eq(code, domain.ERR_IO)
 }
 
 test "finish_activity writes back how a running command ended, once (milestone 56)" {
     mut tokens := new_fake_token_store()
     mut e := day_entry(1)
     e.grant = "g1"
-    e.state = ACTIVITY_RUNNING
+    e.state = domain.ACTIVITY_RUNNING
     id := try record_activity(mut tokens, e, 2 * 86400)
     mut other := day_entry(1)
     other.grant = "g2"
     _ = try record_activity(mut tokens, other, 2 * 86400)
-    assert(try finish_activity(mut tokens, id, activity_end(17, ERR_NOT_SUDOER, 300)))
-    assert(!(try finish_activity(mut tokens, id, activity_end(0, "", 1))), "an entry ends once")
-    assert(!(try finish_activity(mut tokens, 0, activity_end(0, "", 1))))
+    assert(try finish_activity(mut tokens, id, domain.activity_end(17, domain.ERR_NOT_SUDOER, 300)))
+    assert(!(try finish_activity(mut tokens, id, domain.activity_end(0, "", 1))), "an entry ends once")
+    assert(!(try finish_activity(mut tokens, 0, domain.activity_end(0, "", 1))))
     list := try grant_activity(tokens, "g1")
     assert_eq(list.len(), usize(1))
-    assert_eq(list[0].state, ACTIVITY_ENDED)
+    assert_eq(list[0].state, domain.ACTIVITY_ENDED)
     assert_eq(list[0].exit, 17)
-    assert_eq(list[0].result, ERR_NOT_SUDOER)
-    assert(activity_refused_by_sudo(list[0]))
+    assert_eq(list[0].result, domain.ERR_NOT_SUDOER)
+    assert(domain.activity_refused_by_sudo(list[0]))
     assert_eq((try grant_activity(tokens, "")).len(), usize(0))
+}
+
+// The live token `text` names, if its secret matches the stored hash (compared in
+// constant time). Every failure is `denied`, saying why without echoing the text.
+fn check_token[C: ports.Crypto, T: ports.TokenStore](crypto: C, tokens: T, text: str, now_s: i64) -> domain.Token! {
+    return try check_token_in(crypto, try tokens.tokens_all(), text, now_s)
 }

@@ -7,14 +7,14 @@ import "../domain"
 import "../ports"
 
 // What the window chose to allow, by name.
-type ScopeByName struct {
+pub type ScopeByName struct {
     all:    bool  `json:"all"`
     groups: []str `json:"groups"`
     hosts:  []str `json:"hosts"`
 }
 
 // A live grant as the window lists it.
-type GrantView struct {
+pub type GrantView struct {
     id:         str   `json:"id"`
     label:      str   `json:"label"`
     all:        bool  `json:"all"`
@@ -33,7 +33,7 @@ type GrantView struct {
 }
 
 // The scope with ids for `s`. Every name must exist.
-fn access_scope_from_names(cat: domain.Catalog, s: ScopeByName) -> domain.AccessScope! {
+pub fn access_scope_from_names(cat: domain.Catalog, s: ScopeByName) -> domain.AccessScope! {
     if s.all {
         return domain.AccessScope{ all: true, groups: [], hosts: [] }
     }
@@ -41,7 +41,7 @@ fn access_scope_from_names(cat: domain.Catalog, s: ScopeByName) -> domain.Access
     for path in s.groups {
         id := find_group_id(cat.groups, path)
         if id.len() == 0 {
-            return error(coded(ERR_NOT_FOUND, "group '{path}'"))
+            return error(domain.coded(domain.ERR_NOT_FOUND, "group '{path}'"))
         }
         groups.push(id)
     }
@@ -49,7 +49,7 @@ fn access_scope_from_names(cat: domain.Catalog, s: ScopeByName) -> domain.Access
     for alias in s.hosts {
         idx := host_index_by_alias(cat.hosts, alias)
         if idx < 0 {
-            return error(coded(ERR_NOT_FOUND, "host '{alias}'"))
+            return error(domain.coded(domain.ERR_NOT_FOUND, "host '{alias}'"))
         }
         hosts.push(cat.hosts[usize(idx)].id)
     }
@@ -76,7 +76,7 @@ fn grant_view(g: domain.Grant, cat: domain.Catalog) -> GrantView {
     return GrantView{ id: g.id, label: g.label, all: g.scope.all, groups: groups, hosts: hosts, read: g.read, exec: g.exec, write: g.write, created_ms: g.created_ms, expires_ms: g.expires_ms, anchor_pid: g.anchor_pid, notify: g.notify, root: g.root }
 }
 
-fn grant_views(grants: []domain.Grant, cat: domain.Catalog) -> []GrantView {
+pub fn grant_views(grants: []domain.Grant, cat: domain.Catalog) -> []GrantView {
     mut views: []GrantView = []
     for g in grants {
         views.push(grant_view(g, cat))
@@ -91,21 +91,21 @@ fn grant_views(grants: []domain.Grant, cat: domain.Catalog) -> []GrantView {
 // `password`, it must be the master password of the vault held; without one, the
 // OS's presence check (Touch ID, polkit) must pass. Where the OS has no check, only
 // the master password opens it.
-fn confirm_window_unlock[C: ports.Crypto, S: ports.VaultStore, P: ports.Presence](crypto: C, store: S, presence: P, session: VaultSession, password: str) -> void! {
+pub fn confirm_window_unlock[C: ports.Crypto, S: ports.VaultStore, P: ports.Presence](crypto: C, store: S, presence: P, session: VaultSession, password: str) -> void! {
     if password.len() > 0 || presence.presence_method() == "password" {
         ok := try verify_master_password(crypto, store, session, password)
         if !ok {
-            return error(core_msg(MSG_WINDOW_WRONG_PASSWORD, []))
+            return error(domain.core_msg(domain.MSG_WINDOW_WRONG_PASSWORD, []))
         }
         return
     }
-    ok := try presence.presence_confirm(window_open_reason(session.name))
+    ok := try presence.presence_confirm(domain.window_open_reason(session.name))
     if !ok {
-        return error(coded(ERR_DENIED, "presence was not confirmed; the window stays locked"))
+        return error(domain.coded(domain.ERR_DENIED, "presence was not confirmed; the window stays locked"))
     }
 }
 
-fn confirm_presence[C: ports.Crypto, S: ports.VaultStore, P: ports.Presence](crypto: C, store: S, presence: P, session: VaultSession, password: str, reason: domain.PresenceReason) -> void! {
+pub fn confirm_presence[C: ports.Crypto, S: ports.VaultStore, P: ports.Presence](crypto: C, store: S, presence: P, session: VaultSession, password: str, reason: domain.PresenceReason) -> void! {
     try confirm_presence_for(crypto, store, presence, session, password, reason, "nothing was allowed")
 }
 
@@ -115,12 +115,12 @@ fn confirm_presence_for[C: ports.Crypto, S: ports.VaultStore, P: ports.Presence]
     if presence.presence_method() == "password" {
         ok := try verify_master_password(crypto, store, session, password)
         if !ok {
-            return error(coded(ERR_WRONG_PASSWORD, "that is not the master password of this vault; {refused}"))
+            return error(domain.coded(domain.ERR_WRONG_PASSWORD, "that is not the master password of this vault; {refused}"))
         }
         return
     }
     ok := try presence.presence_confirm(reason)
     if !ok {
-        return error(coded(ERR_DENIED, "presence was not confirmed; {refused}"))
+        return error(domain.coded(domain.ERR_DENIED, "presence was not confirmed; {refused}"))
     }
 }

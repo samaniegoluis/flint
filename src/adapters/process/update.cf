@@ -14,11 +14,11 @@ import "core:os"
 import "core:time"
 import "../../domain"
 
-type OsUpdateFiles struct {
+pub type OsUpdateFiles struct {
     ready: bool
 }
 
-fn new_os_update_files() -> OsUpdateFiles {
+pub fn new_os_update_files() -> OsUpdateFiles {
     return OsUpdateFiles{ ready: true }
 }
 
@@ -28,13 +28,13 @@ fn (self: OsUpdateFiles) upd_exists(path: str) -> bool {
 
 fn (self: OsUpdateFiles) upd_read(path: str) -> str! {
     return fs.read_text(path) or err {
-        return error(coded(ERR_IO, "cannot read {path}: {err.message()}"))
+        return error(domain.coded(domain.ERR_IO, "cannot read {path}: {err.message()}"))
     }
 }
 
 fn (mut self: OsUpdateFiles) upd_mkdir(path: str) -> void! {
     fs.mkdir_all(path) or err {
-        return error(coded(ERR_IO, "cannot create {path}: {err.message()}"))
+        return error(domain.coded(domain.ERR_IO, "cannot create {path}: {err.message()}"))
     }
 }
 
@@ -49,7 +49,7 @@ fn (mut self: OsUpdateFiles) upd_remove(path: str) -> void! {
         ok = flint_update::upd_remove_tree(path, why);
     }
     if !ok {
-        return error(coded(ERR_IO, "cannot remove {path}: {why}"))
+        return error(domain.coded(domain.ERR_IO, "cannot remove {path}: {why}"))
     }
 }
 
@@ -61,19 +61,19 @@ fn (mut self: OsUpdateFiles) upd_rename(from: str, to: str) -> void! {
         ok = flint_update::upd_rename_path(from, to, why);
     }
     if !ok {
-        return error(coded(ERR_IO, "cannot move {from} to {to}: {why}"))
+        return error(domain.coded(domain.ERR_IO, "cannot move {from} to {to}: {why}"))
     }
 }
 
 fn (mut self: OsUpdateFiles) upd_write(path: str, text: str) -> void! {
     fs.write_text(path, text) or err {
-        return error(coded(ERR_IO, "cannot write {path}: {err.message()}"))
+        return error(domain.coded(domain.ERR_IO, "cannot write {path}: {err.message()}"))
     }
 }
 
 fn (mut self: OsUpdateFiles) upd_unzip(zip: str, dest: str) -> void! {
     fs.mkdir_all(dest) or err {
-        return error(coded(ERR_IO, "cannot create {dest}: {err.message()}"))
+        return error(domain.coded(domain.ERR_IO, "cannot create {dest}: {err.message()}"))
     }
     mut cmd := "unzip"
     mut args: []str = ["-q", "-o", zip, "-d", dest]
@@ -91,16 +91,16 @@ fn (mut self: OsUpdateFiles) upd_unzip(zip: str, dest: str) -> void! {
         args = ["-x", "-f", zip, "-C", dest]
     }
     r := os.command(cmd, args) or err {
-        return error(coded(ERR_IO, "cannot unpack the update ({cmd}): {err.message()}"))
+        return error(domain.coded(domain.ERR_IO, "cannot unpack the update ({cmd}): {err.message()}"))
     }
     if r.exit_code != 0 {
-        return error(coded(ERR_IO, "cannot unpack the update ({cmd} exited {r.exit_code}: {r.stderr.trim()})"))
+        return error(domain.coded(domain.ERR_IO, "cannot unpack the update ({cmd} exited {r.exit_code}: {r.stderr.trim()})"))
     }
 }
 
 fn (mut self: OsUpdateFiles) upd_copy_exe(from: str, to: str) -> void! {
     fs.copy_file(from, to) or err {
-        return error(coded(ERR_IO, "cannot copy {from}: {err.message()}"))
+        return error(domain.coded(domain.ERR_IO, "cannot copy {from}: {err.message()}"))
     }
     mut ok := false
     // CFIRE-UPSTREAM: CF-175
@@ -108,7 +108,7 @@ fn (mut self: OsUpdateFiles) upd_copy_exe(from: str, to: str) -> void! {
         ok = flint_update::upd_make_executable(to);
     }
     if !ok {
-        return error(coded(ERR_IO, "cannot make {to} executable"))
+        return error(domain.coded(domain.ERR_IO, "cannot make {to} executable"))
     }
 }
 
@@ -117,11 +117,11 @@ fn (mut self: OsUpdateFiles) upd_copy_exe(from: str, to: str) -> void! {
 // (`TeamIdentifier=not set` when ad hoc); `--verify --deep --strict` says whether every
 // file still matches it. Linux and Windows packages carry no signature Flint checks
 // (Windows signing waits, D-157): every folder reads as valid and unsigned there.
-type OsUpdateSigner struct {
+pub type OsUpdateSigner struct {
     ready: bool
 }
 
-fn new_os_update_signer() -> OsUpdateSigner {
+pub fn new_os_update_signer() -> OsUpdateSigner {
     return OsUpdateSigner{ ready: true }
 }
 
@@ -152,22 +152,22 @@ fn (self: OsUpdateSigner) upd_signer(root: str) -> domain.CodeSignature {
 // inherits the app's current directory, which on Windows is the installed folder when
 // the app was opened from its Start menu shortcut, and Windows does not rename a folder
 // that is a process's current directory (error 32).
-fn set_working_dir(dir: str) -> void! {
+pub fn set_working_dir(dir: str) -> void! {
     mut ok := false
     // CFIRE-UPSTREAM: CF-187
     cpp {
         ok = flint_update::upd_set_cwd(dir);
     }
     if !ok {
-        return error(coded(ERR_IO, "cannot change the current directory to {dir}"))
+        return error(domain.coded(domain.ERR_IO, "cannot change the current directory to {dir}"))
     }
 }
 
-type OsUpdateProcesses struct {
+pub type OsUpdateProcesses struct {
     ready: bool
 }
 
-fn new_os_update_processes() -> OsUpdateProcesses {
+pub fn new_os_update_processes() -> OsUpdateProcesses {
     return OsUpdateProcesses{ ready: true }
 }
 
@@ -207,7 +207,7 @@ fn (self: OsUpdateProcesses) proc_holders(dir: str) -> []domain.FolderHolder {
     cpp {
         lines = flint_update::upd_holders(dir);
     }
-    return parse_folder_holders(lines)
+    return domain.parse_folder_holders(lines)
 }
 
 // Why the last proc_holders named nobody (Windows; for a test's diagnosis).
@@ -237,7 +237,7 @@ fn (mut self: OsUpdateProcesses) proc_spawn(exe: str, args: []str, log: str) -> 
         pid = flint_update::upd_spawn_detached(exe, argv, log);
     }
     if pid <= 0 {
-        return error(coded(ERR_IO, "cannot start {exe} (error {-pid})"))
+        return error(domain.coded(domain.ERR_IO, "cannot start {exe} (error {-pid})"))
     }
     return pid
 }
@@ -258,7 +258,7 @@ fn (self: OsUpdateProcesses) proc_now_ms() -> i64 {
 }
 
 // This process's id: update-apply waits for it to quit.
-fn current_pid() -> i64 {
+pub fn current_pid() -> i64 {
     mut pid: i64 = 0
     // CFIRE-UPSTREAM: CF-175
     cpp {
@@ -272,7 +272,7 @@ fn current_pid() -> i64 {
 }
 
 // A temporary folder of this machine's (TMPDIR, TEMP, or /tmp).
-fn temp_base() -> str {
+pub fn temp_base() -> str {
     for name in ["TMPDIR", "TEMP", "TMP"] {
         v := (os.getenv(name) or "")
         if v.len() > 0 {
@@ -291,11 +291,11 @@ PKEXEC_PATH: str = "/usr/bin/pkexec"
 // How long asking apt or dnf where Flint came from may take, at launch.
 PACKAGE_SOURCE_TIMEOUT_S: str = "15"
 
-type OsRootRunner struct {
+pub type OsRootRunner struct {
     pkexec: str
 }
 
-fn new_os_root_runner() -> OsRootRunner {
+pub fn new_os_root_runner() -> OsRootRunner {
     return OsRootRunner{ pkexec: PKEXEC_PATH }
 }
 
@@ -303,10 +303,10 @@ fn new_os_root_runner() -> OsRootRunner {
 // its own (the helper bounds the package manager, Principle 8).
 fn (mut self: OsRootRunner) run_root_helper(helper: str) -> domain.RootRun! {
     if !fs.exists(self.pkexec) {
-        return error(coded(ERR_UNSUPPORTED, "pkexec is not installed, so Flint cannot ask for the system password: install the update with your package manager"))
+        return error(domain.coded(domain.ERR_UNSUPPORTED, "pkexec is not installed, so Flint cannot ask for the system password: install the update with your package manager"))
     }
     res := os.command(self.pkexec, [helper]) or err {
-        return error(coded(ERR_IO, "pkexec could not be started: {err.message()}"))
+        return error(domain.coded(domain.ERR_IO, "pkexec could not be started: {err.message()}"))
     }
     if res.stderr.trim().len() > 0 {
         write_stderr("flint-gui: {helper}: {res.stderr.trim()}\n")
@@ -314,17 +314,17 @@ fn (mut self: OsRootRunner) run_root_helper(helper: str) -> domain.RootRun! {
     return domain.RootRun{ exit_code: res.exit_code, stdout: res.stdout }
 }
 
-type OsPackageSourceProbe struct {
+pub type OsPackageSourceProbe struct {
     ready: bool
 }
 
-fn new_os_package_source_probe() -> OsPackageSourceProbe {
+pub fn new_os_package_source_probe() -> OsPackageSourceProbe {
     return OsPackageSourceProbe{ ready: true }
 }
 
 fn (self: OsPackageSourceProbe) package_source_text(format: str) -> str {
     mut args: []str = [PACKAGE_SOURCE_TIMEOUT_S, "/usr/bin/apt-cache", "policy", "flint"]
-    if format == PACKAGE_RPM {
+    if format == domain.PACKAGE_RPM {
         // -C: from the cache only, never a metadata download at launch.
         args = [PACKAGE_SOURCE_TIMEOUT_S, "/usr/bin/dnf", "-C", "-q", "info", "--installed", "flint"]
     }

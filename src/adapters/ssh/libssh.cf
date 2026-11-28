@@ -50,7 +50,7 @@ fn ssh_dial(host: str, port: i32, user: str, timeout_secs: i64) -> SshConn! {
 // prepend form needs libssh 0.11, so on 0.10 the list is spelled out in full.
 fn ssh_dial_over(host: str, port: i32, user: str, timeout_secs: i64, fd: i32, host_key_algos: str) -> SshConn! {
     if timeout_secs <= 0 {
-        return error(coded(ERR_INVALID, "ssh: a positive timeout is required"))
+        return error(domain.coded(domain.ERR_INVALID, "ssh: a positive timeout is required"))
     }
     mut session: cpp.flint_ssh::SshSession
     mut rc: i32 = 0
@@ -64,7 +64,7 @@ fn ssh_dial_over(host: str, port: i32, user: str, timeout_secs: i64, fd: i32, ho
             sock = flint_ssh::dial_tcp(host, static_cast<int>(port), static_cast<long>(timeout_secs), dial_err);
         }
         if sock < 0 {
-            return error(core_msg(MSG_SSH_DIAL_FAILED, [host, "{port}", dial_err]))
+            return error(domain.core_msg(domain.MSG_SSH_DIAL_FAILED, [host, "{port}", dial_err]))
         }
     }
     // CF-079: no `if` expression.
@@ -134,7 +134,7 @@ fn ssh_dial_over(host: str, port: i32, user: str, timeout_secs: i64, fd: i32, ho
     if rc != 0 {
         msg := conn.last_error()
         conn.disconnect()
-        return error(core_msg(MSG_SSH_DIAL_FAILED, [host, "{port}", msg]))
+        return error(domain.core_msg(domain.MSG_SSH_DIAL_FAILED, [host, "{port}", msg]))
     }
     return conn
 }
@@ -152,7 +152,7 @@ fn tcp_dial_first(addresses: []str, port: i32, timeout_secs: i64) -> void! {
         flint_sock::close(fd);
     }
     if fd < 0 {
-        return error(coded(ERR_NETWORK, "connect to port {port} failed: {err}"))
+        return error(domain.coded(domain.ERR_NETWORK, "connect to port {port} failed: {err}"))
     }
 }
 
@@ -311,7 +311,7 @@ fn (mut self: SshConn) disconnect() {
     }
 }
 
-fn libssh_version() -> str {
+pub fn libssh_version() -> str {
     mut v := ""
     // CFIRE-UPSTREAM: CF-005
     cpp {

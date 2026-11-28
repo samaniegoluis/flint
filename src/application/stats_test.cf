@@ -48,14 +48,14 @@ fn (mut self: StatsClock) clock_now_ms() -> i64 {
 
 fn (mut self: FakeStats) stats_open(command: str) -> void! {
     if self.refuse {
-        return error(coded(ERR_NETWORK, "channel open failed"))
+        return error(domain.coded(domain.ERR_NETWORK, "channel open failed"))
     }
     self.opened = true
     self.command = command
     self.pending = self.greeting
 }
 
-fn (mut self: FakeStats) stats_send(data: str) -> void! {
+fn (mut self: FakeStats) stats_send(_data: str) -> void! {
     if self.stop_after > 0 && self.sent >= self.stop_after {
         self.stopped = true
     }
@@ -92,7 +92,7 @@ fn (mut self: FakeStatsSink) stats_emit(sample: domain.ServerSample) {
     self.samples.push(sample)
 }
 
-fn accepts_stats[C: ports.ServerStats, S: ports.StatsSink](c: C, s: S) -> bool {
+fn accepts_stats[C: ports.ServerStats, S: ports.StatsSink](_c: C, _s: S) -> bool {
     return true
 }
 
@@ -112,7 +112,7 @@ test "a sample from each two, every 2 s, until the watch stops; the channel is c
     mut sink := FakeStatsSink{ samples: [] }
     watch_server_stats(mut ch, mut sink, mut clock, "t1")
     assert(ch.opened && ch.closed)
-    assert_eq(ch.command, stats_command())
+    assert_eq(ch.command, domain.stats_command())
     // Three samples asked, two emitted (the first has nothing to compare with), and
     // nothing more once stopped: no empty sample either.
     assert_eq(sink.samples.len(), 2)
@@ -127,7 +127,7 @@ test "a sample from each two, every 2 s, until the watch stops; the channel is c
     b := sink.samples[1]
     assert(b.cpu_pct < 0.01)
     // The requests were 2 s apart on the clock.
-    assert(clock.clock_now_ms() >= 2 * STATS_INTERVAL_MS)
+    assert(clock.clock_now_ms() >= 2 * domain.STATS_INTERVAL_MS)
 }
 
 test "a refused channel (MaxSessions) shows nothing" {
@@ -136,7 +136,7 @@ test "a refused channel (MaxSessions) shows nothing" {
     mut sink := FakeStatsSink{ samples: [] }
     watch_server_stats(mut ch, mut sink, mut clock, "t1")
     assert_eq(sink.samples.len(), 1)
-    assert(!sample_has_fields(sink.samples[0]))
+    assert(!domain.sample_has_fields(sink.samples[0]))
     assert(!ch.closed)
 }
 
@@ -147,7 +147,7 @@ test "a server that is not Linux shows nothing and the channel is closed" {
     watch_server_stats(mut ch, mut sink, mut clock, "t1")
     assert(ch.closed)
     assert_eq(sink.samples.len(), 1)
-    assert(!sample_has_fields(sink.samples[0]))
+    assert(!domain.sample_has_fields(sink.samples[0]))
 }
 
 test "an unparsable answer shows nothing" {
@@ -156,7 +156,7 @@ test "an unparsable answer shows nothing" {
     watch_server_stats(mut ch, mut sink, mut clock, "t1")
     assert(ch.closed)
     assert_eq(sink.samples.len(), 1)
-    assert(!sample_has_fields(sink.samples[0]))
+    assert(!domain.sample_has_fields(sink.samples[0]))
 }
 
 test "a server that stops answering ends the watch after the sample timeout" {
@@ -166,9 +166,9 @@ test "a server that stops answering ends the watch after the sample timeout" {
     assert(ch.closed)
     // One real sample, then the empty one when the third never came.
     assert_eq(sink.samples.len(), 2)
-    assert(sample_has_fields(sink.samples[0]))
-    assert(!sample_has_fields(sink.samples[1]))
-    assert(clock.clock_now_ms() >= 2 * STATS_INTERVAL_MS + STATS_SAMPLE_TIMEOUT_MS)
+    assert(domain.sample_has_fields(sink.samples[0]))
+    assert(!domain.sample_has_fields(sink.samples[1]))
+    assert(clock.clock_now_ms() >= 2 * domain.STATS_INTERVAL_MS + domain.STATS_SAMPLE_TIMEOUT_MS)
 }
 
 test "a loop that ends (the session closed) shows nothing" {
@@ -178,7 +178,7 @@ test "a loop that ends (the session closed) shows nothing" {
     watch_server_stats(mut ch, mut sink, mut clock, "t1")
     assert(ch.closed)
     assert_eq(sink.samples.len(), 1)
-    assert(!sample_has_fields(sink.samples[0]))
+    assert(!domain.sample_has_fields(sink.samples[0]))
 }
 
 test "a sample split across reads, and two in one read, are both read" {
@@ -193,6 +193,6 @@ test "a sample split across reads, and two in one read, are both read" {
     ch.pending = stats_reply(10, 90, 1000, 100)[20..] + stats_reply(30, 170, 5000, 102)
     a := try read_stats_block(mut ch, mut clock, mut buf)
     b := try read_stats_block(mut ch, mut clock, mut buf)
-    assert(parse_stats_reading(a).has_cpu && parse_stats_reading(b).has_cpu)
+    assert(domain.parse_stats_reading(a).has_cpu && domain.parse_stats_reading(b).has_cpu)
     assert_eq(buf, "")
 }

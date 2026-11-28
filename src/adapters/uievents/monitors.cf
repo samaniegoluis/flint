@@ -11,11 +11,11 @@ import "ext:webui"
 import "../../domain"
 
 // The Screens port over the shim.
-type OsScreens struct {
+pub type OsScreens struct {
     unused: i64
 }
 
-fn new_os_screens() -> OsScreens {
+pub fn new_os_screens() -> OsScreens {
     return OsScreens{ unused: 0 }
 }
 
@@ -70,7 +70,7 @@ fn parse_monitor_lines(text: str) -> []domain.LocalMonitor {
 
 // Keeps the app and the page folder for the extra windows. Call once, before the
 // window runs.
-fn monitors_install(app: webui.App, dir: str) {
+pub fn monitors_install(app: webui.App, dir: str) {
     // CFIRE-UPSTREAM: CF-126, CF-127
     cpp {
         flint_monitors::install(app, dir);
@@ -79,7 +79,7 @@ fn monitors_install(app: webui.App, dir: str) {
 
 // A full-screen window on each monitor of `ids` that has none; windows on monitors
 // not listed close.
-fn monitor_windows_open(ids: []str) {
+pub fn monitor_windows_open(ids: []str) {
     mut text := ""
     for i, id in ids {
         if i > 0 {
@@ -93,7 +93,7 @@ fn monitor_windows_open(ids: []str) {
     }
 }
 
-fn monitor_windows_close() {
+pub fn monitor_windows_close() {
     // CFIRE-UPSTREAM: CF-126
     cpp {
         flint_monitors::close_all();
@@ -101,7 +101,7 @@ fn monitor_windows_close() {
 }
 
 // Hands `json` to the window on monitor `id` ("" every window).
-fn monitor_window_send(id: str, json: str) {
+pub fn monitor_window_send(id: str, json: str) {
     // CFIRE-UPSTREAM: CF-126
     cpp {
         flint_monitors::send(id, json);

@@ -43,12 +43,12 @@ test "a request from another protocol version is refused" {
     mut bad := ""
     parse_serve_request(json.stringify(req)) or err { bad = "{err.message()}" }
     assert(bad.len() > 0)
-    assert_eq(error_code_of("{bad}"), ERR_UNSUPPORTED)
+    assert_eq(domain.error_code_of("{bad}"), domain.ERR_UNSUPPORTED)
     // On its own line: a `}` later on the same line would make `{not json` an interpolation.
     not_json := "{not json"
     mut junk := ""
     parse_serve_request(not_json) or err { junk = "{err.message()}" }
-    assert_eq(error_code_of("{junk}"), ERR_INVALID)
+    assert_eq(domain.error_code_of("{junk}"), domain.ERR_INVALID)
 }
 
 test "a reply never names a secret field" {
@@ -107,12 +107,12 @@ test "the whole command is uncut and still has no flag values" {
 }
 
 test "relay frames carry a tag and raw bytes" {
-    f := relay_frame(TAG_STDOUT, "\x1b[1mhi\x00")
-    assert_eq(relay_tag(f), "o")
-    assert_eq(relay_payload(f), "\x1b[1mhi\x00")
-    assert_eq(relay_tag(""), "")
-    assert_eq(relay_payload("k"), "")
-    assert_eq(relay_tag(session_not_served_frame()), TAG_NOT_SERVED)
+    f := flint_ipc.relay_frame(flint_ipc.TAG_STDOUT, "\x1b[1mhi\x00")
+    assert_eq(flint_ipc.relay_tag(f), "o")
+    assert_eq(flint_ipc.relay_payload(f), "\x1b[1mhi\x00")
+    assert_eq(flint_ipc.relay_tag(""), "")
+    assert_eq(flint_ipc.relay_payload("k"), "")
+    assert_eq(flint_ipc.relay_tag(session_not_served_frame()), flint_ipc.TAG_NOT_SERVED)
 }
 
 test "a session waits longer for a slow exec than for a login" {
@@ -126,19 +126,19 @@ test "a locked error says what to do" {
     assert(locked_error(t, AppState{ state: APP_ASKING, name: "" }).contains("Flint is asking"))
     assert(locked_error(t, AppState{ state: APP_OTHER, name: "Work" }).contains("'Work'"))
     assert(locked_error(t, AppState{ state: APP_LOCKED, name: "" }).contains("could not be started"))
-    assert_eq(error_code_of(locked_error(t, AppState{ state: APP_LOCKED, name: "" })), ERR_LOCKED)
+    assert_eq(domain.error_code_of(locked_error(t, AppState{ state: APP_LOCKED, name: "" })), domain.ERR_LOCKED)
 }
 
 test "each served command needs read, exec on a host, or write" {
-    assert_eq(access_need(parsed(["host", "list"])).action, ACCESS_READ)
-    assert_eq(access_need(parsed(["--json", "key", "show", "k"])).action, ACCESS_READ)
-    assert_eq(access_need(parsed(["vault", "status"])).action, ACCESS_READ)
-    assert_eq(access_need(parsed(["known-host", "list"])).action, ACCESS_READ)
-    assert_eq(access_need(parsed(["host", "add", "web", "--hostname", "h"])).action, ACCESS_WRITE)
-    assert_eq(access_need(parsed(["known-host", "rm", "web"])).action, ACCESS_WRITE)
-    assert_eq(access_need(parsed(["vault", "rename", "x"])).action, ACCESS_WRITE)
+    assert_eq(access_need(parsed(["host", "list"])).action, domain.ACCESS_READ)
+    assert_eq(access_need(parsed(["--json", "key", "show", "k"])).action, domain.ACCESS_READ)
+    assert_eq(access_need(parsed(["vault", "status"])).action, domain.ACCESS_READ)
+    assert_eq(access_need(parsed(["known-host", "list"])).action, domain.ACCESS_READ)
+    assert_eq(access_need(parsed(["host", "add", "web", "--hostname", "h"])).action, domain.ACCESS_WRITE)
+    assert_eq(access_need(parsed(["known-host", "rm", "web"])).action, domain.ACCESS_WRITE)
+    assert_eq(access_need(parsed(["vault", "rename", "x"])).action, domain.ACCESS_WRITE)
     ex := access_need(parsed(["exec", "web", "--", "uptime"]))
-    assert_eq(ex.action, ACCESS_EXEC)
+    assert_eq(ex.action, domain.ACCESS_EXEC)
     assert_eq(ex.host, "web")
     assert_eq(access_need(parsed(["connect", "db"])).host, "db")
     assert_eq(access_need(parsed(["host", "test", "api"])).host, "api")
@@ -172,6 +172,6 @@ test "a command waits as long as Flint says, or the default from an older Flint"
     assert_eq(older.reason, "")
     t := domain.RecentVault{ path: "/v.flint", name: "Home", id: "" }
     msg := not_unlocked_error(t, 300000)
-    assert_eq(error_code_of(msg), ERR_LOCKED)
+    assert_eq(domain.error_code_of(msg), domain.ERR_LOCKED)
     assert(msg.contains("within 5 min"))
 }

@@ -10,7 +10,7 @@ import "../ports"
 // fields not given keep their defaults. Empty reference names (group, jump,
 // credential, key) clear the reference. An empty password clears it. The JSON tags
 // fix the names of the GUI's request fields.
-type HostPatch struct {
+pub type HostPatch struct {
     alias: str `json:"alias"`
     set_alias: bool `json:"set_alias"`
     label: str `json:"label"`
@@ -59,11 +59,11 @@ type HostPatch struct {
     set_microphone: bool `json:"set_microphone"`
 }
 
-fn empty_host_patch() -> HostPatch {
+pub fn empty_host_patch() -> HostPatch {
     return HostPatch{ alias: "", set_alias: false, label: "", set_label: false, hostname: "", set_hostname: false, port: 22, set_port: false, user: "", set_user: false, group: "", set_group: false, tags: [], set_tags: false, color: "", set_color: false, notes: "", set_notes: false, jump: "", set_jump: false, credential: "", set_credential: false, key: "", set_key: false, password: "", set_password: false, command: "", set_command: false, keep_shell: true, set_keep_shell: false, sudo_password: "", set_sudo_password: false, host_type: "", set_host_type: false, domain: "", set_domain: false, audio: "", set_audio: false, microphone: false, set_microphone: false }
 }
 
-fn load_catalog[S: ports.VaultStore](store: S) -> domain.Catalog! {
+pub fn load_catalog[S: ports.VaultStore](store: S) -> domain.Catalog! {
     return domain.Catalog{ groups: try store.groups_all(), hosts: try store.hosts_all(), keys: try store.keys_all(), creds: try store.creds_all() }
 }
 
@@ -147,7 +147,7 @@ fn host_view(cat: domain.Catalog, h: domain.Host) -> HostView {
         has_sudo_password: h.sudo_password.len() > 0,
         command: h.initial_command,
         keep_shell: h.keep_shell,
-        host_type: host_type_of(h),
+        host_type: domain.host_type_of(h),
         domain: h.domain,
         audio: host_audio_view(h),
         microphone: h.rdp_microphone,
@@ -156,16 +156,16 @@ fn host_view(cat: domain.Catalog, h: domain.Host) -> HostView {
 
 // An RDP host's audio as shown (`local` when it carries none); "" for an SSH host.
 fn host_audio_view(h: domain.Host) -> str {
-    if !is_rdp_host(h) {
+    if !domain.is_rdp_host(h) {
         return ""
     }
-    return rdp_audio_of(h)
+    return domain.rdp_audio_of(h)
 }
 
 fn require_host(hosts: []domain.Host, alias: str) -> domain.Host! {
     idx := host_index_by_alias(hosts, alias)
     if idx < 0 {
-        return error(coded(ERR_NOT_FOUND, "no host '{alias}'"))
+        return error(domain.coded(domain.ERR_NOT_FOUND, "no host '{alias}'"))
     }
     return hosts[usize(idx)]
 }
@@ -196,7 +196,7 @@ fn apply_host_patch[C: ports.Crypto, S: ports.VaultStore](crypto: C, mut store: 
         h.alias = p.alias
         other := host_index_by_alias(cat.hosts, p.alias)
         if other >= 0 && cat.hosts[usize(other)].id != h.id {
-            return error(coded(ERR_CONFLICT, "a host with alias '{p.alias}' already exists"))
+            return error(domain.coded(domain.ERR_CONFLICT, "a host with alias '{p.alias}' already exists"))
         }
     }
     if p.set_label {
@@ -212,7 +212,7 @@ fn apply_host_patch[C: ports.Crypto, S: ports.VaultStore](crypto: C, mut store: 
         h.username = p.user
     }
     if p.set_tags {
-        h.tags = dedup_tags(p.tags)
+        h.tags = domain.dedup_tags(p.tags)
     }
     if p.set_color {
         h.color = p.color
@@ -227,13 +227,13 @@ fn apply_host_patch[C: ports.Crypto, S: ports.VaultStore](crypto: C, mut store: 
         h.keep_shell = p.keep_shell
     }
     if p.set_host_type {
-        try check_host_type(p.host_type)
-        if host_index_by_id(cat.hosts, h.id) >= 0 && host_type_of(h) != p.host_type {
-            return error(coded(ERR_INVALID, "'{h.alias}' is an {host_type_of(h)} host; a host's type cannot change (remove it and add it again)"))
+        try domain.check_host_type(p.host_type)
+        if host_index_by_id(cat.hosts, h.id) >= 0 && domain.host_type_of(h) != p.host_type {
+            return error(domain.coded(domain.ERR_INVALID, "'{h.alias}' is an {host_type_of(h)} host; a host's type cannot change (remove it and add it again)"))
         }
         h.host_type = p.host_type
         if !p.set_port && host_index_by_id(cat.hosts, h.id) < 0 {
-            h.port = default_port_for(p.host_type)
+            h.port = domain.default_port_for(p.host_type)
         }
     }
     if p.set_domain {
@@ -246,9 +246,9 @@ fn apply_host_patch[C: ports.Crypto, S: ports.VaultStore](crypto: C, mut store: 
         h.rdp_microphone = p.microphone
     }
     // Field rules first, so a bad value is reported before any group is created.
-    try check_host(h)
+    try domain.check_host(h)
     if p.set_group {
-        if split_group_path(p.group).len() == 0 {
+        if domain.split_group_path(p.group).len() == 0 {
             h.group_id = ""
         } else {
             h.group_id = try ensure_group_path(crypto, mut store, p.group)
@@ -257,16 +257,16 @@ fn apply_host_patch[C: ports.Crypto, S: ports.VaultStore](crypto: C, mut store: 
     if p.set_jump {
         if p.jump.len() == 0 {
             h.jump_host_id = ""
-        } else if is_rdp_host(h) {
-            return error(coded(ERR_INVALID, "an RDP host has no jump host"))
+        } else if domain.is_rdp_host(h) {
+            return error(domain.coded(domain.ERR_INVALID, "an RDP host has no jump host"))
         } else {
             target := try require_host(cat.hosts, p.jump)
             if target.id == h.id {
-                return error(coded(ERR_INVALID, "a host cannot be its own jump host"))
+                return error(domain.coded(domain.ERR_INVALID, "a host cannot be its own jump host"))
             }
-            try require_ssh_host(target, "a jump host")
+            try domain.require_ssh_host(target, "a jump host")
             if jump_chain_reaches(cat.hosts, target.id, h.id) {
-                return error(coded(ERR_INVALID, "jump host '{p.jump}' would make a loop"))
+                return error(domain.coded(domain.ERR_INVALID, "jump host '{p.jump}' would make a loop"))
             }
             h.jump_host_id = target.id
         }
@@ -277,11 +277,11 @@ fn apply_host_patch[C: ports.Crypto, S: ports.VaultStore](crypto: C, mut store: 
         } else {
             idx := cred_index_by_name(cat.creds, p.credential)
             if idx < 0 {
-                return error(coded(ERR_NOT_FOUND, "no credential '{p.credential}'"))
+                return error(domain.coded(domain.ERR_NOT_FOUND, "no credential '{p.credential}'"))
             }
             cred := cat.creds[usize(idx)]
-            if is_rdp_host(h) && cred.password.len() == 0 {
-                return error(coded(ERR_INVALID, "credential '{cred.name}' has no password; an RDP host logs in with a password"))
+            if domain.is_rdp_host(h) && cred.password.len() == 0 {
+                return error(domain.coded(domain.ERR_INVALID, "credential '{cred.name}' has no password; an RDP host logs in with a password"))
             }
             h.credential_id = cred.id
         }
@@ -289,12 +289,12 @@ fn apply_host_patch[C: ports.Crypto, S: ports.VaultStore](crypto: C, mut store: 
     if p.set_key {
         if p.key.len() == 0 {
             h.key_id = ""
-        } else if is_rdp_host(h) {
-            return error(coded(ERR_INVALID, "an RDP host logs in with a password, not an SSH key"))
+        } else if domain.is_rdp_host(h) {
+            return error(domain.coded(domain.ERR_INVALID, "an RDP host logs in with a password, not an SSH key"))
         } else {
             idx := key_index_by_name(cat.keys, p.key)
             if idx < 0 {
-                return error(coded(ERR_NOT_FOUND, "no key '{p.key}'"))
+                return error(domain.coded(domain.ERR_NOT_FOUND, "no key '{p.key}'"))
             }
             h.key_id = cat.keys[usize(idx)].id
         }
@@ -306,7 +306,7 @@ fn apply_host_patch[C: ports.Crypto, S: ports.VaultStore](crypto: C, mut store: 
         h.sudo_password = try seal_secret(crypto, session, "hosts", h.id, "sudo_password", p.sudo_password)
     }
     // Again with every reference resolved.
-    try check_rdp_host(h)
+    try domain.check_rdp_host(h)
     return h
 }
 
@@ -325,12 +325,12 @@ fn save_host_patch[C: ports.Crypto, S: ports.VaultStore](crypto: C, mut store: S
     return host_view(after, patched)
 }
 
-fn add_host[C: ports.Crypto, S: ports.VaultStore](crypto: C, mut store: S, session: VaultSession, p: HostPatch) -> HostView! {
+pub fn add_host[C: ports.Crypto, S: ports.VaultStore](crypto: C, mut store: S, session: VaultSession, p: HostPatch) -> HostView! {
     if !p.set_alias {
-        return error(coded(ERR_USAGE, "a host needs an alias"))
+        return error(domain.coded(domain.ERR_USAGE, "a host needs an alias"))
     }
     if !p.set_hostname {
-        return error(coded(ERR_USAGE, "a host needs a hostname (--hostname)"))
+        return error(domain.coded(domain.ERR_USAGE, "a host needs a hostname (--hostname)"))
     }
     cat := try load_catalog(store)
     h := domain.Host{ id: new_row_id(crypto), alias: "", label: "", hostname: "", port: 22, username: "", group_id: "", tags: [], color: "", notes: "", jump_host_id: "", credential_id: "", key_id: "", password: [], initial_command: "", keep_shell: true, sudo_password: [] }
@@ -344,7 +344,7 @@ fn add_host[C: ports.Crypto, S: ports.VaultStore](crypto: C, mut store: S, sessi
 fn adopt_known_host[S: ports.VaultStore](mut store: S, alias: str) -> void! {
     cat := try load_catalog(store)
     h := try require_host(cat.hosts, alias)
-    addr := known_host_addr(h.hostname, h.port)
+    addr := domain.known_host_addr(h.hostname, h.port)
     for k in try store.known_hosts_all() {
         if k.addr == addr && k.host_id.len() == 0 {
             try store.known_host_put(domain.KnownHost{ addr: k.addr, key_type: k.key_type, fingerprint: k.fingerprint, host_id: h.id, added_at: k.added_at })
@@ -352,7 +352,7 @@ fn adopt_known_host[S: ports.VaultStore](mut store: S, alias: str) -> void! {
     }
 }
 
-fn edit_host[C: ports.Crypto, S: ports.VaultStore](crypto: C, mut store: S, session: VaultSession, alias: str, p: HostPatch) -> HostView! {
+pub fn edit_host[C: ports.Crypto, S: ports.VaultStore](crypto: C, mut store: S, session: VaultSession, alias: str, p: HostPatch) -> HostView! {
     cat := try load_catalog(store)
     h := try require_host(cat.hosts, alias)
     return try save_host_patch(crypto, mut store, session, cat, h, p)
@@ -361,10 +361,10 @@ fn edit_host[C: ports.Crypto, S: ports.VaultStore](crypto: C, mut store: S, sess
 // Refuses `alias` when it is an RDP host, before anything is dialled or approved.
 fn require_ssh_alias[S: ports.VaultStore](store: S, alias: str, what: str) -> void! {
     cat := try load_catalog(store)
-    try require_ssh_host(try require_host(cat.hosts, alias), what)
+    try domain.require_ssh_host(try require_host(cat.hosts, alias), what)
 }
 
-fn show_host[S: ports.VaultStore](store: S, alias: str) -> HostView! {
+pub fn show_host[S: ports.VaultStore](store: S, alias: str) -> HostView! {
     cat := try load_catalog(store)
     return host_view(cat, try require_host(cat.hosts, alias))
 }
@@ -389,7 +389,7 @@ fn group_within(groups: []domain.Group, id: str, ancestor: str) -> bool {
 
 // Hosts sorted by alias, optionally only those in `group` (and its subgroups) and
 // carrying `tag`.
-fn list_hosts[S: ports.VaultStore](store: S, group: str, tag: str) -> []HostView! {
+pub fn list_hosts[S: ports.VaultStore](store: S, group: str, tag: str) -> []HostView! {
     cat := try load_catalog(store)
     mut group_id := ""
     if group.len() > 0 {
@@ -420,12 +420,12 @@ fn list_hosts[S: ports.VaultStore](store: S, group: str, tag: str) -> []HostView
 }
 
 // Removes a host. A host that another host uses as its jump host is refused.
-fn remove_host[S: ports.VaultStore](mut store: S, alias: str) -> HostView! {
+pub fn remove_host[S: ports.VaultStore](mut store: S, alias: str) -> HostView! {
     cat := try load_catalog(store)
     h := try require_host(cat.hosts, alias)
     for o in cat.hosts {
         if o.jump_host_id == h.id {
-            return error(coded(ERR_CONFLICT, "host '{o.alias}' uses '{h.alias}' as its jump host"))
+            return error(domain.coded(domain.ERR_CONFLICT, "host '{o.alias}' uses '{h.alias}' as its jump host"))
         }
     }
     view := host_view(cat, h)

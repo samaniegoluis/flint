@@ -13,14 +13,14 @@ import "../../domain"
 // The most bytes one read returns.
 LOCAL_READ_CHUNK: usize = 262144
 
-type LocalFs struct {
+pub type LocalFs struct {
     // The open file's descriptor, or -1.
     fd: i32 = -1
     // Whether it was opened for writing (it is flushed to disk on close).
     writing: bool = false
 }
 
-fn new_local_fs() -> LocalFs {
+pub fn new_local_fs() -> LocalFs {
     return LocalFs{ fd: -1, writing: false }
 }
 
@@ -36,27 +36,27 @@ fn local_real_path(path: str) -> str {
 }
 
 // Whether `a` and `b` name the same file, through any symbolic links.
-fn same_file_path(a: str, b: str) -> bool {
+pub fn same_file_path(a: str, b: str) -> bool {
     return a == b || local_real_path(a) == local_real_path(b)
 }
 
 fn local_failure(rc: i32, path: str, reason: str) -> str {
     if rc == 1 {
-        return coded(ERR_NOT_FOUND, "{path}: no such file or folder")
+        return domain.coded(domain.ERR_NOT_FOUND, "{path}: no such file or folder")
     }
     if rc == 2 {
-        return coded(ERR_PERMISSION, "{path}: permission denied")
+        return domain.coded(domain.ERR_PERMISSION, "{path}: permission denied")
     }
     if rc == 3 {
-        return coded(ERR_EXISTS, "{path} already exists")
+        return domain.coded(domain.ERR_EXISTS, "{path} already exists")
     }
     if rc == 6 {
-        return coded(ERR_NOT_DIR, "{path}: not a folder")
+        return domain.coded(domain.ERR_NOT_DIR, "{path}: not a folder")
     }
     if rc == 7 {
-        return coded(ERR_INVALID, "{path} is a folder")
+        return domain.coded(domain.ERR_INVALID, "{path} is a folder")
     }
-    return coded(ERR_IO, "{path}: {reason}")
+    return domain.coded(domain.ERR_IO, "{path}: {reason}")
 }
 
 fn (self: LocalFs) local_stat(path: str) -> domain.FileEntry! {
@@ -75,7 +75,7 @@ fn (self: LocalFs) local_stat(path: str) -> domain.FileEntry! {
     if rc != 0 {
         return error(local_failure(rc, path, reason))
     }
-    return domain.FileEntry{ name: remote_base(path), path: path, kind: kind, size: size, mtime: mtime, mode: mode, uid: 0 }
+    return domain.FileEntry{ name: domain.remote_base(path), path: path, kind: kind, size: size, mtime: mtime, mode: mode, uid: 0 }
 }
 
 // A folder's entries, links not followed, in no particular order.
@@ -101,14 +101,14 @@ fn (self: LocalFs) local_list(path: str) -> []domain.FileEntry! {
     }
     mut entries: []domain.FileEntry = []
     for i, n in names {
-        entries.push(domain.FileEntry{ name: n, path: remote_join(path, n), kind: kinds[i], size: sizes[i], mtime: mtimes[i], mode: modes[i], uid: 0 })
+        entries.push(domain.FileEntry{ name: n, path: domain.remote_join(path, n), kind: kinds[i], size: sizes[i], mtime: mtimes[i], mode: modes[i], uid: 0 })
     }
     return entries
 }
 
 fn (mut self: LocalFs) local_file_open(path: str, write: bool, exclusive: bool) -> void! {
     if self.fd >= 0 {
-        return error(coded(ERR_INTERNAL, "local: a file is already open"))
+        return error(domain.coded(domain.ERR_INTERNAL, "local: a file is already open"))
     }
     mut fd: i32 = -1
     mut rc: i32 = 0
@@ -128,7 +128,7 @@ fn (mut self: LocalFs) local_file_open(path: str, write: bool, exclusive: bool) 
 
 fn (mut self: LocalFs) local_file_read() -> str! {
     if self.fd < 0 {
-        return error(coded(ERR_INTERNAL, "local: no file is open"))
+        return error(domain.coded(domain.ERR_INTERNAL, "local: no file is open"))
     }
     mut data := ""
     mut reason := ""
@@ -145,7 +145,7 @@ fn (mut self: LocalFs) local_file_read() -> str! {
 
 fn (mut self: LocalFs) local_file_write(data: str) -> void! {
     if self.fd < 0 {
-        return error(coded(ERR_INTERNAL, "local: no file is open"))
+        return error(domain.coded(domain.ERR_INTERNAL, "local: no file is open"))
     }
     mut reason := ""
     mut rc: i32 = 0

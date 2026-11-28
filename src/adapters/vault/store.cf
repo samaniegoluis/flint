@@ -40,7 +40,7 @@ fn new_sql_vault_store() -> SqlVaultStore {
 
 // A store that opens conflict copies to merge (`vault_attach_copy`, milestone 41),
 // through private copies in `work_dir`: the config folder.
-fn new_copy_vault_store(work_dir: str) -> SqlVaultStore {
+pub fn new_copy_vault_store(work_dir: str) -> SqlVaultStore {
     mut s := new_sql_vault_store()
     s.work_dir = work_dir
     return s
@@ -80,33 +80,33 @@ fn (self: SqlVaultStore) vault_file_exists(path: str) -> bool {
 // The Argon2id salt: the first 16 bytes of the file, where SQLCipher keeps it.
 fn (self: SqlVaultStore) vault_read_salt(path: str) -> []byte! {
     if !fs.exists(path) {
-        return error(coded(ERR_NOT_FOUND, "no vault file at {path}"))
+        return error(domain.coded(domain.ERR_NOT_FOUND, "no vault file at {path}"))
     }
-    size := fs.file_size(path) or err {
-        return error(coded(ERR_IO, "cannot read {path}"))
+    size := fs.file_size(path) or {
+        return error(domain.coded(domain.ERR_IO, "cannot read {path}"))
     }
     if size < 16 {
-        return error(coded(ERR_INVALID, "{path} is not a Flint vault"))
+        return error(domain.coded(domain.ERR_INVALID, "{path} is not a Flint vault"))
     }
     // str(): a view here lowers like the C function of that name (CFIRE-UPSTREAM: CF-158)
-    mut f := fs.open(str(path)) or err {
-        return error(coded(ERR_IO, "cannot read {path}"))
+    mut f := fs.open(str(path)) or {
+        return error(domain.coded(domain.ERR_IO, "cannot read {path}"))
     }
     defer f.close()
     // read_exact, not read_bytes: from cfire c5b1d4b read_bytes(n) on a file fails when
     // the file holds more than n bytes (CF-107).
-    return f.read_exact(16) or err {
-        return error(coded(ERR_IO, "cannot read {path}"))
+    return f.read_exact(16) or {
+        return error(domain.coded(domain.ERR_IO, "cannot read {path}"))
     }
 }
 
 fn (mut self: SqlVaultStore) vault_create(path: str, page_key: []byte, salt: []byte) -> void! {
     if fs.exists(path) {
-        return error(coded(ERR_CONFLICT, "a file already exists at {path}"))
+        return error(domain.coded(domain.ERR_CONFLICT, "a file already exists at {path}"))
     }
     dir := fs.dirname(path)
     if dir.len() > 0 && !fs.exists(dir) {
-        return error(coded(ERR_NOT_FOUND, "the folder {dir} does not exist"))
+        return error(domain.coded(domain.ERR_NOT_FOUND, "the folder {dir} does not exist"))
     }
     self.vault_detach()
     self.adopt(try open_cipher_db(path, page_key, salt, true), page_key, salt)
@@ -120,7 +120,7 @@ fn (mut self: SqlVaultStore) vault_create(path: str, page_key: []byte, salt: []b
 
 fn (mut self: SqlVaultStore) vault_attach(path: str, page_key: []byte, salt: []byte) -> void! {
     if !fs.exists(path) {
-        return error(coded(ERR_NOT_FOUND, "no vault file at {path}"))
+        return error(domain.coded(domain.ERR_NOT_FOUND, "no vault file at {path}"))
     }
     self.vault_detach()
     // A re-keyed copy left by a password change that never reached its rename
@@ -149,7 +149,7 @@ fn (mut self: SqlVaultStore) vault_detach() {
 
 fn (self: SqlVaultStore) require_open() -> void! {
     if !self.conn().is_open() {
-        return error(core_msg(MSG_VAULT_NOT_UNLOCKED, []))
+        return error(domain.core_msg(domain.MSG_VAULT_NOT_UNLOCKED, []))
     }
 }
 
@@ -159,7 +159,7 @@ fn (self: SqlVaultStore) vault_format() -> i64! {
     if v == "1" {
         return 1
     }
-    return error(coded(ERR_UNSUPPORTED, "unknown vault format '{v}'"))
+    return error(domain.coded(domain.ERR_UNSUPPORTED, "unknown vault format '{v}'"))
 }
 
 fn (self: SqlVaultStore) vault_get_meta(key: str) -> str! {
@@ -205,8 +205,8 @@ fn (self: SqlVaultStore) groups_all() -> []domain.Group! {
 // leaves one (milestone 41, sync.cf).
 fn (self: SqlVaultStore) group_put(g: domain.Group) -> void! {
     try self.require_open()
-    try self.group_write(g, try self.next_stamp(MERGE_KIND_GROUP, g.id))
-    try self.unbury(MERGE_KIND_GROUP, g.id)
+    try self.group_write(g, try self.next_stamp(domain.MERGE_KIND_GROUP, g.id))
+    try self.unbury(domain.MERGE_KIND_GROUP, g.id)
 }
 
 fn (self: SqlVaultStore) group_write(g: domain.Group, stamp: i64) -> void! {
@@ -215,7 +215,7 @@ fn (self: SqlVaultStore) group_write(g: domain.Group, stamp: i64) -> void! {
 
 fn (self: SqlVaultStore) group_drop(id: str) -> void! {
     try self.require_open()
-    try self.drop_buried(MERGE_KIND_GROUP, id)
+    try self.drop_buried(domain.MERGE_KIND_GROUP, id)
 }
 
 // ---- Hosts -------------------------------------------------------------------
@@ -276,8 +276,8 @@ fn bool_int(b: bool) -> i64 {
 
 fn (self: SqlVaultStore) host_put(h: domain.Host) -> void! {
     try self.require_open()
-    try self.host_write(h, try self.next_stamp(MERGE_KIND_HOST, h.id))
-    try self.unbury(MERGE_KIND_HOST, h.id)
+    try self.host_write(h, try self.next_stamp(domain.MERGE_KIND_HOST, h.id))
+    try self.unbury(domain.MERGE_KIND_HOST, h.id)
 }
 
 fn (self: SqlVaultStore) host_write(h: domain.Host, stamp: i64) -> void! {
@@ -286,7 +286,7 @@ fn (self: SqlVaultStore) host_write(h: domain.Host, stamp: i64) -> void! {
             sql_text(h.username), sql_ref(h.group_id), sql_text(h.color), sql_text(h.notes),
             sql_ref(h.jump_host_id), sql_ref(h.credential_id), sql_ref(h.key_id), sql_blob(h.password),
             sql_text(h.initial_command), sql_int(bool_int(h.keep_shell)), sql_blob(h.sudo_password),
-            sql_text(host_type_of(h)), sql_text(h.domain), sql_int(stamp),
+            sql_text(domain.host_type_of(h)), sql_text(h.domain), sql_int(stamp),
             sql_text(h.rdp_audio), sql_int(bool_int(h.rdp_microphone)),
     ])
     try self.conn().run_sql("DELETE FROM host_tags WHERE host_id = ?1;", [sql_text(h.id)])
@@ -298,7 +298,7 @@ fn (self: SqlVaultStore) host_write(h: domain.Host, stamp: i64) -> void! {
 // The host's tunnels go with it (ON DELETE CASCADE), each leaving its tombstone.
 fn (self: SqlVaultStore) host_drop(id: str) -> void! {
     try self.require_open()
-    try self.drop_buried(MERGE_KIND_HOST, id)
+    try self.drop_buried(domain.MERGE_KIND_HOST, id)
 }
 
 // ---- SSH keys ----------------------------------------------------------------
@@ -315,8 +315,8 @@ fn (self: SqlVaultStore) keys_all() -> []domain.SshKey! {
 
 fn (self: SqlVaultStore) key_put(k: domain.SshKey) -> void! {
     try self.require_open()
-    try self.key_write(k, try self.next_stamp(MERGE_KIND_KEY, k.id))
-    try self.unbury(MERGE_KIND_KEY, k.id)
+    try self.key_write(k, try self.next_stamp(domain.MERGE_KIND_KEY, k.id))
+    try self.unbury(domain.MERGE_KIND_KEY, k.id)
 }
 
 fn (self: SqlVaultStore) key_write(k: domain.SshKey, stamp: i64) -> void! {
@@ -327,7 +327,7 @@ fn (self: SqlVaultStore) key_write(k: domain.SshKey, stamp: i64) -> void! {
 
 fn (self: SqlVaultStore) key_drop(id: str) -> void! {
     try self.require_open()
-    try self.drop_buried(MERGE_KIND_KEY, id)
+    try self.drop_buried(domain.MERGE_KIND_KEY, id)
 }
 
 // ---- Credentials -------------------------------------------------------------
@@ -344,8 +344,8 @@ fn (self: SqlVaultStore) creds_all() -> []domain.Credential! {
 
 fn (self: SqlVaultStore) cred_put(c: domain.Credential) -> void! {
     try self.require_open()
-    try self.cred_write(c, try self.next_stamp(MERGE_KIND_CRED, c.id))
-    try self.unbury(MERGE_KIND_CRED, c.id)
+    try self.cred_write(c, try self.next_stamp(domain.MERGE_KIND_CRED, c.id))
+    try self.unbury(domain.MERGE_KIND_CRED, c.id)
 }
 
 fn (self: SqlVaultStore) cred_write(c: domain.Credential, stamp: i64) -> void! {
@@ -356,7 +356,7 @@ fn (self: SqlVaultStore) cred_write(c: domain.Credential, stamp: i64) -> void! {
 
 fn (self: SqlVaultStore) cred_drop(id: str) -> void! {
     try self.require_open()
-    try self.drop_buried(MERGE_KIND_CRED, id)
+    try self.drop_buried(domain.MERGE_KIND_CRED, id)
 }
 
 // ---- Known hosts ---------------------------------------------------------------
@@ -375,11 +375,11 @@ fn (self: SqlVaultStore) known_hosts_all() -> []domain.KnownHost! {
 // in UTC, when the row is written.
 fn (self: SqlVaultStore) known_host_put(k: domain.KnownHost) -> void! {
     try self.require_open()
-    stamp := try self.next_stamp(MERGE_KIND_KNOWN_HOST, k.addr)
+    stamp := try self.next_stamp(domain.MERGE_KIND_KNOWN_HOST, k.addr)
     try self.conn().run_sql("INSERT INTO known_hosts (addr, key_type, fingerprint, host_id, added_at, updated_at) VALUES (?1, ?2, ?3, ?4, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), ?5) ON CONFLICT(addr) DO UPDATE SET key_type = excluded.key_type, fingerprint = excluded.fingerprint, host_id = excluded.host_id, added_at = excluded.added_at, updated_at = excluded.updated_at;", [
             sql_text(k.addr), sql_text(k.key_type), sql_text(k.fingerprint), sql_ref(k.host_id), sql_int(stamp),
     ])
-    try self.unbury(MERGE_KIND_KNOWN_HOST, k.addr)
+    try self.unbury(domain.MERGE_KIND_KNOWN_HOST, k.addr)
 }
 
 // A merged known host keeps its `added_at` (sync.cf).
@@ -391,7 +391,7 @@ fn (self: SqlVaultStore) known_host_write(k: domain.KnownHost) -> void! {
 
 fn (self: SqlVaultStore) known_host_drop(addr: str) -> void! {
     try self.require_open()
-    try self.drop_buried(MERGE_KIND_KNOWN_HOST, addr)
+    try self.drop_buried(domain.MERGE_KIND_KNOWN_HOST, addr)
 }
 
 // ---- Tunnels (migration 007) -------------------------------------------------------
@@ -408,8 +408,8 @@ fn (self: SqlVaultStore) tunnels_all() -> []domain.Tunnel! {
 
 fn (self: SqlVaultStore) tunnel_put(t: domain.Tunnel) -> void! {
     try self.require_open()
-    try self.tunnel_write(t, try self.next_stamp(MERGE_KIND_TUNNEL, t.id))
-    try self.unbury(MERGE_KIND_TUNNEL, t.id)
+    try self.tunnel_write(t, try self.next_stamp(domain.MERGE_KIND_TUNNEL, t.id))
+    try self.unbury(domain.MERGE_KIND_TUNNEL, t.id)
 }
 
 fn (self: SqlVaultStore) tunnel_write(t: domain.Tunnel, stamp: i64) -> void! {
@@ -420,7 +420,7 @@ fn (self: SqlVaultStore) tunnel_write(t: domain.Tunnel, stamp: i64) -> void! {
 
 fn (self: SqlVaultStore) tunnel_drop(id: str) -> void! {
     try self.require_open()
-    try self.drop_buried(MERGE_KIND_TUNNEL, id)
+    try self.drop_buried(domain.MERGE_KIND_TUNNEL, id)
 }
 
 // ---- Tokens and the activity log (migration 004) ----------------------------------
@@ -464,8 +464,8 @@ fn (self: SqlVaultStore) tokens_all() -> []domain.Token! {
 
 fn (self: SqlVaultStore) token_put(t: domain.Token) -> void! {
     try self.require_open()
-    try self.token_write(t, try self.next_stamp(MERGE_KIND_TOKEN, t.id))
-    try self.unbury(MERGE_KIND_TOKEN, t.id)
+    try self.token_write(t, try self.next_stamp(domain.MERGE_KIND_TOKEN, t.id))
+    try self.unbury(domain.MERGE_KIND_TOKEN, t.id)
 }
 
 fn (self: SqlVaultStore) token_write(t: domain.Token, stamp: i64) -> void! {

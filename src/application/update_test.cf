@@ -14,17 +14,17 @@ type FakeUpdateFeed struct {
 
 fn (self: FakeUpdateFeed) update_get(url: str, max_bytes: i64) -> []byte! {
     if self.fail.len() > 0 {
-        return error(coded(self.fail, "the feed failed"))
+        return error(domain.coded(self.fail, "the feed failed"))
     }
     mut body := self.manifest
     if url.ends_with(".sig") {
         body = self.sig
     }
     if body.len() == 0 {
-        return error(coded(ERR_NOT_FOUND, "no {url}"))
+        return error(domain.coded(domain.ERR_NOT_FOUND, "no {url}"))
     }
     if i64(body.len()) > max_bytes {
-        return error(coded(ERR_REFUSED, "too big"))
+        return error(domain.coded(domain.ERR_REFUSED, "too big"))
     }
     mut out: []byte = []
     for b in body.bytes() {
@@ -61,7 +61,7 @@ fn manifest_json(version: str) -> str {
     m := domain.UpdateManifest{
         version: version, date: "2026-11-21", summary: "New things.",
         page: "https://github.com/samaniegoluis/flint/releases/tag/v{version}",
-        assets: [domain.UpdateAsset{ key: UPDATE_ASSET_MACOS, name: "Flint-{version}-macos-arm64.zip", url: base + "Flint-{version}-macos-arm64.zip", size: 1000, sha256: "c".repeat(64) }],
+        assets: [domain.UpdateAsset{ key: domain.UPDATE_ASSET_MACOS, name: "Flint-{version}-macos-arm64.zip", url: base + "Flint-{version}-macos-arm64.zip", size: 1000, sha256: "c".repeat(64) }],
     }
     return json.stringify(m)
 }
@@ -71,34 +71,34 @@ fn signed_feed(body: str, key0: u8) -> FakeUpdateFeed {
 }
 
 fn here_mac(version: str) -> domain.UpdateHere {
-    return domain.UpdateHere{ version: version, os: "mac", arch: "arm64", kind: INSTALL_PORTABLE, writable: true, source: "" }
+    return domain.UpdateHere{ version: version, os: "mac", arch: "arm64", kind: domain.INSTALL_PORTABLE, writable: true, source: "" }
 }
 
 test "a newer version, verified, asks for the toast once" {
     feed := signed_feed(manifest_json("0.17.0"), 7)
     src := UpdateSource{ manifest_url: UPDATE_TEST_URL, public_key: update_key(7) }
-    mut settings := FakeSettingsStore{ saved: default_settings() }
+    mut settings := FakeSettingsStore{ saved: domain.default_settings() }
     s := check_for_update(feed, FakeUpdateVerifier{}, mut settings, src, here_mac("0.16.0"), 42)
-    assert_eq(s.state, UPDATE_AVAILABLE)
+    assert_eq(s.state, domain.UPDATE_AVAILABLE)
     assert_eq(s.version, "0.17.0")
-    assert_eq(s.action, UPDATE_ACTION_DOWNLOAD)
+    assert_eq(s.action, domain.UPDATE_ACTION_DOWNLOAD)
     assert_eq(s.checked_at, 42)
     assert(s.auto)
     assert(s.toast)
     assert_eq(settings.saved.update_toast_version, "0.17.0")
     // The next hour's check finds the same version: no toast, still available.
     again := check_for_update(feed, FakeUpdateVerifier{}, mut settings, src, here_mac("0.16.0"), 43)
-    assert_eq(again.state, UPDATE_AVAILABLE)
+    assert_eq(again.state, domain.UPDATE_AVAILABLE)
     assert(!again.toast)
 }
 
 test "the same or an older version is up to date" {
     src := UpdateSource{ manifest_url: UPDATE_TEST_URL, public_key: update_key(7) }
-    mut settings := FakeSettingsStore{ saved: default_settings() }
+    mut settings := FakeSettingsStore{ saved: domain.default_settings() }
     same := check_for_update(signed_feed(manifest_json("0.16.0"), 7), FakeUpdateVerifier{}, mut settings, src, here_mac("0.16.0"), 1)
-    assert_eq(same.state, UPDATE_UP_TO_DATE)
+    assert_eq(same.state, domain.UPDATE_UP_TO_DATE)
     older := check_for_update(signed_feed(manifest_json("0.15.0"), 7), FakeUpdateVerifier{}, mut settings, src, here_mac("0.16.0"), 1)
-    assert_eq(older.state, UPDATE_UP_TO_DATE)
+    assert_eq(older.state, domain.UPDATE_UP_TO_DATE)
     assert(!older.toast)
     assert_eq(settings.saved.update_toast_version, "")
 }
@@ -106,50 +106,50 @@ test "the same or an older version is up to date" {
 test "a bad signature, another key or a changed manifest is not read" {
     body := manifest_json("0.17.0")
     src := UpdateSource{ manifest_url: UPDATE_TEST_URL, public_key: update_key(7) }
-    mut settings := FakeSettingsStore{ saved: default_settings() }
+    mut settings := FakeSettingsStore{ saved: domain.default_settings() }
     // Signed with another key.
     other := check_for_update(signed_feed(body, 9), FakeUpdateVerifier{}, mut settings, src, here_mac("0.16.0"), 1)
-    assert_eq(other.state, UPDATE_FAILED)
-    assert_eq(other.code, ERR_INVALID)
+    assert_eq(other.state, domain.UPDATE_FAILED)
+    assert_eq(other.code, domain.ERR_INVALID)
     assert(other.message.contains("did not pass verification"))
     assert_eq(other.version, "")
     // The manifest changed after it was signed.
     mut changed := signed_feed(body, 7)
     changed.manifest = body + " "
-    assert_eq(check_for_update(changed, FakeUpdateVerifier{}, mut settings, src, here_mac("0.16.0"), 1).state, UPDATE_FAILED)
+    assert_eq(check_for_update(changed, FakeUpdateVerifier{}, mut settings, src, here_mac("0.16.0"), 1).state, domain.UPDATE_FAILED)
     // Not Base64, the wrong length, no signature at all.
     mut garbled := signed_feed(body, 7)
     garbled.sig = "%%%"
-    assert_eq(check_for_update(garbled, FakeUpdateVerifier{}, mut settings, src, here_mac("0.16.0"), 1).code, ERR_INVALID)
+    assert_eq(check_for_update(garbled, FakeUpdateVerifier{}, mut settings, src, here_mac("0.16.0"), 1).code, domain.ERR_INVALID)
     mut short := signed_feed(body, 7)
     short.sig = base64.encode(make([]byte, 10))
-    assert_eq(check_for_update(short, FakeUpdateVerifier{}, mut settings, src, here_mac("0.16.0"), 1).code, ERR_INVALID)
+    assert_eq(check_for_update(short, FakeUpdateVerifier{}, mut settings, src, here_mac("0.16.0"), 1).code, domain.ERR_INVALID)
     unsigned := FakeUpdateFeed{ manifest: body, sig: "", fail: "" }
-    assert_eq(check_for_update(unsigned, FakeUpdateVerifier{}, mut settings, src, here_mac("0.16.0"), 1).code, ERR_NOT_FOUND)
+    assert_eq(check_for_update(unsigned, FakeUpdateVerifier{}, mut settings, src, here_mac("0.16.0"), 1).code, domain.ERR_NOT_FOUND)
     // A build with no key verifies nothing.
     nokey := UpdateSource{ manifest_url: UPDATE_TEST_URL, public_key: [] }
-    assert_eq(check_for_update(signed_feed(body, 7), FakeUpdateVerifier{}, mut settings, nokey, here_mac("0.16.0"), 1).code, ERR_INTERNAL)
+    assert_eq(check_for_update(signed_feed(body, 7), FakeUpdateVerifier{}, mut settings, nokey, here_mac("0.16.0"), 1).code, domain.ERR_INTERNAL)
     assert_eq(settings.saved.update_toast_version, "")
 }
 
 test "a signed manifest that breaks the rules is refused" {
     src := UpdateSource{ manifest_url: UPDATE_TEST_URL, public_key: update_key(7) }
-    mut settings := FakeSettingsStore{ saved: default_settings() }
+    mut settings := FakeSettingsStore{ saved: domain.default_settings() }
     bad := manifest_json("0.17.0").replace("https://github.com/samaniegoluis/flint/releases/tag/", "https://evil.example/")
-    assert_eq(check_for_update(signed_feed(bad, 7), FakeUpdateVerifier{}, mut settings, src, here_mac("0.16.0"), 1).code, ERR_INVALID)
+    assert_eq(check_for_update(signed_feed(bad, 7), FakeUpdateVerifier{}, mut settings, src, here_mac("0.16.0"), 1).code, domain.ERR_INVALID)
     junk := "not json"
-    assert_eq(check_for_update(signed_feed(junk, 7), FakeUpdateVerifier{}, mut settings, src, here_mac("0.16.0"), 1).code, ERR_INVALID)
+    assert_eq(check_for_update(signed_feed(junk, 7), FakeUpdateVerifier{}, mut settings, src, here_mac("0.16.0"), 1).code, domain.ERR_INVALID)
 }
 
 test "a feed that cannot be reached says why" {
     src := UpdateSource{ manifest_url: UPDATE_TEST_URL, public_key: update_key(7) }
-    mut settings := FakeSettingsStore{ saved: default_settings() }
-    mut off := default_settings()
+    mut settings := FakeSettingsStore{ saved: domain.default_settings() }
+    mut off := domain.default_settings()
     off.update_check = false
     settings.saved = off
-    s := check_for_update(FakeUpdateFeed{ manifest: "", sig: "", fail: ERR_NETWORK }, FakeUpdateVerifier{}, mut settings, src, here_mac("0.16.0"), 9)
-    assert_eq(s.state, UPDATE_FAILED)
-    assert_eq(s.code, ERR_NETWORK)
+    s := check_for_update(FakeUpdateFeed{ manifest: "", sig: "", fail: domain.ERR_NETWORK }, FakeUpdateVerifier{}, mut settings, src, here_mac("0.16.0"), 9)
+    assert_eq(s.state, domain.UPDATE_FAILED)
+    assert_eq(s.code, domain.ERR_NETWORK)
     assert(!s.auto)
     assert_eq(s.checked_at, 9)
 }
@@ -157,7 +157,7 @@ test "a feed that cannot be reached says why" {
 CHANGES: str = "# Changelog\n\n## 0.17.0 — 2026-11-21\n\nUpdates.\n\n### Added\n\n- **ui:** An update notice\n\n## 0.16.0 — 2026-11-20\n\nReleases.\n\n## 0.15.0 — 2026-11-20\n\nA package.\n"
 
 test "What's new once per version, nothing on the first launch" {
-    mut settings := FakeSettingsStore{ saved: default_settings() }
+    mut settings := FakeSettingsStore{ saved: domain.default_settings() }
     first := try whats_new_at_launch(mut settings, CHANGES, "0.15.0")
     assert_eq(first.len(), 0)
     assert_eq(settings.saved.last_seen_version, "0.15.0")
@@ -181,12 +181,12 @@ test "What's new in this version" {
 }
 
 test "the page keeps the app's update records" {
-    mut settings := FakeSettingsStore{ saved: default_settings() }
-    mut s := default_settings()
+    mut settings := FakeSettingsStore{ saved: domain.default_settings() }
+    mut s := domain.default_settings()
     s.update_toast_version = "0.17.0"
     s.last_seen_version = "0.17.0"
     settings.saved = s
-    mut page := default_settings()
+    mut page := domain.default_settings()
     page.update_check = false
     saved := try save_settings(mut settings, page)
     assert(!saved.update_check)

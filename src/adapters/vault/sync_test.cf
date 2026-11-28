@@ -68,11 +68,11 @@ test "a delete leaves a tombstone later than the row, a host's tunnels theirs, a
     try store.host_drop("h1")
     assert_eq((try store.hosts_all()).len(), 0)
     assert_eq((try store.tunnels_all()).len(), 0)
-    assert_eq(try tomb_at(store, MERGE_KIND_HOST, "h1"), 9000000000001)
-    assert(try tomb_at(store, MERGE_KIND_TUNNEL, "t1") > 0)
+    assert_eq(try tomb_at(store, domain.MERGE_KIND_HOST, "h1"), 9000000000001)
+    assert(try tomb_at(store, domain.MERGE_KIND_TUNNEL, "t1") > 0)
     // Written again: alive, no tombstone, and newer than the tombstone was.
     try store.host_put(marker_host())
-    assert_eq(try tomb_at(store, MERGE_KIND_HOST, "h1"), -1)
+    assert_eq(try tomb_at(store, domain.MERGE_KIND_HOST, "h1"), -1)
     assert_eq(try stamp_of(store, "hosts", "h1"), 9000000000002)
     // Each kind's drop leaves one.
     try store.group_put(domain.Group{ id: "g1", parent_id: "", name: "Prod" })
@@ -119,7 +119,7 @@ test "records replaced whole keep their stamps, in any order of references" {
             known_hosts: [domain.KnownHost{ addr: "web", key_type: "ssh-ed25519", fingerprint: "SHA256:y", host_id: "h2", added_at: "2026-01-02T03:04:05Z", updated_at: 50 }],
             tunnels: [domain.Tunnel{ id: "t1", host_id: "h2", name: "pg", local_port: 1, dest_host: "localhost", dest_port: 2, updated_at: 60 }],
             tokens: [marker_token("tk1", "agent", 7)],
-            tombstones: [domain.Tombstone{ kind: MERGE_KIND_HOST, id: "old", deleted_at: 70 }],
+            tombstones: [domain.Tombstone{ kind: domain.MERGE_KIND_HOST, id: "old", deleted_at: 70 }],
     }
     try store.vault_begin()
     try store.vault_replace_records(r)
@@ -181,7 +181,7 @@ test "a conflict copy opens through a private copy and is never changed" {
     mut refused := false
     copy.vault_attach_copy(path, test_key(8), test_salt_bytes()) or err {
         refused = true
-        assert(error_code_of("{err.message()}") == ERR_WRONG_PASSWORD)
+        assert(domain.error_code_of("{err.message()}") == domain.ERR_WRONG_PASSWORD)
     }
     assert(refused)
     assert_eq((try fs.list_dir(work)).len(), 0)
@@ -216,9 +216,9 @@ test "a downloaded copy opens with the open vault's own key, through a private f
     store.work_dir = work
     try store.vault_create(path, test_key(7), test_salt_bytes())
     try store.host_put(marker_host())
-    try store.vault_set_meta(VAULT_META_ID, "00112233445566778899aabbccddeeff")
+    try store.vault_set_meta(domain.VAULT_META_ID, "00112233445566778899aabbccddeeff")
     data := try store.vault_file_bytes(path)
-    assert_eq(try vault_blob_salt(data), test_salt_bytes())
+    assert_eq(try domain.vault_blob_salt(data), test_salt_bytes())
     got := try store.vault_blob_records(data, [], [])
     assert_eq(got.records.hosts.len(), 1)
     assert_eq(got.vault_id, "00112233445566778899aabbccddeeff")
@@ -226,14 +226,14 @@ test "a downloaded copy opens with the open vault's own key, through a private f
     // Another key: refused, nothing left behind, the vault still open.
     mut msg := ""
     store.vault_blob_records(data, test_key(8), test_salt_bytes()) or err { msg = "{err.message()}" }
-    assert_eq(error_code_of(msg), ERR_WRONG_PASSWORD)
+    assert_eq(domain.error_code_of(msg), domain.ERR_WRONG_PASSWORD)
     assert_eq((try fs.list_dir(work)).len(), 0)
     assert_eq((try store.hosts_all()).len(), 1)
     // Detached, the store holds no key to open a copy with.
     store.vault_detach()
     msg = ""
     store.vault_blob_records(data, [], []) or err { msg = "{err.message()}" }
-    assert_eq(error_code_of(msg), ERR_LOCKED)
+    assert_eq(domain.error_code_of(msg), domain.ERR_LOCKED)
     try fs.remove(fs.dirname(path))
 }
 
@@ -252,6 +252,6 @@ test "a vault downloaded as a new file is written 0600 and opens; a taken path i
     store.vault_detach()
     mut msg := ""
     store.vault_write_new(next, data) or err { msg = "{err.message()}" }
-    assert_eq(error_code_of(msg), ERR_EXISTS)
+    assert_eq(domain.error_code_of(msg), domain.ERR_EXISTS)
     try fs.remove(fs.dirname(path))
 }

@@ -78,10 +78,10 @@ test "Windows: the user's real Path takes the bin folder (opt-in)" {
     }
     mut env := new_os_cli_path(CLI_PATH_KEY)
     mut probes: []domain.PathEntryProbe = []
-    for e in split_path_value(try env.cli_path_read()) {
+    for e in domain.split_path_value(try env.cli_path_read()) {
         probes.push(env.cli_path_probe(e))
     }
-    try env.cli_path_write(path_with_cli(bin, probes))
+    try env.cli_path_write(domain.path_with_cli(bin, probes))
     got := try env.cli_path_read()
-    assert(path_entry_key(split_path_value(got)[0]) == path_entry_key(bin))
+    assert(domain.path_entry_key(domain.split_path_value(got)[0]) == domain.path_entry_key(bin))
 }

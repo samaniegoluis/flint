@@ -5,30 +5,6 @@ package application
 import "core:encoding/base64"
 import "../ports"
 
-type PumpResult struct {
-    bytes: i64
-    closed: bool
-}
-
-// Pumps a shell's output to an event sink until the channel closes or `max_reads`
-// polls (each up to `poll_ms`) are spent. Streaming is out-of-band: bytes go through
-// the sink, never as a return value. The result says how many bytes were forwarded
-// and whether the channel closed.
-fn pump_shell_output[S: ports.ShellSession, E: ports.EventSink](mut shell: S, mut sink: E, session_id: str, poll_ms: i32, max_reads: i64) -> PumpResult {
-    mut total: i64 = 0
-    for _ in 0..max_reads {
-        chunk := shell.read(poll_ms) or err {
-            sink.terminal_closed(session_id, err.message())
-            return PumpResult{ bytes: total, closed: true }
-        }
-        if chunk.len() > 0 {
-            sink.terminal_output(session_id, chunk)
-            total += i64(chunk.len())
-        }
-    }
-    return PumpResult{ bytes: total, closed: false }
-}
-
 // ---- OSC 52 (copy from a remote program) ---------------------------------------------
 
 // The largest text a remote program may put on the clipboard in one OSC 52 request,
@@ -47,9 +23,9 @@ type Osc52Result struct {
 // would hand the clipboard to whoever controls the remote output, so it is ignored.
 // An empty `Pc` means the clipboard; a list without `c` (only primary, `p`, or `s`)
 // is ignored, since a desktop app has one clipboard.
-fn osc52_copy[B: ports.Clipboard](mut clip: B, payload: str) -> Osc52Result! {
+pub fn osc52_copy[B: ports.Clipboard](mut clip: B, payload: str) -> Osc52Result! {
     semi := payload.index_of(";") or {
-        return error(coded(ERR_INVALID, "an OSC 52 request is 'selection;base64'"))
+        return error(domain.coded(domain.ERR_INVALID, "an OSC 52 request is 'selection;base64'"))
     }
     targets := payload[0..semi]
     data := payload[semi + 1..payload.len()]
@@ -60,10 +36,10 @@ fn osc52_copy[B: ports.Clipboard](mut clip: B, payload: str) -> Osc52Result! {
         return Osc52Result{ outcome: "ignored", bytes: 0 }
     }
     if i64(data.len()) > OSC52_MAX_BYTES / 3 * 4 + 4 {
-        return error(coded(ERR_INVALID, "an OSC 52 request is over {OSC52_MAX_BYTES} bytes"))
+        return error(domain.coded(domain.ERR_INVALID, "an OSC 52 request is over {OSC52_MAX_BYTES} bytes"))
     }
-    text := base64.decode_str(data) or err {
-        return error(coded(ERR_INVALID, "an OSC 52 request is not valid base64"))
+    text := base64.decode_str(data) or {
+        return error(domain.coded(domain.ERR_INVALID, "an OSC 52 request is not valid base64"))
     }
     try clip.clipboard_copy_text(text)
     return Osc52Result{ outcome: "copied", bytes: i64(text.len()) }

@@ -126,7 +126,7 @@ fn open_cipher_db(path: str, key: []byte, salt: []byte, create: bool) -> CipherD
         msg := db.last_error()
         db.close_db()
         if rc == SQLITE_NOTADB_CODE {
-            return error(core_msg(MSG_VAULT_WRONG_PASSWORD, []))
+            return error(domain.core_msg(domain.MSG_VAULT_WRONG_PASSWORD, []))
         }
         return error("io: cannot open the vault file: " + msg)
     }
@@ -266,7 +266,7 @@ fn (self: CipherDb) cipher_version() -> str! {
 }
 
 // "<sqlite version> (SQLCipher <cipher version>)", read from an in-memory database.
-fn sqlcipher_version() -> str {
+pub fn sqlcipher_version() -> str {
     mut v := ""
     // CFIRE-UPSTREAM: CF-007
     cpp {

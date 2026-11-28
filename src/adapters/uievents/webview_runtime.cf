@@ -11,12 +11,12 @@ WEBVIEW2_DOWNLOAD_URL: str = "https://developer.microsoft.com/microsoft-edge/web
 
 // "ok", "loader" (WebView2Loader.dll missing beside the app) or "runtime" (the
 // WebView2 Runtime is not installed), and the runtime's version when there is one.
-type WebviewRuntime struct {
+pub type WebviewRuntime struct {
     state:   str
     version: str
 }
 
-fn webview_runtime() -> WebviewRuntime {
+pub fn webview_runtime() -> WebviewRuntime {
     mut state := ""
     mut version := ""
     // CFIRE-UPSTREAM: CF-179
@@ -29,7 +29,7 @@ fn webview_runtime() -> WebviewRuntime {
 }
 
 // What the person is told when the window cannot open, by state.
-fn webview_missing_text(state: str) -> str {
+pub fn webview_missing_text(state: str) -> str {
     if state == "loader" {
         return "Flint's folder is incomplete: WebView2Loader.dll is missing beside Flint.exe.\n\nUnpack the whole zip again and start Flint from the new folder."
     }
@@ -37,7 +37,7 @@ fn webview_missing_text(state: str) -> str {
 }
 
 // Shows the message for `state` (a Yes/No box with the download page for "runtime").
-fn tell_webview_missing(state: str) {
+pub fn tell_webview_missing(state: str) {
     text := webview_missing_text(state)
     url := WEBVIEW2_DOWNLOAD_URL
     // CFIRE-UPSTREAM: CF-179

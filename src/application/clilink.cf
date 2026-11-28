@@ -8,7 +8,7 @@ import "../ports"
 
 // The system's folder for it: /usr/local/bin, on every Mac's PATH (an administrator's
 // password the first time). gui-e2e passes a folder of its own (drivers/gui/cli.cf).
-CLI_SYSTEM_DIR: str = "/usr/local/bin"
+pub CLI_SYSTEM_DIR: str = "/usr/local/bin"
 
 // The places the command can go, the default first: `system` (CLI_SYSTEM_DIR);
 // ~/.local/bin needs no password but is on the PATH only when the person put it there.
@@ -16,44 +16,44 @@ fn cli_link_dirs(system: str, home: str) -> []str {
     return [system, home + "/.local/bin"]
 }
 
-fn cli_link_status[L: ports.CliLinks](links: L, cli: str, system: str, home: str, offer_shown: bool) -> domain.CliLinkStatus {
+pub fn cli_link_status[L: ports.CliLinks](links: L, cli: str, system: str, home: str, offer_shown: bool) -> domain.CliLinkStatus {
     available := cli.len() > 0 && links.cli_link_exists(cli)
     mut spots: []domain.CliLinkSpot = []
     for dir in cli_link_dirs(system, home) {
         path := dir + "/flint"
         p := links.cli_link_probe(path)
-        spots.push(domain.CliLinkSpot{ path: path, state: cli_link_state(cli, p), target: p.target, admin: !p.dir_writable })
+        spots.push(domain.CliLinkSpot{ path: path, state: domain.cli_link_state(cli, p), target: p.target, admin: !p.dir_writable })
     }
-    return domain.CliLinkStatus{ available: available, cli: cli, spots: spots, offer: cli_link_offer(available, spots, offer_shown), kind: "link" }
+    return domain.CliLinkStatus{ available: available, cli: cli, spots: spots, offer: domain.cli_link_offer(available, spots, offer_shown), kind: "link" }
 }
 
 // Links `path` to this copy's CLI. Only one of the known places, only over nothing or
 // over a link of ours (another or a missing copy): never over a foreign file.
-fn install_cli_link[L: ports.CliLinks](mut links: L, cli: str, system: str, home: str, path: str) -> domain.CliLinkStatus! {
+pub fn install_cli_link[L: ports.CliLinks](mut links: L, cli: str, system: str, home: str, path: str) -> domain.CliLinkStatus! {
     st := cli_link_status(links, cli, system, home, true)
     if !st.available {
-        return error(coded(ERR_UNSUPPORTED, "this copy of Flint carries no flint command"))
+        return error(domain.coded(domain.ERR_UNSUPPORTED, "this copy of Flint carries no flint command"))
     }
     spot := try find_spot(st, path)
     if spot.state == "installed" {
         return st
     }
     if spot.state == "foreign" {
-        return error(coded(ERR_EXISTS, "{path} is not a link to Flint; it was left as it is"))
+        return error(domain.coded(domain.ERR_EXISTS, "{path} is not a link to Flint; it was left as it is"))
     }
     try links.cli_link_make(cli, path, spot.admin)
     return cli_link_status(links, cli, system, home, true)
 }
 
 // Removes the link at `path` when it is one of ours; anything else stays.
-fn remove_cli_link[L: ports.CliLinks](mut links: L, cli: str, system: str, home: str, path: str) -> domain.CliLinkStatus! {
+pub fn remove_cli_link[L: ports.CliLinks](mut links: L, cli: str, system: str, home: str, path: str) -> domain.CliLinkStatus! {
     st := cli_link_status(links, cli, system, home, true)
     spot := try find_spot(st, path)
     if spot.state == "missing" {
         return st
     }
     if spot.state == "foreign" {
-        return error(coded(ERR_EXISTS, "{path} is not a link to Flint; it was left as it is"))
+        return error(domain.coded(domain.ERR_EXISTS, "{path} is not a link to Flint; it was left as it is"))
     }
     try links.cli_link_remove(path, spot.admin)
     return cli_link_status(links, cli, system, home, true)
@@ -65,12 +65,12 @@ fn find_spot(st: domain.CliLinkStatus, path: str) -> domain.CliLinkSpot! {
             return s
         }
     }
-    return error(coded(ERR_INVALID, "the flint command goes in /usr/local/bin or ~/.local/bin"))
+    return error(domain.coded(domain.ERR_INVALID, "the flint command goes in /usr/local/bin or ~/.local/bin"))
 }
 
 // The first launch's offer, recorded as made so it is shown once (a fix is offered
 // every time, cli_link_offer).
-fn cli_link_first_launch[L: ports.CliLinks, T: ports.SettingsStore](links: L, mut settings: T, cli: str, system: str, home: str) -> domain.CliLinkStatus! {
+pub fn cli_link_first_launch[L: ports.CliLinks, T: ports.SettingsStore](links: L, mut settings: T, cli: str, system: str, home: str) -> domain.CliLinkStatus! {
     mut s := try load_settings(settings)
     st := cli_link_status(links, cli, system, home, s.cli_offer_shown)
     if st.offer == "install" {
@@ -86,46 +86,46 @@ fn cli_link_first_launch[L: ports.CliLinks, T: ports.SettingsStore](links: L, mu
 fn path_probes[P: ports.CliPath](env: P) -> []domain.PathEntryProbe {
     value := env.cli_path_read() or ""
     mut out: []domain.PathEntryProbe = []
-    for e in split_path_value(value) {
+    for e in domain.split_path_value(value) {
         out.push(env.cli_path_probe(e))
     }
     return out
 }
 
-fn cli_path_status[P: ports.CliPath](env: P, cli: str, bin: str, offer_shown: bool) -> domain.CliLinkStatus {
+pub fn cli_path_status[P: ports.CliPath](env: P, cli: str, bin: str, offer_shown: bool) -> domain.CliLinkStatus {
     available := cli.len() > 0 && env.cli_path_file_exists(cli)
-    spots: []domain.CliLinkSpot = [path_spot(bin, path_probes(env))]
-    return domain.CliLinkStatus{ available: available, cli: cli, spots: spots, offer: cli_link_offer(available, spots, offer_shown), kind: "path" }
+    spots: []domain.CliLinkSpot = [domain.path_spot(bin, path_probes(env))]
+    return domain.CliLinkStatus{ available: available, cli: cli, spots: spots, offer: domain.cli_link_offer(available, spots, offer_shown), kind: "path" }
 }
 
-fn install_cli_path[P: ports.CliPath](mut env: P, cli: str, bin: str, path: str) -> domain.CliLinkStatus! {
+pub fn install_cli_path[P: ports.CliPath](mut env: P, cli: str, bin: str, path: str) -> domain.CliLinkStatus! {
     st := cli_path_status(env, cli, bin, true)
     if !st.available {
-        return error(coded(ERR_UNSUPPORTED, "this copy of Flint carries no flint command"))
+        return error(domain.coded(domain.ERR_UNSUPPORTED, "this copy of Flint carries no flint command"))
     }
-    if path_entry_key(path) != path_entry_key(bin) {
-        return error(coded(ERR_INVALID, "only this copy's folder goes on the PATH"))
+    if domain.path_entry_key(path) != domain.path_entry_key(bin) {
+        return error(domain.coded(domain.ERR_INVALID, "only this copy's folder goes on the PATH"))
     }
     if st.spots[0].state == "installed" {
         return st
     }
-    try env.cli_path_write(path_with_cli(bin, path_probes(env)))
+    try env.cli_path_write(domain.path_with_cli(bin, path_probes(env)))
     return cli_path_status(env, cli, bin, true)
 }
 
-fn remove_cli_path[P: ports.CliPath](mut env: P, cli: str, bin: str, path: str) -> domain.CliLinkStatus! {
-    if path_entry_key(path) != path_entry_key(bin) {
-        return error(coded(ERR_INVALID, "only this copy's folder can be taken off the PATH"))
+pub fn remove_cli_path[P: ports.CliPath](mut env: P, cli: str, bin: str, path: str) -> domain.CliLinkStatus! {
+    if domain.path_entry_key(path) != domain.path_entry_key(bin) {
+        return error(domain.coded(domain.ERR_INVALID, "only this copy's folder can be taken off the PATH"))
     }
     st := cli_path_status(env, cli, bin, true)
     if st.spots[0].state != "installed" {
         return st
     }
-    try env.cli_path_write(path_without_cli(bin, path_probes(env)))
+    try env.cli_path_write(domain.path_without_cli(bin, path_probes(env)))
     return cli_path_status(env, cli, bin, true)
 }
 
-fn cli_path_first_launch[P: ports.CliPath, T: ports.SettingsStore](env: P, mut settings: T, cli: str, bin: str) -> domain.CliLinkStatus! {
+pub fn cli_path_first_launch[P: ports.CliPath, T: ports.SettingsStore](env: P, mut settings: T, cli: str, bin: str) -> domain.CliLinkStatus! {
     mut s := try load_settings(settings)
     st := cli_path_status(env, cli, bin, s.cli_offer_shown)
     if st.offer == "install" {

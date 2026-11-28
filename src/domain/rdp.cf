@@ -5,27 +5,27 @@ package domain
 
 // Every host is one of these. A host saved before v8 is `ssh` (migration 008).
 HOST_TYPE_SSH: str = "ssh"
-HOST_TYPE_RDP: str = "rdp"
+pub HOST_TYPE_RDP: str = "rdp"
 RDP_DEFAULT_PORT: i64 = 3389
 
 // An RDP server's certificate is kept in the known hosts beside SSH host keys, trusted
 // on first use like them (D-019): the address is `rdp://<name>:<port>` (lower-cased),
 // so it never collides with an SSH address, and the key type is this one.
-RDP_CERT_KEY_TYPE: str = "x509"
+pub RDP_CERT_KEY_TYPE: str = "x509"
 
 // The host's type, `ssh` for a host that carries none.
-fn host_type_of(h: Host) -> str {
+pub fn host_type_of(h: Host) -> str {
     if h.host_type.len() == 0 {
         return HOST_TYPE_SSH
     }
     return h.host_type
 }
 
-fn is_rdp_host(h: Host) -> bool {
+pub fn is_rdp_host(h: Host) -> bool {
     return host_type_of(h) == HOST_TYPE_RDP
 }
 
-fn check_host_type(t: str) -> void! {
+pub fn check_host_type(t: str) -> void! {
     if t != HOST_TYPE_SSH && t != HOST_TYPE_RDP {
         return error(coded(ERR_INVALID, "host type must be 'ssh' or 'rdp', not '{t}'"))
     }
@@ -34,11 +34,11 @@ fn check_host_type(t: str) -> void! {
 // Where an RDP host's remote audio plays (milestone 60, design 25d): on this
 // computer, left on the remote computer, or nowhere. A host that carries none plays it
 // here, as Remote Desktop clients do by default.
-RDP_AUDIO_LOCAL: str = "local"
-RDP_AUDIO_REMOTE: str = "remote"
-RDP_AUDIO_OFF: str = "off"
+pub RDP_AUDIO_LOCAL: str = "local"
+pub RDP_AUDIO_REMOTE: str = "remote"
+pub RDP_AUDIO_OFF: str = "off"
 
-fn rdp_audio_of(h: Host) -> str {
+pub fn rdp_audio_of(h: Host) -> str {
     if h.rdp_audio.len() == 0 {
         return RDP_AUDIO_LOCAL
     }
@@ -56,13 +56,13 @@ fn check_rdp_audio(a: str) -> void! {
 // own speakers; neither: the server plays nothing. `capture` loads the microphone
 // channel (`audin`) on this computer's default device. The audio comes resolved
 // (rdp_audio_of): "" here asks for nothing, like `off`.
-type RdpAudioSettings struct {
+pub type RdpAudioSettings struct {
     playback: bool
     remote_console: bool
     capture: bool
 }
 
-fn rdp_audio_settings(audio: str, microphone: bool) -> RdpAudioSettings {
+pub fn rdp_audio_settings(audio: str, microphone: bool) -> RdpAudioSettings {
     return RdpAudioSettings{
         playback: audio == RDP_AUDIO_LOCAL,
         remote_console: audio == RDP_AUDIO_REMOTE,
@@ -71,7 +71,7 @@ fn rdp_audio_settings(audio: str, microphone: bool) -> RdpAudioSettings {
 }
 
 // The default port of a host type.
-fn default_port_for(t: str) -> i64 {
+pub fn default_port_for(t: str) -> i64 {
     if t == HOST_TYPE_RDP {
         return RDP_DEFAULT_PORT
     }
@@ -80,7 +80,7 @@ fn default_port_for(t: str) -> i64 {
 
 // The rules an RDP host adds to check_host: SSH-only settings are refused, so the
 // vault never holds a value that would silently do nothing.
-fn check_rdp_host(h: Host) -> void! {
+pub fn check_rdp_host(h: Host) -> void! {
     try check_text("domain", h.domain, 128, false)
     if !is_rdp_host(h) {
         if h.domain.len() > 0 {
@@ -110,14 +110,14 @@ fn check_rdp_host(h: Host) -> void! {
 
 // Refuses an RDP host for something that only SSH does (`exec`, `cp`, a tunnel, a
 // file view, a jump host), with the stable code scripts can test.
-fn require_ssh_host(h: Host, what: str) -> void! {
+pub fn require_ssh_host(h: Host, what: str) -> void! {
     if is_rdp_host(h) {
         return error(coded(ERR_HOST_TYPE, "'{h.alias}' is an RDP host; {what} needs an SSH host"))
     }
 }
 
 // The known-hosts address of an RDP server's certificate.
-fn rdp_cert_addr(hostname: str, port: i64) -> str {
+pub fn rdp_cert_addr(hostname: str, port: i64) -> str {
     return "rdp://" + lower_ascii_name(hostname) + ":" + "{port}"
 }
 
@@ -137,7 +137,7 @@ fn lower_ascii_name(s: str) -> str {
 // Compares the certificate a server presented with the one trusted for its address:
 // HOST_KEY_KNOWN, HOST_KEY_NEW (ask the person) or HOST_KEY_CHANGED (refused, with the
 // reason, D-019).
-fn check_rdp_cert(known: []KnownHost, hostname: str, port: i64, fingerprint: str) -> str {
+pub fn check_rdp_cert(known: []KnownHost, hostname: str, port: i64, fingerprint: str) -> str {
     return check_server_key(known, rdp_cert_addr(hostname, port), ServerKey{ key_type: RDP_CERT_KEY_TYPE, fingerprint: fingerprint })
 }
 
@@ -149,14 +149,14 @@ fn check_rdp_cert(known: []KnownHost, hostname: str, port: i64, fingerprint: str
 RDP_MIN_SIDE: i64 = 200
 RDP_MAX_SIDE: i64 = 8192
 
-type DesktopSize struct {
+pub type DesktopSize struct {
     width: i64
     height: i64
 }
 
 // The size of a desktop for a tab of `width` x `height` device pixels: clamped to
 // what RDP accepts, the width made even.
-fn fit_desktop_size(width: i64, height: i64) -> DesktopSize {
+pub fn fit_desktop_size(width: i64, height: i64) -> DesktopSize {
     mut w := width
     mut h := height
     if w < RDP_MIN_SIDE {
@@ -181,7 +181,7 @@ fn fit_desktop_size(width: i64, height: i64) -> DesktopSize {
 // to the engine (Principle 6). Only the certificate whose SHA-256 fingerprint is
 // `trusted_fingerprint` is accepted; "" accepts none, so a first connection always
 // stops at the certificate and the core decides (D-019).
-type RdpTarget struct {
+pub type RdpTarget struct {
     hostname: str
     port: i64
     user: str
@@ -208,7 +208,7 @@ type RdpTarget struct {
 
 // A switch's outcome (milestone 35): `why` is "" when the tab reconnected, in `graphics`
 // ("pipeline" or "compatible") chosen with the round trip `rtt_ms` (-1: not measured).
-type RdpModeSwitch struct {
+pub type RdpModeSwitch struct {
     why: str
     graphics: str
     rtt_ms: i64
@@ -236,7 +236,7 @@ RDP_AUTO_LAN_RTT_MS: i64 = 5
 /// assert(auto_rdp_graphics(-1, 0) == "pipeline")
 /// assert(auto_rdp_graphics(1, 2) == "pipeline")
 /// ```
-fn auto_rdp_graphics(rtt_ms: i64, monitors: i64) -> str {
+pub fn auto_rdp_graphics(rtt_ms: i64, monitors: i64) -> str {
     if monitors >= 2 {
         return "pipeline"
     }
@@ -248,7 +248,7 @@ fn auto_rdp_graphics(rtt_ms: i64, monitors: i64) -> str {
 
 // The certificate a server presented. `fingerprint` is its SHA-256, lower-case hex
 // bytes joined by colons; the dates are as the engine reads them.
-type RdpCert struct {
+pub type RdpCert struct {
     subject: str
     issuer: str
     fingerprint: str
@@ -258,7 +258,7 @@ type RdpCert struct {
 
 // A connected desktop: its size, and where the page reads its frames (the local frame
 // channel, D-071). The token guards that channel; it is not a vault secret.
-type RdpDesktop struct {
+pub type RdpDesktop struct {
     width: i64
     height: i64
     frame_port: i64
@@ -278,7 +278,7 @@ type RdpDesktop struct {
 // handed out (the engine drew them unreported); `link_kbps` and `link_rtt_ms`, the
 // link as the server measured it (0 until it has); `mode`, what the engine connected in
 // ("pipeline" or "compatible").
-type RdpStats struct {
+pub type RdpStats struct {
     updates: i64
     bytes_in: i64
     commands: i64
@@ -297,7 +297,7 @@ type RdpStats struct {
 // A pointer event in desktop pixels. `kind` is one of RDP_POINTER_KINDS; `button` 0
 // is the main button, 1 the middle, 2 the secondary; `delta` is a wheel's notches
 // times 120, positive away from the person (up) or to the right.
-type RdpPointer struct {
+pub type RdpPointer struct {
     kind: str
     button: i64
     x: i64
@@ -307,7 +307,7 @@ type RdpPointer struct {
 
 RDP_POINTER_KINDS: []str = ["move", "down", "up", "wheel", "hwheel"]
 
-fn check_rdp_pointer(p: RdpPointer) -> void! {
+pub fn check_rdp_pointer(p: RdpPointer) -> void! {
     mut known := false
     for k in RDP_POINTER_KINDS {
         if k == p.kind {
@@ -329,19 +329,19 @@ fn check_rdp_pointer(p: RdpPointer) -> void! {
 // the reason in `message` ("" when it was closed on purpose); `resize`, the size the
 // tab asked for when the server has no Display Control, which a reconnect gives; or a
 // clipboard event.
-RDP_EVENT_RUNNING: str = "running"
-RDP_EVENT_ENDED: str = "ended"
-RDP_EVENT_RESIZE: str = "resize"
+pub RDP_EVENT_RUNNING: str = "running"
+pub RDP_EVENT_ENDED: str = "ended"
+pub RDP_EVENT_RESIZE: str = "resize"
 // Milestone 31: the remote copied text (in `message`), or it pastes and asks for this
 // machine's text, which the core answers (D-074).
-RDP_EVENT_CLIP_TEXT: str = "clip_text"
-RDP_EVENT_CLIP_REQUEST: str = "clip_request"
+pub RDP_EVENT_CLIP_TEXT: str = "clip_text"
+pub RDP_EVENT_CLIP_REQUEST: str = "clip_request"
 // Why an `rd_open` failed when the tab's own `rd_close` cancelled it: the person closed
 // or disconnected the tab while it connected or reconnected. Not a failure: the tab
 // ends as closed on purpose, never as a lost connection.
-RDP_CLOSED_BY_TAB: str = "the tab was closed"
+pub RDP_CLOSED_BY_TAB: str = "the tab was closed"
 
-fn rdp_closed_by_tab(msg: str) -> bool {
+pub fn rdp_closed_by_tab(msg: str) -> bool {
     return error_code_of(msg) == ERR_NETWORK && error_text_of(msg) == RDP_CLOSED_BY_TAB
 }
 
@@ -349,14 +349,14 @@ fn rdp_closed_by_tab(msg: str) -> bool {
 // during setup (GNOME Remote Desktop closes in the capability exchange when the client
 // offers no graphics pipeline). A `refused` error whose text starts with this phrase,
 // then the connection state it closed in: never "no route", which it is not.
-RDP_SERVER_CLOSED_SETUP: str = "the server closed the connection during setup"
+pub RDP_SERVER_CLOSED_SETUP: str = "the server closed the connection during setup"
 
 /// ```cf
 /// assert(rdp_server_closed_setup("refused: the server closed the connection during setup (CONNECTION_STATE_CAPABILITIES_EXCHANGE_MONITOR_LAYOUT)"))
 /// assert(!rdp_server_closed_setup("network: could not reach the server (ERRCONNECT_CONNECT_TRANSPORT_FAILED)"))
 /// assert(!rdp_server_closed_setup("refused: the server refused the connection (x)"))
 /// ```
-fn rdp_server_closed_setup(msg: str) -> bool {
+pub fn rdp_server_closed_setup(msg: str) -> bool {
     return error_code_of(msg) == ERR_REFUSED && error_text_of(msg).starts_with(RDP_SERVER_CLOSED_SETUP)
 }
 
@@ -373,20 +373,20 @@ fn rdp_server_closed_setup(msg: str) -> bool {
 /// assert(!rdp_setup_fallback("auto", "pipeline", closed))
 /// assert(!rdp_setup_fallback("auto", "compatible", "network: could not reach the server (x)"))
 /// ```
-fn rdp_setup_fallback(asked: str, engine: str, failure: str) -> bool {
+pub fn rdp_setup_fallback(asked: str, engine: str, failure: str) -> bool {
     return asked == "auto" && engine == "compatible" && rdp_server_closed_setup(failure)
 }
 
 // Milestone 35: the tab asked for another graphics mode (RDP_GRAPHICS, in `message`),
 // which a reconnect at the desktop's current size (`width` x `height`) gives.
-RDP_EVENT_GRAPHICS: str = "graphics"
+pub RDP_EVENT_GRAPHICS: str = "graphics"
 // Milestone 58: the remote pointer changed (`cursor`).
-RDP_EVENT_POINTER: str = "pointer"
+pub RDP_EVENT_POINTER: str = "pointer"
 
 // The remote pointer's shape (milestone 58). `action` "image" hands the page a new
 // image (`id`, its size, hotspot and RGBA rows in base64), which it keeps by id; "set"
 // shows image `id`; "hidden" hides the pointer; "default" is the system's arrow.
-type RdpCursor struct {
+pub type RdpCursor struct {
     action: str
     id: i64
     width: i64
@@ -396,12 +396,12 @@ type RdpCursor struct {
     rgba: str
 }
 
-RDP_CURSOR_IMAGE: str = "image"
-RDP_CURSOR_SET: str = "set"
-RDP_CURSOR_HIDDEN: str = "hidden"
-RDP_CURSOR_DEFAULT: str = "default"
+pub RDP_CURSOR_IMAGE: str = "image"
+pub RDP_CURSOR_SET: str = "set"
+pub RDP_CURSOR_HIDDEN: str = "hidden"
+pub RDP_CURSOR_DEFAULT: str = "default"
 
-type RdpEvent struct {
+pub type RdpEvent struct {
     kind: str
     message: str
     width: i64
@@ -415,7 +415,7 @@ type RdpEvent struct {
 
 // The question for a certificate, the RDP twin of an SSH host key's (design 22d1,
 // 22d2). `known_fingerprint` is the trusted one when it changed.
-fn rdp_cert_question(alias: str, hostname: str, port: i64, c: RdpCert, known_fingerprint: str) -> HostKeyQuestion {
+pub fn rdp_cert_question(alias: str, hostname: str, port: i64, c: RdpCert, known_fingerprint: str) -> HostKeyQuestion {
     mut known_type := ""
     if known_fingerprint.len() > 0 {
         known_type = RDP_CERT_KEY_TYPE
@@ -424,7 +424,7 @@ fn rdp_cert_question(alias: str, hostname: str, port: i64, c: RdpCert, known_fin
 }
 
 // The fingerprint trusted for an RDP server, "" when none is.
-fn trusted_rdp_fingerprint(known: []KnownHost, hostname: str, port: i64) -> str {
+pub fn trusted_rdp_fingerprint(known: []KnownHost, hostname: str, port: i64) -> str {
     addr := rdp_cert_addr(hostname, port)
     for k in known {
         if k.addr == addr && k.key_type == RDP_CERT_KEY_TYPE {

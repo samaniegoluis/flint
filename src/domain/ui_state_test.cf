@@ -19,7 +19,7 @@ test "ui state is cleaned, not refused" {
 
 test "remembered monitor ids are kept only when they read as ids" {
     mut long := ""
-    for i in 0..65 {
+    for _ in 0..65 {
         long = long + "x"
     }
     c := clean_monitor_ids(["69733382", "DP-1", "69733382", "", "bad\nid", long, "\\\\.\\DISPLAY2"])

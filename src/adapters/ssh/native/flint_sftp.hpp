@@ -16,7 +16,7 @@
 
 // native_*: cfire 0.12 coerces a .cf call's arguments by the parameters of any C++
 // function with the same last name (CF-158), so these never share a name with the
-// application's rename_path, make_dir, real_path and stat_path.
+// application's rename_path, make_dir and real_path.
 // CFIRE-UPSTREAM: CF-158
 namespace flint_sftp {
 

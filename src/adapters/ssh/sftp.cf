@@ -23,21 +23,21 @@ SFTP_READ_CHUNK: usize = 65536
 fn sftp_failure(rc: i32, what: str, path: str, conn: SshConn, label: str) -> str {
     on := sftp_on(label)
     if rc == 1 {
-        return coded(ERR_NOT_FOUND, "{path}: no such file or folder on {on}")
+        return domain.coded(domain.ERR_NOT_FOUND, "{path}: no such file or folder on {on}")
     }
     if rc == 2 {
-        return coded(ERR_PERMISSION, "{path}: permission denied on {on}")
+        return domain.coded(domain.ERR_PERMISSION, "{path}: permission denied on {on}")
     }
     if rc == 3 {
-        return coded(ERR_EXISTS, "{path} already exists on {on}")
+        return domain.coded(domain.ERR_EXISTS, "{path} already exists on {on}")
     }
     if rc == 6 {
-        return coded(ERR_NOT_DIR, "{path} is not a folder on {on}")
+        return domain.coded(domain.ERR_NOT_DIR, "{path} is not a folder on {on}")
     }
     if rc == 4 {
-        return coded(ERR_IO, "{on} refused to {what} {path}")
+        return domain.coded(domain.ERR_IO, "{on} refused to {what} {path}")
     }
-    return coded(ERR_NETWORK, "the SFTP connection was lost while trying to {what} {path}: {conn.last_error()}")
+    return domain.coded(domain.ERR_NETWORK, "the SFTP connection was lost while trying to {what} {path}: {conn.last_error()}")
 }
 
 fn sftp_on(label: str) -> str {
@@ -55,13 +55,13 @@ fn native_entry_kind(kind: str) -> str {
     if kind == "file" || kind == "dir" || kind == "link" {
         return kind
     }
-    return FILE_KIND_OTHER
+    return domain.FILE_KIND_OTHER
 }
 
 fn (self: SshLink) sftp_hop() -> SshConn! {
     conn := try self.last_hop()
     if self.sftp == none {
-        return error(coded(ERR_INTERNAL, "sftp: no SFTP channel is open"))
+        return error(domain.coded(domain.ERR_INTERNAL, "sftp: no SFTP channel is open"))
     }
     return conn
 }
@@ -82,7 +82,7 @@ fn (mut self: SshLink) sftp_open() -> void! {
         msg = err;
     }
     if sftp == none {
-        return error(coded(ERR_NETWORK, "cannot start SFTP on {sftp_on(self.label)}: {msg}"))
+        return error(domain.coded(domain.ERR_NETWORK, "cannot start SFTP on {sftp_on(self.label)}: {msg}"))
     }
     self.sftp = sftp
 }
@@ -106,7 +106,7 @@ fn (self: SshLink) sftp_stat(path: str) -> domain.FileEntry! {
     if rc != 0 {
         return error(sftp_failure(rc, "read", path, conn, self.label))
     }
-    return domain.FileEntry{ name: remote_base(path), path: path, kind: native_entry_kind(kind), size: size, mtime: mtime, mode: mode, uid: uid }
+    return domain.FileEntry{ name: domain.remote_base(path), path: path, kind: native_entry_kind(kind), size: size, mtime: mtime, mode: mode, uid: uid }
 }
 
 // The entries of folder `path`, without `.` and `..`, links not followed.
@@ -134,7 +134,7 @@ fn (self: SshLink) sftp_list(path: str) -> []domain.FileEntry! {
     }
     mut entries: []domain.FileEntry = []
     for i, n in names {
-        entries.push(domain.FileEntry{ name: n, path: remote_join(path, n), kind: native_entry_kind(kinds[i]), size: sizes[i], mtime: mtimes[i], mode: modes[i], uid: uids[i] })
+        entries.push(domain.FileEntry{ name: n, path: domain.remote_join(path, n), kind: native_entry_kind(kinds[i]), size: sizes[i], mtime: mtimes[i], mode: modes[i], uid: uids[i] })
     }
     return entries
 }
@@ -144,7 +144,7 @@ fn (self: SshLink) sftp_list(path: str) -> []domain.FileEntry! {
 fn (mut self: SshLink) sftp_file_open(path: str, write: bool, exclusive: bool) -> void! {
     conn := try self.sftp_hop()
     if self.sftp_file != none {
-        return error(coded(ERR_INTERNAL, "sftp: a file is already open"))
+        return error(domain.coded(domain.ERR_INTERNAL, "sftp: a file is already open"))
     }
     mut f: cpp.flint_ssh::SftpFile
     mut rc: i32 = 0
@@ -169,7 +169,7 @@ fn (mut self: SshLink) sftp_file_open(path: str, write: bool, exclusive: bool) -
 fn (mut self: SshLink) sftp_file_read() -> str! {
     conn := try self.sftp_hop()
     if self.sftp_file == none {
-        return error(coded(ERR_INTERNAL, "sftp: no file is open"))
+        return error(domain.coded(domain.ERR_INTERNAL, "sftp: no file is open"))
     }
     mut data := ""
     mut rc: i32 = 0
@@ -187,7 +187,7 @@ fn (mut self: SshLink) sftp_file_read() -> str! {
 fn (mut self: SshLink) sftp_file_write(data: str) -> void! {
     conn := try self.sftp_hop()
     if self.sftp_file == none {
-        return error(coded(ERR_INTERNAL, "sftp: no file is open"))
+        return error(domain.coded(domain.ERR_INTERNAL, "sftp: no file is open"))
     }
     mut rc: i32 = 0
     // CFIRE-UPSTREAM: CF-005

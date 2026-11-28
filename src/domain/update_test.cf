@@ -176,3 +176,11 @@ test "the browser opens Flint's own pages only" {
     assert(!url_open_allowed("file:///etc/passwd"))
     assert(!url_open_allowed("https://github.com/samaniegoluis/flint/"))
 }
+
+// Checks a manifest whose signature already verified: its version reads as a release
+// (never a pre-release), its page and every asset point into this repository's
+// releases, each asset has a known key, a size and a SHA-256.
+fn check_update_manifest(m: UpdateManifest) -> void! {
+    try check_update_manifest_from(m, UPDATE_DOWNLOAD_PREFIX)
+    return
+}

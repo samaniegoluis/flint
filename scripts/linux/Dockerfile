@@ -31,9 +31,9 @@ FROM debian:trixie
 # release's SHA256SUMS.txt and unpacked in install.sh's layout (bin/cfire,
 # share/cfire/runtime) without its installer. TARGETARCH picks the archive: arm64 on an
 # Apple silicon Mac's Docker, amd64 elsewhere.
-ARG CFIRE_VERSION=0.12.7
-ARG CFIRE_SHA256_ARM64=32cfee09837c69d40ae12d2dd57264926c8f64dc5918d6eb33d5f8c632b6c97c
-ARG CFIRE_SHA256_AMD64=7e2711ee16b4c6333a3e8635d0ebcd8709b14ac7f1fd9b113f4ef6a46392d0d7
+ARG CFIRE_VERSION=0.13.1
+ARG CFIRE_SHA256_ARM64=5f18aab6df613790ae84e47930348c622ce70b290f46f945eb6a72981fc736fa
+ARG CFIRE_SHA256_AMD64=815fe2cb05b0ed247de8a7a4769caa3e0d69d45e21bfc81b011b103b1d46012c
 ARG TARGETARCH
 
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \

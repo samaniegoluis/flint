@@ -34,14 +34,14 @@ test "a blob's salt is its first 16 bytes" {
     for i in 0..40 {
         data.push(byte(i))
     }
-    salt := vault_blob_salt(data) or err {
+    salt := vault_blob_salt(data) or {
         assert(false)
         return
     }
     assert_eq(salt.len(), usize(16))
     assert_eq(u8(salt[15]), u8(15))
     short: []byte = [byte(1), byte(2)]
-    got := vault_blob_salt(short) or err {
+    _got := vault_blob_salt(short) or err {
         assert(err.message().starts_with("invalid"))
         return
     }
@@ -84,7 +84,7 @@ test "failures back off, doubling to a cap; asking still syncs" {
     sync_checked(mut c, "/v", 31000, ERR_NETWORK)
     assert(!sync_due(mut c, "/v", 31000 + 59000, true, 60, ""))
     assert(sync_due(mut c, "/v", 31000 + 61000, true, 60, ""))
-    for i in 0..10 {
+    for _ in 0..10 {
         sync_checked(mut c, "/v", 0, ERR_NETWORK)
     }
     assert(!sync_due(mut c, "/v", 899000, true, 60, ""))

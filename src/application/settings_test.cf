@@ -3,8 +3,8 @@ package application
 import "../domain"
 
 test "settings are validated on save and repaired field by field on load" {
-    mut store := FakeSettingsStore{ saved: default_settings() }
-    mut s := default_settings()
+    mut store := FakeSettingsStore{ saved: domain.default_settings() }
+    mut s := domain.default_settings()
     s.theme = "dark"
     s.term_font_size = 15
     saved := try save_settings(mut store, s)
@@ -20,7 +20,7 @@ test "settings are validated on save and repaired field by field on load" {
     assert_eq(store.saved.accent, "ember")
 
     // A hand-edited file with one bad field keeps the good ones.
-    mut edited := default_settings()
+    mut edited := domain.default_settings()
     edited.theme = "light"
     edited.term_line_height = 999
     edited.reopen_last_vault = false
@@ -35,7 +35,7 @@ test "settings are validated on save and repaired field by field on load" {
     assert_eq(fixed.approval_wait, i64(10))
 
     // An empty theme (a hand-edited file) is repaired to the default.
-    mut old := default_settings()
+    mut old := domain.default_settings()
     old.accent = "iris"
     old.term_theme = ""
     store.saved = old
@@ -44,7 +44,7 @@ test "settings are validated on save and repaired field by field on load" {
     assert_eq(repaired.accent, "iris")
 
     // And one from before auto-lock (milestone 11b) locks after an hour, the default.
-    mut pre_lock := default_settings()
+    mut pre_lock := domain.default_settings()
     pre_lock.lock_after = ""
     pre_lock.term_theme = "nord"
     store.saved = pre_lock
@@ -54,12 +54,12 @@ test "settings are validated on save and repaired field by field on load" {
 
     // A paste limit that is not one of the sizes (a file from before milestone 25
     // reads 0, a hand edit 7) falls back to 20 MB and keeps the rest.
-    mut odd := default_settings()
+    mut odd := domain.default_settings()
     odd.paste_limit_mb = 7
     odd.term_theme = "aura"
     store.saved = odd
     limited := try load_settings(store)
-    assert_eq(limited.paste_limit_mb, PASTE_LIMIT_DEFAULT_MB)
+    assert_eq(limited.paste_limit_mb, domain.PASTE_LIMIT_DEFAULT_MB)
     assert_eq(limited.term_theme, "aura")
     odd.paste_limit_mb = 100
     store.saved = odd
@@ -67,7 +67,7 @@ test "settings are validated on save and repaired field by field on load" {
 
     // A toast corner from a hand edit falls back to bottom right and keeps the rest;
     // a valid one is kept.
-    mut cornered := default_settings()
+    mut cornered := domain.default_settings()
     cornered.toast_corner = "middle"
     cornered.term_theme = "nord"
     store.saved = cornered
@@ -80,7 +80,7 @@ test "settings are validated on save and repaired field by field on load" {
 
     // A language no Flint writes falls back to the system's and keeps the rest
     // (milestone 66); a valid one is kept through a file with another bad field.
-    mut spoken := default_settings()
+    mut spoken := domain.default_settings()
     spoken.language = "klingon"
     spoken.term_theme = "nord"
     store.saved = spoken
@@ -94,8 +94,8 @@ test "settings are validated on save and repaired field by field on load" {
 
     // Dimming what does not have the focus (milestone 72) is on by default, and turned
     // off it stays off through a file with another bad field.
-    assert(default_settings().dim_unfocused)
-    mut undimmed := default_settings()
+    assert(domain.default_settings().dim_unfocused)
+    mut undimmed := domain.default_settings()
     undimmed.dim_unfocused = false
     undimmed.toast_corner = "middle"
     store.saved = undimmed

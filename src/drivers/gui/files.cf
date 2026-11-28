@@ -12,7 +12,6 @@ package main
 // transfer id and subscribes before starting (spec: Streaming is out-of-band).
 
 import "ext:webui"
-import "core:json"
 import "core:encoding/base64"
 import "../../adapters/process"
 import "../../adapters/ssh" as flint_ssh
@@ -74,74 +73,74 @@ type FilesListReply struct {
 // Gives the browse channel back: dropped when the request failed on the network,
 // so the next request opens a fresh one.
 fn finish_browse(session: str, link: flint_ssh.SshLink, failed: str) {
-    if failed.len() > 0 && error_code_of(failed) == ERR_NETWORK {
+    if failed.len() > 0 && domain.error_code_of(failed) == domain.ERR_NETWORK {
         mut l := link
-        drop_browse(session, mut l)
+        flint_ssh.drop_browse(session, mut l)
         return
     }
-    give_back_browse(session, link)
+    flint_ssh.give_back_browse(session, link)
 }
 
 // The login folder's absolute path: where the Files view starts.
 fn rpc_files_home(req: FilesPathReq, st: GuiState) -> PathReply! {
     try st.require_open_window()
-    link := try borrow_browse(req.session)
-    r := real_path(link, ".") or err {
+    link := try flint_ssh.borrow_browse(req.session)
+    r := application.real_path(link, ".") or err {
         msg := "{err.message()}"
         finish_browse(req.session, link, msg)
         return error(msg)
     }
-    give_back_browse(req.session, link)
+    flint_ssh.give_back_browse(req.session, link)
     return PathReply{ path: r }
 }
 
 // A folder's entries, by absolute path (`files_home` gives the first one).
 fn rpc_files_list(req: FilesPathReq, st: GuiState) -> FilesListReply! {
     try st.require_open_window()
-    link := try borrow_browse(req.session)
-    r := list_dir(link, req.path) or err {
+    link := try flint_ssh.borrow_browse(req.session)
+    r := application.list_dir(link, req.path) or err {
         msg := "{err.message()}"
         finish_browse(req.session, link, msg)
         return error(msg)
     }
-    give_back_browse(req.session, link)
+    flint_ssh.give_back_browse(req.session, link)
     return FilesListReply{ path: req.path, entries: r }
 }
 
 fn rpc_files_rename(req: FilesRenameReq, st: GuiState) -> PathReply! {
     try st.require_open_window()
-    mut link := try borrow_browse(req.session)
-    rename_path(mut link, req.from, req.to) or err {
+    mut link := try flint_ssh.borrow_browse(req.session)
+    application.rename_path(mut link, req.from, req.to) or err {
         msg := "{err.message()}"
         finish_browse(req.session, link, msg)
         return error(msg)
     }
-    give_back_browse(req.session, link)
+    flint_ssh.give_back_browse(req.session, link)
     return PathReply{ path: req.to }
 }
 
 // A file, or a folder with everything in it. The page asks first.
 fn rpc_files_remove(req: FilesPathReq, st: GuiState) -> PathReply! {
     try st.require_open_window()
-    mut link := try borrow_browse(req.session)
-    remove_remote(mut link, req.path) or err {
+    mut link := try flint_ssh.borrow_browse(req.session)
+    application.remove_remote(mut link, req.path) or err {
         msg := "{err.message()}"
         finish_browse(req.session, link, msg)
         return error(msg)
     }
-    give_back_browse(req.session, link)
+    flint_ssh.give_back_browse(req.session, link)
     return PathReply{ path: req.path }
 }
 
 fn rpc_files_mkdir(req: FilesPathReq, st: GuiState) -> PathReply! {
     try st.require_open_window()
-    mut link := try borrow_browse(req.session)
-    make_dir(mut link, req.path) or err {
+    mut link := try flint_ssh.borrow_browse(req.session)
+    application.make_dir(mut link, req.path) or err {
         msg := "{err.message()}"
         finish_browse(req.session, link, msg)
         return error(msg)
     }
-    give_back_browse(req.session, link)
+    flint_ssh.give_back_browse(req.session, link)
     return PathReply{ path: req.path }
 }
 
@@ -151,15 +150,15 @@ fn rpc_files_mkdir(req: FilesPathReq, st: GuiState) -> PathReply! {
 fn rpc_files_transfer(req: FilesTransferReq, app: webui.App, st: GuiState) -> domain.CopyResult! {
     try st.require_open_window()
     if req.id.len() == 0 {
-        return error(coded(ERR_INVALID, "a transfer needs an id"))
+        return error(domain.coded(domain.ERR_INVALID, "a transfer needs an id"))
     }
-    mut link := try borrow_transfer(req.session, req.id)
-    mut local := new_local_fs()
-    mut sink := new_gui_transfer_sink(app, req.session, req.id)
-    mut clock := new_system_clock()
+    mut link := try flint_ssh.borrow_transfer(req.session, req.id)
+    mut local := process.new_local_fs()
+    mut sink := uievents.new_gui_transfer_sink(app, req.session, req.id)
+    mut clock := process.new_system_clock()
     copy := application.CopyRequest{ id: req.id, alias: "", direction: req.direction, local: req.local, remote: req.remote, recursive: req.recursive, force: req.force }
-    defer give_back_transfer(req.session, req.id, mut link)
-    return try transfer_files(mut link, mut local, mut sink, mut clock, copy)
+    defer flint_ssh.give_back_transfer(req.session, req.id, mut link)
+    return try application.transfer_files(mut link, mut local, mut sink, mut clock, copy)
 }
 
 // A copy from one session to another (milestone 19, D-059): each session lends a
@@ -168,27 +167,27 @@ fn rpc_files_transfer(req: FilesTransferReq, app: webui.App, st: GuiState) -> do
 fn rpc_files_relay(req: FilesRelayReq, app: webui.App, st: GuiState) -> domain.CopyResult! {
     try st.require_open_window()
     if req.id.len() == 0 || req.to_session.len() == 0 {
-        return error(coded(ERR_INVALID, "a copy between servers needs an id and two sessions"))
+        return error(domain.coded(domain.ERR_INVALID, "a copy between servers needs an id and two sessions"))
     }
-    mut from := try borrow_transfer(req.session, req.id)
-    mut to := borrow_transfer(req.to_session, req.id) or err {
-        give_back_transfer(req.session, req.id, mut from)
+    mut from := try flint_ssh.borrow_transfer(req.session, req.id)
+    mut to := flint_ssh.borrow_transfer(req.to_session, req.id) or err {
+        flint_ssh.give_back_transfer(req.session, req.id, mut from)
         return error("{err.message()}")
     }
-    mut sink := new_gui_transfer_sink(app, req.session, req.id)
-    mut clock := new_system_clock()
-    copy := application.CopyRequest{ id: req.id, alias: req.alias, direction: COPY_RELAY, local: req.to_path, remote: req.path, recursive: req.recursive, force: req.force, to_alias: req.to_alias }
+    mut sink := uievents.new_gui_transfer_sink(app, req.session, req.id)
+    mut clock := process.new_system_clock()
+    copy := application.CopyRequest{ id: req.id, alias: req.alias, direction: domain.COPY_RELAY, local: req.to_path, remote: req.path, recursive: req.recursive, force: req.force, to_alias: req.to_alias }
     defer {
-        give_back_transfer(req.to_session, req.id, mut to)
-        give_back_transfer(req.session, req.id, mut from)
+        flint_ssh.give_back_transfer(req.to_session, req.id, mut to)
+        flint_ssh.give_back_transfer(req.session, req.id, mut from)
     }
-    return try relay_between_sessions(mut from, mut to, mut sink, mut clock, copy)
+    return try application.relay_between_sessions(mut from, mut to, mut sink, mut clock, copy)
 }
 
 // Asks a running transfer to stop; its promise then fails and its partial file
 // is removed. Allowed behind the lock screen too: stopping takes nothing out.
 fn rpc_files_cancel(req: FilesIdReq) -> str! {
-    files_cancel(req.id)
+    flint_ssh.files_cancel(req.id)
     return ok_json()
 }
 
@@ -196,13 +195,13 @@ fn rpc_files_cancel(req: FilesIdReq) -> str! {
 // uploaded (CF-004: the webview gives the page bytes, not paths).
 fn rpc_files_stage(req: FilesStageReq, mut stage: process.FsDropStage, st: GuiState) -> PathReply! {
     try st.require_open_window()
-    data := base64.decode_str(req.data) or err {
-        return error(coded(ERR_INVALID, "a dropped file's chunk is not base64"))
+    data := base64.decode_str(req.data) or {
+        return error(domain.coded(domain.ERR_INVALID, "a dropped file's chunk is not base64"))
     }
-    return PathReply{ path: try stage_dropped(mut stage, req.drop, req.rel, data) }
+    return PathReply{ path: try application.stage_dropped(mut stage, req.drop, req.rel, data) }
 }
 
 fn rpc_files_stage_discard(req: FilesIdReq, mut stage: process.FsDropStage) -> str! {
-    discard_dropped(mut stage, req.id)
+    application.discard_dropped(mut stage, req.id)
     return ok_json()
 }

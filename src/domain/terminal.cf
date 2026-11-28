@@ -3,12 +3,12 @@ package domain
 // The domain layer: plain types with no I/O. Milestone 02 adds Vault, Group, Host,
 // SSHKey and Credential here.
 
-type TerminalSize struct {
+pub type TerminalSize struct {
     cols: i32
     rows: i32
 }
 
-fn default_terminal_size() -> TerminalSize {
+pub fn default_terminal_size() -> TerminalSize {
     return TerminalSize{ cols: 80, rows: 24 }
 }
 

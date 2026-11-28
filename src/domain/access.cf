@@ -13,28 +13,26 @@ package domain
 // Grants live in memory only: they end on expiry, on lock and when the app quits.
 
 // What a request does with the vault.
-ACCESS_READ: str = "read"
-ACCESS_EXEC: str = "exec"
-ACCESS_WRITE: str = "write"
+pub ACCESS_READ: str = "read"
+pub ACCESS_EXEC: str = "exec"
+pub ACCESS_WRITE: str = "write"
 // Creating a token (milestone 12b): approved one by one in the window, never by a
 // grant or another token.
-ACCESS_TOKEN: str = "token"
+pub ACCESS_TOKEN: str = "token"
 // Running a command as root (`exec --sudo`, milestone 13): approved one by one in the
 // window, never by a grant or a token (Principle 12).
-ACCESS_SUDO: str = "sudo"
+pub ACCESS_SUDO: str = "sudo"
 
-// How long a grant lasts. "lock" lasts until the vault locks.
-GRANT_DURATIONS: []str = ["15m", "1h", "4h", "lock"]
+// How long a grant lasts: 15m, 1h, 4h, or "lock", until the vault locks.
 
-// How long a root period lasts (D-117 (1)): never longer than 15 minutes, never until
-// the vault locks.
-ROOT_PERIODS: []str = ["2m", "5m", "15m"]
+// How long a root period lasts (D-117 (1)): 2m, 5m or 15m; never longer than 15
+// minutes, never until the vault locks.
 
 // Executables a caller chain passes through without being the caller itself.
 TRANSPARENT_EXES: []str = ["flint", "sh", "bash", "zsh", "fish", "dash", "ksh", "mksh", "tcsh", "csh", "nu", "xonsh", "elvish", "pwsh", "powershell", "cmd", "env", "timeout", "gtimeout", "nohup", "xargs", "time", "nice", "caffeinate", "login", "script", "stdbuf", "direnv"]
 
 // One process of a caller's chain. `started` pins the pid (its unit is the OS's).
-type CallerProc struct {
+pub type CallerProc struct {
     pid:     i64 `json:"pid"`
     ppid:    i64 `json:"ppid"`
     started: i64 `json:"started"`
@@ -43,20 +41,20 @@ type CallerProc struct {
 }
 
 // The peer of a socket connection: its uid and its chain, the peer itself first.
-type Caller struct {
+pub type Caller struct {
     uid:   i64          `json:"uid"`
     chain: []CallerProc `json:"chain"`
 }
 
 // Which hosts a grant reaches. `all` covers the whole vault; otherwise the hosts
 // listed by id and every host in the listed groups or their subgroups.
-type AccessScope struct {
+pub type AccessScope struct {
     all:    bool  `json:"all"`
     groups: []str `json:"groups"`
     hosts:  []str `json:"hosts"`
 }
 
-type Grant struct {
+pub type Grant struct {
     id:             str         `json:"id"`
     vault_id:       str         `json:"vault_id"`
     anchor_pid:     i64         `json:"anchor_pid"`
@@ -85,14 +83,14 @@ type Grant struct {
 // ("" when the command names none, such as `host test` of an unsaved address).
 // A copy between two hosts (milestone 18) runs on both: `host2` is the second, and a
 // grant must reach both.
-type AccessNeed struct {
+pub type AccessNeed struct {
     action: str `json:"action"`
     host:   str `json:"host"`
     host2:  str `json:"host2"`
 }
 
 // The host or hosts a need names, as the activity log shows them: "db1 → nas".
-fn need_hosts(need: AccessNeed) -> str {
+pub fn need_hosts(need: AccessNeed) -> str {
     if need.host2.len() == 0 {
         return need.host
     }
@@ -100,7 +98,7 @@ fn need_hosts(need: AccessNeed) -> str {
 }
 
 // The last part of a path.
-fn path_base(p: str) -> str {
+pub fn path_base(p: str) -> str {
     if slash := p.last_index_of("/") {
         return p[slash + 1..]
     }
@@ -173,7 +171,7 @@ fn friendly_name(name: str) -> str {
 }
 
 // "flint, started by Claude Code". The peer itself when it is its own anchor.
-fn caller_label(c: Caller) -> str {
+pub fn caller_label(c: Caller) -> str {
     if c.chain.len() == 0 {
         return "an unknown process"
     }
@@ -187,7 +185,7 @@ fn caller_label(c: Caller) -> str {
 
 // The program a label names, as a notice shows it: "Claude Code" for "flint, started
 // by Claude Code", the label itself when it names one process.
-fn label_program(label: str) -> str {
+pub fn label_program(label: str) -> str {
     marker := ", started by "
     if i := label.index_of(marker) {
         return label[i + marker.len()..]
@@ -196,7 +194,7 @@ fn label_program(label: str) -> str {
 }
 
 // Turns grant `id`'s notice on or off; false when there is no such grant.
-fn set_grant_notify(mut book: AccessBook, id: str, on: bool) -> bool {
+pub fn set_grant_notify(mut book: AccessBook, id: str, on: bool) -> bool {
     for i in 0..book.grants.len() {
         if book.grants[i].id == id {
             // A root period always notifies (D-117 (4)).
@@ -232,7 +230,7 @@ fn grant_expiry(now_ms: i64, duration: str) -> i64! {
 }
 
 // The expiry of a root period given at `now_ms` for `period` (2m, 5m or 15m).
-fn root_period_expiry(now_ms: i64, period: str) -> i64! {
+pub fn root_period_expiry(now_ms: i64, period: str) -> i64! {
     if period == "2m" {
         return now_ms + 2 * 60000
     }
@@ -246,7 +244,7 @@ fn root_period_expiry(now_ms: i64, period: str) -> i64! {
 }
 
 // "5" for "5m": how the presence dialog names a period.
-fn period_minutes(period: str) -> str {
+pub fn period_minutes(period: str) -> str {
     if period.ends_with("m") {
         return period[..period.len() - 1]
     }
@@ -331,7 +329,7 @@ fn grant_covers(g: Grant, vault_id: str, need: AccessNeed, cat: Catalog, now_ms:
 }
 
 // The live grant of `grants` that lets `c` do `need`, if any.
-fn find_grant(grants: []Grant, c: Caller, vault_id: str, need: AccessNeed, cat: Catalog, now_ms: i64) -> Grant? {
+pub fn find_grant(grants: []Grant, c: Caller, vault_id: str, need: AccessNeed, cat: Catalog, now_ms: i64) -> Grant? {
     for g in grants {
         if grant_matches_caller(g, c) && grant_covers(g, vault_id, need, cat, now_ms) {
             return g
@@ -360,7 +358,7 @@ fn root_period_covers(g: Grant, c: Caller, vault_id: str, need: AccessNeed, cat:
 
 // The caller's live root period on the host `need` runs on, if any. With `allowed`
 // false (Settings → Access's *Allow sudo for a while* off) there is none.
-fn find_root_period(grants: []Grant, c: Caller, vault_id: str, need: AccessNeed, cat: Catalog, now_ms: i64, allowed: bool) -> Grant? {
+pub fn find_root_period(grants: []Grant, c: Caller, vault_id: str, need: AccessNeed, cat: Catalog, now_ms: i64, allowed: bool) -> Grant? {
     if !allowed {
         return none
     }
@@ -374,7 +372,7 @@ fn find_root_period(grants: []Grant, c: Caller, vault_id: str, need: AccessNeed,
 
 // The root period an `exec --sudo` approval becomes when the owner picks `period` in
 // the window: its caller's anchor, the one host of the command, always notifying.
-fn root_period_from_approval(ap: Approval, cat: Catalog, id: str, period: str, now_ms: i64) -> Grant! {
+pub fn root_period_from_approval(ap: Approval, cat: Catalog, id: str, period: str, now_ms: i64) -> Grant! {
     if ap.need.action != ACCESS_SUDO {
         return error(coded(ERR_INVALID, "only a command as root can be allowed for a while"))
     }
@@ -391,7 +389,7 @@ fn root_period_from_approval(ap: Approval, cat: Catalog, id: str, period: str, n
 }
 
 // Ends every root period (the setting turned off); how many ended.
-fn end_root_periods(mut book: AccessBook) -> i64 {
+pub fn end_root_periods(mut book: AccessBook) -> i64 {
     mut kept: []Grant = []
     mut ended: i64 = 0
     for g in book.grants {
@@ -409,7 +407,7 @@ fn end_root_periods(mut book: AccessBook) -> i64 {
 // The caller's live grants that already run commands on `alias`, and when the last of
 // them ends (0 = until the vault locks). A copy between two hosts shows it for each
 // end (design 16g3).
-fn exec_allowed_until(grants: []Grant, c: Caller, vault_id: str, alias: str, cat: Catalog, now_ms: i64) -> (bool, i64) {
+pub fn exec_allowed_until(grants: []Grant, c: Caller, vault_id: str, alias: str, cat: Catalog, now_ms: i64) -> (bool, i64) {
     need := AccessNeed{ action: ACCESS_EXEC, host: alias }
     mut found := false
     mut until: i64 = 0
@@ -428,7 +426,7 @@ fn exec_allowed_until(grants: []Grant, c: Caller, vault_id: str, alias: str, cat
 }
 
 // The grants still live at `now_ms`.
-fn live_grants(grants: []Grant, now_ms: i64) -> []Grant {
+pub fn live_grants(grants: []Grant, now_ms: i64) -> []Grant {
     mut live: []Grant = []
     for g in grants {
         if grant_live(g, now_ms) {
@@ -443,13 +441,13 @@ fn live_grants(grants: []Grant, now_ms: i64) -> []Grant {
 // How long a caller waits for the owner to answer before it is refused.
 APPROVAL_WAIT_MS: i64 = 120000
 
-APPROVAL_PENDING: str = "pending"
-APPROVAL_ALLOWED: str = "allowed"
-APPROVAL_DENIED: str = "denied"
+pub APPROVAL_PENDING: str = "pending"
+pub APPROVAL_ALLOWED: str = "allowed"
+pub APPROVAL_DENIED: str = "denied"
 
 // A request waiting in the approval window. `request` is the command as the window
 // shows it (no flag values: D-018). `chain` is for the window's detail.
-type Approval struct {
+pub type Approval struct {
     id:             str          `json:"id"`
     vault_id:       str          `json:"vault_id"`
     label:          str          `json:"label"`
@@ -474,7 +472,7 @@ type Approval struct {
 }
 
 // The app's access state: live grants and the requests waiting for an answer.
-type AccessBook struct {
+pub type AccessBook struct {
     grants:  []Grant    `json:"grants"`
     pending: []Approval `json:"pending"`
     // The caller of an unlock a CLI asked for (none or one): the unlock screen can
@@ -490,21 +488,21 @@ type AccessBook struct {
     period_typed: []SudoTyped `json:"period_typed"`
 }
 
-type SudoTyped struct {
+pub type SudoTyped struct {
     id:       str `json:"id"`
     password: str `json:"password"`
 }
 
-fn empty_access_book() -> AccessBook {
+pub fn empty_access_book() -> AccessBook {
     return AccessBook{ grants: [], pending: [], asking: [], typed: [], period_typed: [] }
 }
 
-fn put_sudo_typed(mut book: AccessBook, id: str, password: str) {
+pub fn put_sudo_typed(mut book: AccessBook, id: str, password: str) {
     book.typed.push(SudoTyped{ id: id, password: password })
 }
 
 // The password typed for approval `id`, removed from the book; "" for none.
-fn take_sudo_typed(mut book: AccessBook, id: str) -> str {
+pub fn take_sudo_typed(mut book: AccessBook, id: str) -> str {
     mut found := ""
     mut kept: []SudoTyped = []
     for t in book.typed {
@@ -519,7 +517,7 @@ fn take_sudo_typed(mut book: AccessBook, id: str) -> str {
 }
 
 // The password typed for root period `grant` ("" for none), left in the book.
-fn period_sudo_typed(book: AccessBook, grant: str) -> str {
+pub fn period_sudo_typed(book: AccessBook, grant: str) -> str {
     for i in 0..book.period_typed.len() {
         if book.period_typed[i].id == grant {
             return book.period_typed[i].password
@@ -529,7 +527,7 @@ fn period_sudo_typed(book: AccessBook, grant: str) -> str {
 }
 
 // Drops the passwords of root periods that are no longer live at `now_ms`.
-fn prune_period_typed(mut book: AccessBook, now_ms: i64) {
+pub fn prune_period_typed(mut book: AccessBook, now_ms: i64) {
     mut kept: []SudoTyped = []
     for t in book.period_typed {
         mut live := false
@@ -548,7 +546,7 @@ fn prune_period_typed(mut book: AccessBook, now_ms: i64) {
 // The grant the window proposes for `ap`: the host it runs on, or both hosts of a
 // copy between two (when the vault has them), else the whole vault; reading plus what
 // it needs; one hour. The unlock screen gives exactly this when the owner ticks "Allow".
-fn proposed_grant(ap: Approval, cat: Catalog, id: str, now_ms: i64) -> Grant! {
+pub fn proposed_grant(ap: Approval, cat: Catalog, id: str, now_ms: i64) -> Grant! {
     mut scope := AccessScope{ all: true, groups: [], hosts: [] }
     if ap.need.action == ACCESS_EXEC {
         mut ids: []str = []
@@ -571,22 +569,22 @@ fn proposed_grant(ap: Approval, cat: Catalog, id: str, now_ms: i64) -> Grant! {
 
 // Whether the unlock screen a CLI raised may allow its caller in the same step: never
 // for `token create` or `exec --sudo`, which only the approval window allows, one by one.
-fn allowed_at_unlock(need: AccessNeed) -> bool {
+pub fn allowed_at_unlock(need: AccessNeed) -> bool {
     return need.action != ACCESS_TOKEN && need.action != ACCESS_SUDO
 }
 
 // Whether a request is approved one by one in the window, never by a grant.
-fn asked_every_time(need: AccessNeed) -> bool {
+pub fn asked_every_time(need: AccessNeed) -> bool {
     return need.action == ACCESS_TOKEN || need.action == ACCESS_SUDO
 }
 
-fn new_approval(id: str, vault_id: str, c: Caller, request: str, need: AccessNeed, now_ms: i64) -> Approval {
+pub fn new_approval(id: str, vault_id: str, c: Caller, request: str, need: AccessNeed, now_ms: i64) -> Approval {
     a := caller_anchor(c)
     return Approval{ id: id, vault_id: vault_id, label: caller_label(c), request: request, need: need, chain: c.chain, anchor_pid: a.pid, anchor_started: a.started, created_ms: now_ms, deadline_ms: now_ms + APPROVAL_WAIT_MS, state: APPROVAL_PENDING, token: no_token_ask(), sudo: no_sudo_ask(), command: whole_command(request), copy: no_copy_ask(), tunnel: no_tunnel_ask() }
 }
 
 // The grant an approval becomes when the owner allows it.
-fn grant_from_approval(ap: Approval, id: str, scope: AccessScope, read: bool, exec: bool, write: bool, duration: str, now_ms: i64) -> Grant! {
+pub fn grant_from_approval(ap: Approval, id: str, scope: AccessScope, read: bool, exec: bool, write: bool, duration: str, now_ms: i64) -> Grant! {
     expires := try grant_expiry(now_ms, duration)
     if !read && !exec && !write {
         return error(coded(ERR_INVALID, "a grant must allow at least one action"))
@@ -597,7 +595,7 @@ fn grant_from_approval(ap: Approval, id: str, scope: AccessScope, read: bool, ex
     return Grant{ id: id, vault_id: ap.vault_id, anchor_pid: ap.anchor_pid, anchor_started: ap.anchor_started, label: ap.label, scope: scope, read: read, exec: exec, write: write, created_ms: now_ms, expires_ms: expires, duration: duration }
 }
 
-fn find_approval(book: AccessBook, id: str) -> Approval? {
+pub fn find_approval(book: AccessBook, id: str) -> Approval? {
     // By index: a `for x in param.field` loop returning `x` fails a check from an
     // importing package (CF-156).
     // CFIRE-UPSTREAM: CF-156
@@ -610,7 +608,7 @@ fn find_approval(book: AccessBook, id: str) -> Approval? {
 }
 
 // Sets the state of approval `id`; false when it is no longer waiting.
-fn set_approval_state(mut book: AccessBook, id: str, state: str) -> bool {
+pub fn set_approval_state(mut book: AccessBook, id: str, state: str) -> bool {
     for i in 0..book.pending.len() {
         if book.pending[i].id == id && book.pending[i].state == APPROVAL_PENDING {
             book.pending[i].state = state
@@ -620,7 +618,7 @@ fn set_approval_state(mut book: AccessBook, id: str, state: str) -> bool {
     return false
 }
 
-fn drop_approval(mut book: AccessBook, id: str) {
+pub fn drop_approval(mut book: AccessBook, id: str) {
     mut kept: []Approval = []
     for ap in book.pending {
         if ap.id != id {
@@ -631,7 +629,7 @@ fn drop_approval(mut book: AccessBook, id: str) {
 }
 
 // Ends grant `id`; false when there was none.
-fn revoke_grant(mut book: AccessBook, id: str) -> bool {
+pub fn revoke_grant(mut book: AccessBook, id: str) -> bool {
     mut kept: []Grant = []
     mut found := false
     for g in book.grants {
@@ -647,7 +645,7 @@ fn revoke_grant(mut book: AccessBook, id: str) -> bool {
 }
 
 // The approvals still waiting, for the window.
-fn waiting_approvals(book: AccessBook, now_ms: i64) -> []Approval {
+pub fn waiting_approvals(book: AccessBook, now_ms: i64) -> []Approval {
     mut w: []Approval = []
     for ap in book.pending {
         if ap.state == APPROVAL_PENDING && now_ms < ap.deadline_ms {

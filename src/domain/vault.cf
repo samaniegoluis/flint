@@ -13,17 +13,17 @@ package domain
 // The numbers are pinned here, not taken from libsodium's *_MODERATE macros, so a
 // libsodium upgrade can never change how an existing vault is opened.
 
-VAULT_FORMAT_V1: i64 = 1
-VAULT_SALT_LEN: usize = 16
-VAULT_KEY_LEN: usize = 32
-VAULT_ARGON2_OPS: u64 = 3
-VAULT_ARGON2_MEM: usize = 268435456
-VAULT_KDF_CONTEXT: str = "flintvlt"
-VAULT_SUBKEY_PAGE: u64 = 1
-VAULT_SUBKEY_SECRETS: u64 = 2
-VAULT_SUBKEY_ACTIVITY: u64 = 3
+pub VAULT_FORMAT_V1: i64 = 1
+pub VAULT_SALT_LEN: usize = 16
+pub VAULT_KEY_LEN: usize = 32
+pub VAULT_ARGON2_OPS: u64 = 3
+pub VAULT_ARGON2_MEM: usize = 268435456
+pub VAULT_KDF_CONTEXT: str = "flintvlt"
+pub VAULT_SUBKEY_PAGE: u64 = 1
+pub VAULT_SUBKEY_SECRETS: u64 = 2
+pub VAULT_SUBKEY_ACTIVITY: u64 = 3
 // The `meta` key of the vault's stable id (migration 010, D-095).
-VAULT_META_ID: str = "vault_id"
+pub VAULT_META_ID: str = "vault_id"
 
 // ---- Entities ----------------------------------------------------------------
 //
@@ -32,7 +32,7 @@ VAULT_META_ID: str = "vault_id"
 // Secret fields (`password`, `private_key`, `passphrase`) hold sealed bytes
 // (nonce || ciphertext || tag), never plaintext; empty means "not set".
 
-type Group struct {
+pub type Group struct {
     id: str
     parent_id: str
     name: str
@@ -41,7 +41,7 @@ type Group struct {
     updated_at: i64
 }
 
-type Host struct {
+pub type Host struct {
     id: str
     alias: str
     label: str
@@ -79,7 +79,7 @@ type Host struct {
     updated_at: i64
 }
 
-type SshKey struct {
+pub type SshKey struct {
     id: str
     name: str
     key_type: str
@@ -92,7 +92,7 @@ type SshKey struct {
     updated_at: i64
 }
 
-type Credential struct {
+pub type Credential struct {
     id: str
     name: str
     username: str
@@ -104,7 +104,7 @@ type Credential struct {
 }
 
 // Every row of a vault, loaded together so ids resolve to names.
-type Catalog struct {
+pub type Catalog struct {
     groups: []Group
     hosts: []Host
     keys: []SshKey
@@ -114,14 +114,14 @@ type Catalog struct {
 // Every sealed secret of a vault, re-sealed under a new secrets key (milestone 40):
 // the hosts, keys and credentials with their secret fields; the other fields are not
 // read.
-type VaultSecrets struct {
+pub type VaultSecrets struct {
     hosts: []Host
     keys: []SshKey
     creds: []Credential
 }
 
 // What a private key reveals once parsed: safe to show.
-type KeyInfo struct {
+pub type KeyInfo struct {
     key_type: str
     public_key: str
     fingerprint: str
@@ -130,7 +130,7 @@ type KeyInfo struct {
 // A vault this machine has opened. Kept in a local config file, outside the vault.
 // `id` is the vault's id (D-030, kept in the vault from milestone 40, D-095), empty until the vault is next
 // unlocked: it is how a moved vault's stale entry is recognised and replaced.
-type RecentVault struct {
+pub type RecentVault struct {
     path: str `json:"path"`
     name: str `json:"name"`
     id:   str `json:"id"`
@@ -144,7 +144,7 @@ fn is_name_byte(b: u8) -> bool {
 
 // Aliases, key names, credential names and tags: 1-64 of [A-Za-z0-9._-], not
 // starting with '-' or '.' (so they never look like a flag or a hidden file).
-fn check_name(kind: str, value: str) -> void! {
+pub fn check_name(kind: str, value: str) -> void! {
     if value.len() == 0 || value.len() > 64 {
         return error(coded(ERR_INVALID, "{kind} must be 1-64 characters"))
     }
@@ -161,7 +161,7 @@ fn check_name(kind: str, value: str) -> void! {
 }
 
 // One segment of a group path: 1-64 characters, no '/', no surrounding spaces.
-fn check_group_name(value: str) -> void! {
+pub fn check_group_name(value: str) -> void! {
     if value.len() == 0 || value.len() > 64 {
         return error(coded(ERR_INVALID, "group name must be 1-64 characters"))
     }
@@ -174,7 +174,7 @@ fn check_group_name(value: str) -> void! {
 }
 
 // Splits "a/b/c" into segments, ignoring empty ones ("/a//b/" is "a/b").
-fn split_group_path(path: str) -> []str {
+pub fn split_group_path(path: str) -> []str {
     mut parts: []str = []
     mut cur := ""
     for b in path.bytes() {
@@ -211,16 +211,8 @@ fn check_hostname(value: str) -> void! {
     }
 }
 
-// Whether check_color passes.
-fn color_valid(value: str) -> bool {
-    check_color(value) or {
-        return false
-    }
-    return true
-}
-
 // Whether check_text passes.
-fn text_valid(kind: str, value: str, max_len: usize, multiline: bool) -> bool {
+pub fn text_valid(kind: str, value: str, max_len: usize, multiline: bool) -> bool {
     check_text(kind, value, max_len, multiline) or {
         return false
     }
@@ -249,7 +241,7 @@ fn check_color(value: str) -> void! {
 
 // Free text (label, notes, username) must not carry control bytes other than
 // newlines and tabs in notes.
-fn check_text(kind: str, value: str, max_len: usize, multiline: bool) -> void! {
+pub fn check_text(kind: str, value: str, max_len: usize, multiline: bool) -> void! {
     if value.len() > max_len {
         return error(coded(ERR_INVALID, "{kind} must be at most {max_len} characters"))
     }
@@ -267,7 +259,7 @@ fn check_text(kind: str, value: str, max_len: usize, multiline: bool) -> void! {
 
 // Checks every field rule of a host. References (group, jump, credential, key) are
 // checked by the application layer, which can see the other rows.
-fn check_host(h: Host) -> void! {
+pub fn check_host(h: Host) -> void! {
     try check_name("alias", h.alias)
     try check_hostname(h.hostname)
     try check_port(h.port)
@@ -287,7 +279,7 @@ fn check_host(h: Host) -> void! {
 }
 
 // Removes duplicate tags, keeping first occurrences in order.
-fn dedup_tags(tags: []str) -> []str {
+pub fn dedup_tags(tags: []str) -> []str {
     mut out_tags: []str = []
     for t in tags {
         mut seen := false
@@ -303,12 +295,12 @@ fn dedup_tags(tags: []str) -> []str {
     return out_tags
 }
 
-fn byte_to_str(b: u8) -> str {
+pub fn byte_to_str(b: u8) -> str {
     one: []u8 = [b]
     return str(one)
 }
 
-fn str_trim_spaces(s: str) -> str {
+pub fn str_trim_spaces(s: str) -> str {
     bytes := s.bytes()
     mut start: usize = 0
     mut end := s.len()
@@ -319,8 +311,4 @@ fn str_trim_spaces(s: str) -> str {
         end -= 1
     }
     return s[start..end]
-}
-
-fn sample_host() -> Host {
-    return Host{ id: "h1", alias: "web-01", label: "Web", hostname: "10.0.0.5", port: 22, username: "root", group_id: "", tags: ["prod"], color: "#ff8800", notes: "line 1\nline 2", jump_host_id: "", credential_id: "", key_id: "", password: [], initial_command: "", keep_shell: true, sudo_password: [] }
 }

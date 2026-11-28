@@ -11,7 +11,7 @@ import "core:time"
 import "../../domain"
 import "../../ports"
 
-fn accepts_server_stats[C: ports.ServerStats](c: C) -> bool {
+fn accepts_server_stats[C: ports.ServerStats](_c: C) -> bool {
     return true
 }
 
@@ -75,23 +75,23 @@ test "the resources loop runs beside the terminal on the tab's session and leave
     defer link.link_hangup()
     watch := "{id}-w1"
     mut s := try borrow_stats(id, watch)
-    try s.stats_open(stats_command())
+    try s.stats_open(domain.stats_command())
     first := try stats_read_until(mut s, "\n", 5000)
-    if first.contains(STATS_UNSUPPORTED) {
+    if first.contains(domain.STATS_UNSUPPORTED) {
         // macOS: not Linux, the loop says so and ends at once.
         s.stats_release()
         return
     }
     assert(first.starts_with("@@os"))
-    os_block := try stats_read_until(mut s, STATS_END + "\n", 5000)
-    assert(parse_os_name(first + os_block).len() > 0)
+    os_block := try stats_read_until(mut s, domain.STATS_END + "\n", 5000)
+    assert(domain.parse_os_name(first + os_block).len() > 0)
     // Two samples, a second apart.
     try s.stats_send("\n")
-    a := try stats_read_until(mut s, STATS_END + "\n", 5000)
+    a := try stats_read_until(mut s, domain.STATS_END + "\n", 5000)
     time.sleep_ms(1000)
     try s.stats_send("\n")
-    b := try stats_read_until(mut s, STATS_END + "\n", 5000)
-    sample := server_sample(id, "Linux", parse_stats_reading(a), parse_stats_reading(b))
+    b := try stats_read_until(mut s, domain.STATS_END + "\n", 5000)
+    sample := domain.server_sample(id, "Linux", domain.parse_stats_reading(a), domain.parse_stats_reading(b))
     assert(sample.has_cpu && sample.has_mem && sample.has_disk && sample.has_uptime && sample.has_load)
     // The terminal on the same session still answers.
     try link.link_channel_write("echo stats-$((40+2))\n")
@@ -107,7 +107,7 @@ test "the resources loop runs beside the terminal on the tab's session and leave
     assert(s.stats_stopped())
     s.stats_release()
     mut left: i64 = -1
-    for i in 0..20 {
+    for _ in 0..20 {
         left = try stats_loops(port, key)
         if left == 0 {
             break

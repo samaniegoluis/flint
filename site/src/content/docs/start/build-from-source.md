@@ -11,13 +11,13 @@ Security.framework.
 
 ## 1. Install cfire
 
-Flint is built against cfire's release `v0.12.7`. cfire's installer downloads that
+Flint is built against cfire's release `v0.13.1`. cfire's installer downloads that
 release's archive for your system and checks it against the release's `SHA256SUMS.txt`:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/gsandoval/cfire/v0.12.7/docs/install.sh \
-  | sh -s -- --version v0.12.7
-cfire --version     # cfire 0.12.7 (ad846a3, …)
+curl -fsSL https://raw.githubusercontent.com/gsandoval/cfire/v0.13.1/docs/install.sh \
+  | sh -s -- --version v0.13.1
+cfire --version     # cfire 0.13.1 (17d0b33, …)
 ```
 
 `scripts/install-cfire.sh` in Flint's repository does the same with the checksums kept in

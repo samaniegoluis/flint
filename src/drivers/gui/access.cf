@@ -61,7 +61,7 @@ fn access_state(st: GuiState, store: vault.LockedVaultStore, presence: uievents.
     }
     book := st.holder.access_book()
     cat := held_catalog(st, store)
-    return AccessState{ presence: presence.presence_method(), now_ms: now, pending: waiting_approvals(book, now), grants: grant_views(live_grants(book.grants, now), cat), sudo_periods: st.holder.sudo_periods() }
+    return AccessState{ presence: presence.presence_method(), now_ms: now, pending: domain.waiting_approvals(book, now), grants: application.grant_views(domain.live_grants(book.grants, now), cat), sudo_periods: st.holder.sudo_periods() }
 }
 
 // The open vault's catalog, or an empty one when it is locked.
@@ -72,7 +72,7 @@ fn held_catalog(st: GuiState, store: vault.LockedVaultStore) -> domain.Catalog {
     if !st.unlocked() {
         return empty
     }
-    return load_catalog(store) or empty
+    return application.load_catalog(store) or empty
 }
 
 // What the window shows: run on the UI thread, it never asks the OS.
@@ -85,16 +85,16 @@ fn rpc_access_state(st: GuiState, store: vault.LockedVaultStore, presence: uieve
 // a worker: Touch ID and polkit block until the person answers.
 fn rpc_access_answer(req: AccessAnswer, c: flint_crypto.Sodium, store: vault.LockedVaultStore, presence: uievents.OsPresence, st: GuiState, mut app: webui.App) -> AccessState! {
     try st.require_unlocked()
-    ap := find_approval(st.holder.access_book(), req.id) or {
-        return error(coded(ERR_NOT_FOUND, "this request is no longer waiting"))
+    ap := domain.find_approval(st.holder.access_book(), req.id) or {
+        return error(domain.coded(domain.ERR_NOT_FOUND, "this request is no longer waiting"))
     }
-    if ap.state != APPROVAL_PENDING {
-        return error(coded(ERR_NOT_FOUND, "this request is no longer waiting"))
+    if ap.state != domain.APPROVAL_PENDING {
+        return error(domain.coded(domain.ERR_NOT_FOUND, "this request is no longer waiting"))
     }
     if !req.allow {
         st.holder.access_hold()
         mut book := st.holder.access_book()
-        _ = set_approval_state(mut book, req.id, APPROVAL_DENIED)
+        _ = domain.set_approval_state(mut book, req.id, domain.APPROVAL_DENIED)
         st.holder.put_access_book(book)
         st.holder.access_release()
         return access_state(st, store, presence)
@@ -107,19 +107,19 @@ fn rpc_access_answer(req: AccessAnswer, c: flint_crypto.Sodium, store: vault.Loc
             // Checked before presence, so a period that cannot be given never shows
             // the OS dialog.
             if !st.holder.sudo_periods() {
-                return error(coded(ERR_INVALID, "Allow sudo for a while is off in Settings → Access; allow this one command"))
+                return error(domain.coded(domain.ERR_INVALID, "Allow sudo for a while is off in Settings → Access; allow this one command"))
             }
-            period = try root_period_from_approval(ap, held_catalog(st, store), hex.encode(c.random_bytes(8)), req.period, time.now_ms())
+            period = try domain.root_period_from_approval(ap, held_catalog(st, store), hex.encode(c.random_bytes(8)), req.period, time.now_ms())
         }
-        mut reason := sudo_command_reason(ap.sudo.argv.join(" "), ap.sudo.host)
+        mut reason := domain.sudo_command_reason(ap.sudo.argv.join(" "), ap.sudo.host)
         if p := period {
-            reason = sudo_period_reason(ap.label, ap.sudo.host, "{period_minutes(p.duration)}")
+            reason = domain.sudo_period_reason(ap.label, ap.sudo.host, "{period_minutes(p.duration)}")
         }
-        try confirm_presence(c, store, presence, st.vault_session(), req.password, reason)
+        try application.confirm_presence(c, store, presence, st.vault_session(), req.password, reason)
         if req.save_sudo_password && req.sudo_password.len() > 0 {
             st.hold()
             mut ts := store
-            set_host_sudo_password(c, mut ts, st.vault_session(), ap.sudo.host, req.sudo_password) or err {
+            application.set_host_sudo_password(c, mut ts, st.vault_session(), ap.sudo.host, req.sudo_password) or err {
                 st.release()
                 return error("{err.message()}")
             }
@@ -128,18 +128,18 @@ fn rpc_access_answer(req: AccessAnswer, c: flint_crypto.Sodium, store: vault.Loc
         }
         st.holder.access_hold()
         mut sbook := st.holder.access_book()
-        if !set_approval_state(mut sbook, req.id, APPROVAL_ALLOWED) {
+        if !domain.set_approval_state(mut sbook, req.id, domain.APPROVAL_ALLOWED) {
             st.holder.access_release()
-            return error(coded(ERR_NOT_FOUND, "this request stopped waiting before it was allowed"))
+            return error(domain.coded(domain.ERR_NOT_FOUND, "this request stopped waiting before it was allowed"))
         }
         if req.sudo_password.len() > 0 {
-            put_sudo_typed(mut sbook, req.id, req.sudo_password)
+            domain.put_sudo_typed(mut sbook, req.id, req.sudo_password)
         }
         if p := period {
             // Counted from the approval: presence took its time, so start it now.
             mut given := p
             given.created_ms = time.now_ms()
-            given.expires_ms = root_period_expiry(given.created_ms, given.duration) or p.expires_ms
+            given.expires_ms = domain.root_period_expiry(given.created_ms, given.duration) or p.expires_ms
             sbook.grants.push(given)
             if req.sudo_password.len() > 0 {
                 sbook.period_typed.push(domain.SudoTyped{ id: given.id, password: req.sudo_password })
@@ -147,51 +147,51 @@ fn rpc_access_answer(req: AccessAnswer, c: flint_crypto.Sodium, store: vault.Loc
             st.holder.put_access_book(sbook)
             st.holder.access_release()
             // No host here: the log never names what is inside the vault (Principle 5).
-            write_stderr("flint-gui: allowed {ap.label} to run commands as root on one host ({given.duration})\n")
+            process.write_stderr("flint-gui: allowed {ap.label} to run commands as root on one host ({given.duration})\n")
             app.emit("access:changed", GrantsChanged{ count: i64(sbook.grants.len()) })
             return access_state(st, store, presence)
         }
         st.holder.put_access_book(sbook)
         st.holder.access_release()
         // No host here: the log never names what is inside the vault (Principle 5).
-        write_stderr("flint-gui: allowed {ap.label} to run one command as root\n")
+        process.write_stderr("flint-gui: allowed {ap.label} to run one command as root\n")
         return access_state(st, store, presence)
     }
     if ap.token.name.len() > 0 {
         // `token create`: allowed for this one request, never as a grant.
-        try confirm_presence(c, store, presence, st.vault_session(), req.password, token_create_reason(ap.token.name, st.vault_session().name))
+        try application.confirm_presence(c, store, presence, st.vault_session(), req.password, domain.token_create_reason(ap.token.name, st.vault_session().name))
         st.holder.access_hold()
         mut tbook := st.holder.access_book()
-        if !set_approval_state(mut tbook, req.id, APPROVAL_ALLOWED) {
+        if !domain.set_approval_state(mut tbook, req.id, domain.APPROVAL_ALLOWED) {
             st.holder.access_release()
-            return error(coded(ERR_NOT_FOUND, "this request stopped waiting before it was allowed"))
+            return error(domain.coded(domain.ERR_NOT_FOUND, "this request stopped waiting before it was allowed"))
         }
         st.holder.put_access_book(tbook)
         st.holder.access_release()
-        write_stderr("flint-gui: allowed {ap.label} to create a token\n")
+        process.write_stderr("flint-gui: allowed {ap.label} to create a token\n")
         return access_state(st, store, presence)
     }
     // Checked before presence, so a bad form never shows the OS dialog.
-    scope := try access_scope_from_names(held_catalog(st, store), req.scope)
-    _ = try grant_from_approval(ap, "check", scope, req.read, req.exec, req.write, req.duration, time.now_ms())
-    try confirm_presence(c, store, presence, st.vault_session(), req.password, grant_allow_reason(ap.label, st.vault_session().name))
+    scope := try application.access_scope_from_names(held_catalog(st, store), req.scope)
+    _ = try domain.grant_from_approval(ap, "check", scope, req.read, req.exec, req.write, req.duration, time.now_ms())
+    try application.confirm_presence(c, store, presence, st.vault_session(), req.password, domain.grant_allow_reason(ap.label, st.vault_session().name))
     st.holder.access_hold()
     mut book := st.holder.access_book()
-    still := find_approval(book, req.id) or ap
-    if still.state != APPROVAL_PENDING || find_approval(book, req.id) == none {
+    still := domain.find_approval(book, req.id) or ap
+    if still.state != domain.APPROVAL_PENDING || domain.find_approval(book, req.id) == none {
         st.holder.access_release()
-        return error(coded(ERR_NOT_FOUND, "this request stopped waiting before it was allowed"))
+        return error(domain.coded(domain.ERR_NOT_FOUND, "this request stopped waiting before it was allowed"))
     }
-    mut g := grant_from_approval(ap, hex.encode(c.random_bytes(8)), scope, req.read, req.exec, req.write, req.duration, time.now_ms()) or err {
+    mut g := domain.grant_from_approval(ap, hex.encode(c.random_bytes(8)), scope, req.read, req.exec, req.write, req.duration, time.now_ms()) or err {
         st.holder.access_release()
         return error("{err.message()}")
     }
     g.notify = req.notify
     book.grants.push(g)
-    _ = set_approval_state(mut book, req.id, APPROVAL_ALLOWED)
+    _ = domain.set_approval_state(mut book, req.id, domain.APPROVAL_ALLOWED)
     st.holder.put_access_book(book)
     st.holder.access_release()
-    write_stderr("flint-gui: allowed {ap.label} ({g.duration})\n")
+    process.write_stderr("flint-gui: allowed {ap.label} ({g.duration})\n")
     app.emit("access:changed", GrantsChanged{ count: i64(book.grants.len()) })
     return access_state(st, store, presence)
 }
@@ -204,9 +204,9 @@ fn rpc_access_revoke(params: str, st: GuiState, store: vault.LockedVaultStore, p
     mut book := st.holder.access_book()
     if req.name.len() == 0 {
         book.grants = []
-    } else if !revoke_grant(mut book, req.name) {
+    } else if !domain.revoke_grant(mut book, req.name) {
         st.holder.access_release()
-        return error(coded(ERR_NOT_FOUND, "no such grant"))
+        return error(domain.coded(domain.ERR_NOT_FOUND, "no such grant"))
     }
     st.holder.put_access_book(book)
     st.holder.access_release()
@@ -225,9 +225,9 @@ fn rpc_access_notify(params: str, st: GuiState, store: vault.LockedVaultStore, p
     req := try parse_req[GrantNotifyReq](params)
     st.holder.access_hold()
     mut book := st.holder.access_book()
-    if !set_grant_notify(mut book, req.id, req.on) {
+    if !domain.set_grant_notify(mut book, req.id, req.on) {
         st.holder.access_release()
-        return error(coded(ERR_NOT_FOUND, "no such grant"))
+        return error(domain.coded(domain.ERR_NOT_FOUND, "no such grant"))
     }
     st.holder.put_access_book(book)
     st.holder.access_release()
@@ -243,7 +243,7 @@ fn rpc_grant_activity(params: str, st: GuiState, store: vault.LockedVaultStore) 
     st.hold()
     defer st.release()
     try st.require_unlocked()
-    return json.stringify(ActivityPage{ entries: try grant_activity(store, req.name) })
+    return json.stringify(ActivityPage{ entries: try application.grant_activity(store, req.name) })
 }
 
 // ---- Tokens and the activity log (milestone 12b) ------------------------------------
@@ -267,7 +267,7 @@ fn rpc_tokens_list(st: GuiState, store: vault.LockedVaultStore) -> str! {
     defer st.release()
     try st.require_unlocked()
     now := time.unix_seconds()
-    return json.stringify(TokensState{ now_s: now, tokens: try list_tokens(store, store, now) })
+    return json.stringify(TokensState{ now_s: now, tokens: try application.list_tokens(store, store, now) })
 }
 
 // The owner revokes a token from Settings → Access. Narrowing access needs no presence.
@@ -278,9 +278,9 @@ fn rpc_token_revoke(params: str, st: GuiState, store: vault.LockedVaultStore, mu
     try st.require_unlocked()
     now := time.unix_seconds()
     mut ts := store
-    _ = try revoke_token(store, mut ts, req.name, now)
+    _ = try application.revoke_token(store, mut ts, req.name, now)
     app.emit("access:changed", GrantsChanged{ count: i64(st.holder.access_book().grants.len()) })
-    return json.stringify(TokensState{ now_s: now, tokens: try list_tokens(store, store, now) })
+    return json.stringify(TokensState{ now_s: now, tokens: try application.list_tokens(store, store, now) })
 }
 
 fn rpc_activity_log(params: str, st: GuiState, store: vault.LockedVaultStore) -> str! {
@@ -288,7 +288,7 @@ fn rpc_activity_log(params: str, st: GuiState, store: vault.LockedVaultStore) ->
     st.hold()
     defer st.release()
     try st.require_unlocked()
-    return json.stringify(ActivityPage{ entries: try list_activity(store, req.before, req.limit) })
+    return json.stringify(ActivityPage{ entries: try application.list_activity(store, req.before, req.limit) })
 }
 
 // ---- Activity retention (milestone 15, D-049) -------------------------------------
@@ -317,8 +317,8 @@ fn rpc_activity_retention(st: GuiState, store: vault.LockedVaultStore) -> str! {
     st.hold()
     defer st.release()
     try st.require_unlocked()
-    days := try activity_retention_days(store)
-    return json.stringify(RetentionState{ days: days, label: retention_label(days) })
+    days := try application.activity_retention_days(store)
+    return json.stringify(RetentionState{ days: days, label: domain.retention_label(days) })
 }
 
 // How many entries a shorter retention would remove, for the page to ask first.
@@ -327,7 +327,7 @@ fn rpc_activity_retention_preview(params: str, st: GuiState, store: vault.Locked
     st.hold()
     defer st.release()
     try st.require_unlocked()
-    return json.stringify(RetentionPreview{ days: req.days, remove: try retention_would_remove(store, req.days, time.unix_seconds()) })
+    return json.stringify(RetentionPreview{ days: req.days, remove: try application.retention_would_remove(store, req.days, time.unix_seconds()) })
 }
 
 // Only the person at the window sets it: no CLI command does (D-052), so a caller
@@ -338,10 +338,10 @@ fn rpc_activity_retention_set(params: str, st: GuiState, store: vault.LockedVaul
     defer st.release()
     try st.require_unlocked()
     mut ts := store
-    removed := try set_activity_retention_days(mut ts, req.days, time.unix_seconds())
-    write_stderr("flint-gui: the activity log now keeps {retention_label(req.days)} ({removed} removed)\n")
+    removed := try application.set_activity_retention_days(mut ts, req.days, time.unix_seconds())
+    process.write_stderr("flint-gui: the activity log now keeps {retention_label(req.days)} ({removed} removed)\n")
     app.emit("activity:added", ActivityAdded{ outcome: "" })
-    return json.stringify(RetentionSet{ days: req.days, label: retention_label(req.days), removed: removed })
+    return json.stringify(RetentionSet{ days: req.days, label: domain.retention_label(req.days), removed: removed })
 }
 
 type ActivityBackupReq struct {
@@ -355,6 +355,6 @@ fn rpc_activity_backup(params: str, st: GuiState, store: vault.LockedVaultStore)
     st.hold()
     defer st.release()
     try st.require_unlocked()
-    try backup_activity(store, req.path)
+    try application.backup_activity(store, req.path)
     return ok_json()
 }

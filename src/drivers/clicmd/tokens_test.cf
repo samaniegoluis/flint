@@ -9,7 +9,7 @@ test "token scope flags" {
     assert_eq(s.groups[0], "homelab/pve")
     req := try token_request_from_flags(p)
     assert(req.read && req.exec && !req.write)
-    assert_eq(req.ttl, TOKEN_DEFAULT_TTL)
+    assert_eq(req.ttl, domain.TOKEN_DEFAULT_TTL)
     bad := try parse_cli_args(["token", "create", "--name", "n", "--allow", "sudo"])
     token_request_from_flags(bad) or { refused += 1 }
     assert_eq(refused, 1)

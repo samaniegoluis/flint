@@ -32,7 +32,7 @@ STRENGTH_MIN_YEAR_SPACE: i64 = 20
 STRENGTH_MAX_GUESSES: f64 = 1000000000000000000000000000000.0
 
 // What a person sees while typing a new master password.
-type PasswordStrength struct {
+pub type PasswordStrength struct {
     // 0 (very weak) to 4 (very strong).
     score:       i64   `json:"score"`
     label:       str   `json:"label"`
@@ -102,7 +102,7 @@ fn strength_score(guesses: f64) -> i64 {
 
 // Estimates `password`. `user_words` (the vault's name, for one) count as the most
 // common words of all: a password built from them is guessed first.
-fn estimate_password_strength(password: str, user_words: []str) -> PasswordStrength {
+pub fn estimate_password_strength(password: str, user_words: []str) -> PasswordStrength {
     mut pw := password
     if pw.len() > STRENGTH_MAX_LEN {
         pw = byte_slice(pw, 0, STRENGTH_MAX_LEN)
@@ -196,7 +196,7 @@ fn is_lower_byte(c: u8) -> bool {
     return c >= 97 && c <= 122
 }
 
-fn is_digit_byte(c: u8) -> bool {
+pub fn is_digit_byte(c: u8) -> bool {
     return c >= 48 && c <= 57
 }
 

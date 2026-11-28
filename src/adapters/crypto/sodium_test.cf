@@ -19,8 +19,8 @@ fn hex_of(b: []byte) -> str {
 fn port_roundtrip[C: ports.Crypto](c: C) -> bool {
     key := c.random_bytes(32)
     msg: []byte = [byte(7), byte(7)]
-    sealed := c.seal(key, msg, []) or err { return false }
-    back := c.unseal(key, sealed, []) or err { return false }
+    sealed := c.seal(key, msg, []) or { return false }
+    back := c.unseal(key, sealed, []) or { return false }
     return back == msg
 }
 

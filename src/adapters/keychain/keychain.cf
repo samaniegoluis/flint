@@ -24,11 +24,11 @@ fn keychain_service() -> str {
 
 // `enabled: false` turns the keychain off (FLINT_KEYCHAIN=off): nothing is cached,
 // every unlock asks for the password.
-type OsKeychain struct {
+pub type OsKeychain struct {
     enabled: bool
 }
 
-fn new_os_keychain(enabled: bool) -> OsKeychain {
+pub fn new_os_keychain(enabled: bool) -> OsKeychain {
     return OsKeychain{ enabled: enabled }
 }
 
@@ -36,14 +36,14 @@ fn new_os_keychain(enabled: bool) -> OsKeychain {
 // remove the vault key).
 fn keychain_status_error(rc: i32, unavailable: str, refused: str) -> str {
     if rc == 2 {
-        return core_msg(unavailable, [])
+        return domain.core_msg(unavailable, [])
     }
-    return core_msg(refused, [])
+    return domain.core_msg(refused, [])
 }
 
 fn (self: OsKeychain) keychain_save(account: str, secret: []byte) -> void! {
     if !self.enabled {
-        return error(core_msg(MSG_KEYCHAIN_OFF, []))
+        return error(domain.core_msg(domain.MSG_KEYCHAIN_OFF, []))
     }
     mut rc: i32 = 0
     // CFIRE-UPSTREAM: CF-008
@@ -51,7 +51,7 @@ fn (self: OsKeychain) keychain_save(account: str, secret: []byte) -> void! {
         rc = flint_kc::save(keychain_service(), account, secret);
     }
     if rc != 0 {
-        return error(keychain_status_error(rc, MSG_KEYCHAIN_UNAVAILABLE_STORE, MSG_KEYCHAIN_REFUSED_STORE))
+        return error(keychain_status_error(rc, domain.MSG_KEYCHAIN_UNAVAILABLE_STORE, domain.MSG_KEYCHAIN_REFUSED_STORE))
     }
 }
 
@@ -69,7 +69,7 @@ fn (self: OsKeychain) keychain_load(account: str) -> []byte! {
         return []
     }
     if rc != 0 {
-        return error(keychain_status_error(rc, MSG_KEYCHAIN_UNAVAILABLE_READ, MSG_KEYCHAIN_REFUSED_READ))
+        return error(keychain_status_error(rc, domain.MSG_KEYCHAIN_UNAVAILABLE_READ, domain.MSG_KEYCHAIN_REFUSED_READ))
     }
     return found
 }
@@ -86,6 +86,6 @@ fn (self: OsKeychain) keychain_forget(account: str) -> void! {
     // 1: no entry. 2: no keychain to reach, so no cached key Flint could use either
     // (unlock treats an unreachable keychain the same way).
     if rc != 0 && rc != 1 && rc != 2 {
-        return error(keychain_status_error(rc, MSG_KEYCHAIN_UNAVAILABLE_REMOVE, MSG_KEYCHAIN_REFUSED_REMOVE))
+        return error(keychain_status_error(rc, domain.MSG_KEYCHAIN_UNAVAILABLE_REMOVE, domain.MSG_KEYCHAIN_REFUSED_REMOVE))
     }
 }

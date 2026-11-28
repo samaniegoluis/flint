@@ -167,12 +167,12 @@ test "each command's grant is the one Flint asks for" {
 
 test "the guide's exit codes are the CLI's, in order" {
     docs := exit_code_docs()
-    codes := known_error_codes()
+    codes := domain.known_error_codes()
     assert_eq(docs.len(), codes.len())
     for i, code in codes {
         assert_eq(docs[i].code, code)
         assert_eq(docs[i].exit, i64(i) + 1)
-        assert_eq(i64(exit_code_for(code)), docs[i].exit)
+        assert_eq(i64(domain.exit_code_for(code)), docs[i].exit)
         assert(docs[i].meaning.len() > 0)
     }
     guide := agent_guide_text()
@@ -221,9 +221,9 @@ test "--help names the guide and agent-guide takes nothing" {
     p := try parse_cli_args(["agent-guide", "extra"])
     mut bad := ""
     cmd_agent_guide(p, false) or err { bad = "{err.message()}" }
-    assert_eq(error_code_of(bad), "usage")
+    assert_eq(domain.error_code_of(bad), "usage")
     q := try parse_cli_args(["agent-guide", "--force"])
     mut flag := ""
     cmd_agent_guide(q, false) or err { flag = "{err.message()}" }
-    assert_eq(error_code_of(flag), "usage")
+    assert_eq(domain.error_code_of(flag), "usage")
 }

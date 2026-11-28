@@ -10,12 +10,12 @@ import "core:fs"
 import "core:os"
 import "../../domain"
 
-type OsWebviewData struct {
+pub type OsWebviewData struct {
     // The profile's `Default` folder; "" where the webview keeps no autofill.
     profile: str
 }
 
-fn new_os_webview_data() -> OsWebviewData {
+pub fn new_os_webview_data() -> OsWebviewData {
     base := (os.getenv("LOCALAPPDATA") or "")
     if base.len() == 0 {
         return OsWebviewData{ profile: "" }
@@ -32,7 +32,7 @@ fn (mut self: OsWebviewData) webview_autofill_clear() -> i64! {
     names := try fs.list_dir(self.profile)
     mut n: i64 = 0
     for name in names {
-        if !webview_autofill_file(name) {
+        if !domain.webview_autofill_file(name) {
             continue
         }
         try fs.remove(self.profile + "/" + name)

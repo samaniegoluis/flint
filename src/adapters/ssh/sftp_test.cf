@@ -10,7 +10,7 @@ import "core:time"
 import "core:sync"
 import "../../ports"
 
-fn accepts_sftp[T: ports.SftpTransport](t: T) -> bool {
+fn accepts_sftp[T: ports.SftpTransport](_t: T) -> bool {
     return true
 }
 
@@ -24,7 +24,7 @@ test "sftp calls before sftp_open fail as internal" {
     mut r := ""
     link.sftp_stat("/") or err { r = "{err.message()}" }
     assert(r.len() > 0)
-    assert_eq(error_code_of("{r}"), "internal")
+    assert_eq(domain.error_code_of("{r}"), "internal")
 }
 
 fn sftp_link() -> SshLink! {
@@ -79,7 +79,7 @@ test "sftp writes, stats, lists, reads, renames and removes" {
     mut excl := ""
     link.sftp_file_open(path, true, true) or err { excl = "{err.message()}" }
     assert(excl.len() > 0)
-    assert_eq(error_code_of("{excl}"), "exists")
+    assert_eq(domain.error_code_of("{excl}"), "exists")
 
     st := try link.sftp_stat(path)
     assert(st.is_file())
@@ -110,10 +110,10 @@ test "sftp writes, stats, lists, reads, renames and removes" {
     // Listing a file is not_a_directory, a missing path not_found.
     mut as_dir := ""
     link.sftp_list(path) or err { as_dir = "{err.message()}" }
-    assert_eq(error_code_of("{as_dir}"), "not_a_directory")
+    assert_eq(domain.error_code_of("{as_dir}"), "not_a_directory")
     mut missing := ""
     link.sftp_stat(dir + "/nope") or err { missing = "{err.message()}" }
-    assert_eq(error_code_of("{missing}"), "not_found")
+    assert_eq(domain.error_code_of("{missing}"), "not_found")
 
     // Rename onto a name that is free, then onto one that is taken.
     try link.sftp_rename(path, dir + "/b.txt")
@@ -135,7 +135,7 @@ test "sftp writes, stats, lists, reads, renames and removes" {
     try link.sftp_remove(dir, true)
     mut gone := ""
     link.sftp_stat(dir) or err { gone = "{err.message()}" }
-    assert_eq(error_code_of("{gone}"), "not_found")
+    assert_eq(domain.error_code_of("{gone}"), "not_found")
 }
 
 // flint cp hands the adapter 256 KB at a time (LOCAL_READ_CHUNK). libssh 0.10 sent such
@@ -305,7 +305,7 @@ test "a session that was never published cannot be borrowed" {
     mut r := ""
     borrow_browse("nobody") or err { r = "{err.message()}" }
     assert(r.len() > 0)
-    assert_eq(error_code_of("{r}"), "not_found")
+    assert_eq(domain.error_code_of("{r}"), "not_found")
     assert(!files_available("nobody"))
 }
 
@@ -465,7 +465,7 @@ test "a plain link refuses to lend its session" {
     mut link := new_ssh_link()
     mut r := ""
     link.link_lend() or err { r = "{err.message()}" }
-    assert_eq(error_code_of("{r}"), "internal")
+    assert_eq(domain.error_code_of("{r}"), "internal")
 }
 
 test "sftp_chmod sets permission bits, and stat reports the owner's uid" {
@@ -506,7 +506,7 @@ test "sftp_chmod sets permission bits, and stat reports the owner's uid" {
     assert_eq(listed[0].mode, 384)
     mut missing := ""
     link.sftp_chmod(dir + "/nope", 384) or err { missing = "{err.message()}" }
-    assert_eq(error_code_of(missing), "not_found")
+    assert_eq(domain.error_code_of(missing), "not_found")
     try link.sftp_remove(path, false)
     try link.sftp_remove(dir, true)
 }

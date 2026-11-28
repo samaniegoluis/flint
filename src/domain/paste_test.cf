@@ -14,7 +14,7 @@ test "a pasted file keeps a cleaned version of its name" {
 
 test "a long name is cut and keeps its extension" {
     mut long := ""
-    for i in 0..300 {
+    for _ in 0..300 {
         long = long + "a"
     }
     n := paste_file_name(long + ".png", "png")

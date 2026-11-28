@@ -105,10 +105,10 @@ fn guide_skill_note() -> []str {
 
 // "the person's grant must give `read`", in the words the reference uses.
 fn grant_text(grant: str) -> str {
-    if grant == ACCESS_SUDO {
+    if grant == domain.ACCESS_SUDO {
         return "Through Flint only: the person approves each command, or a root period covers it."
     }
-    if grant == ACCESS_TOKEN {
+    if grant == domain.ACCESS_TOKEN {
         return "Through Flint only: the person approves each token."
     }
     if grant.len() > 0 {
@@ -169,11 +169,11 @@ type AgentGuideJson struct {
 fn cmd_agent_guide(p: ParsedArgs, as_json: bool) -> void! {
     try p.allow_flags("agent-guide", [])
     if p.positionals.len() != 1 {
-        return error(coded(ERR_USAGE, "usage: flint agent-guide"))
+        return error(domain.coded(domain.ERR_USAGE, "usage: flint agent-guide"))
     }
     if as_json {
         say(json.stringify(AgentGuideJson{ markdown: agent_guide_text(), commands: command_table(), exit_codes: exit_code_docs() }))
         return
     }
-    write_stdout(agent_guide_text())
+    process.write_stdout(agent_guide_text())
 }

@@ -10,7 +10,7 @@ import "../../domain"
 
 fn publish_code(n: NtfyNotifier, server: str, topic: str, kind: str) -> str {
     n.alert_publish(server, topic, kind) or err {
-        return error_code_of("{err.message()}")
+        return domain.error_code_of("{err.message()}")
     }
     return "ok"
 }
@@ -23,10 +23,10 @@ fn publish_text(n: NtfyNotifier, server: str, topic: str, kind: str) -> str {
 }
 
 fn stub_answer(req: http.Request, kind: str) -> http.Response {
-    if req.method != "POST" || req.header("title") != "Flint" || req.header("priority") != alert_priority(kind) {
+    if req.method != "POST" || req.header("title") != "Flint" || req.header("priority") != domain.alert_priority(kind) {
         return http.Response.text(418, "headers")
     }
-    if str(req.body) != alert_text(kind) {
+    if str(req.body) != domain.alert_text(kind) {
         return http.Response.text(417, "body")
     }
     return http.Response.json(200, "{\"id\":\"x\"}")
@@ -37,33 +37,33 @@ test "an alert is one POST of its fixed text, title and priority" {
     defer server.stop()
     mut router := make(http.Router)
     // One route per kind, each answering 200 only to that kind's exact publish.
-    router.post("/flint-approval") |req| { return stub_answer(req, ALERT_APPROVAL) }
-    router.post("/flint-locked") |req| { return stub_answer(req, ALERT_LOCKED) }
-    router.post("/flint-test") |req| { return stub_answer(req, ALERT_TEST) }
-    router.post("/flint-denied") |req| { return http.Response.text(403, "forbidden") }
-    router.post("/flint-slow") |req| {
+    router.post("/flint-approval") |req| { return stub_answer(req, domain.ALERT_APPROVAL) }
+    router.post("/flint-locked") |req| { return stub_answer(req, domain.ALERT_LOCKED) }
+    router.post("/flint-test") |req| { return stub_answer(req, domain.ALERT_TEST) }
+    router.post("/flint-denied") |_req| { return http.Response.text(403, "forbidden") }
+    router.post("/flint-slow") |_req| {
         time.sleep_ms(1500)
         return http.Response.json(200, "{}")
     }
     server.serve_in_background(router)
     base := "http://127.0.0.1:{server.port()}"
     n := new_ntfy_notifier()
-    assert_eq(publish_code(n, base, "flint-approval", ALERT_APPROVAL), "ok")
-    assert_eq(publish_code(n, base, "flint-locked", ALERT_LOCKED), "ok")
-    assert_eq(publish_code(n, base + "/", "flint-test", ALERT_TEST), "ok")
+    assert_eq(publish_code(n, base, "flint-approval", domain.ALERT_APPROVAL), "ok")
+    assert_eq(publish_code(n, base, "flint-locked", domain.ALERT_LOCKED), "ok")
+    assert_eq(publish_code(n, base + "/", "flint-test", domain.ALERT_TEST), "ok")
     // The wrong kind's text or priority is refused by the stub.
-    assert_eq(publish_code(n, base, "flint-locked", ALERT_APPROVAL), ERR_REFUSED)
-    assert_eq(ntfy_headers(ALERT_LOCKED), "Title: Flint\nPriority: high\nContent-Type: text/plain; charset=utf-8")
-    assert_eq(publish_code(n, base, "flint-denied", ALERT_APPROVAL), ERR_REFUSED)
-    assert_eq(publish_text(n, base, "flint-denied", ALERT_APPROVAL), "refused: the server answered 403")
+    assert_eq(publish_code(n, base, "flint-locked", domain.ALERT_APPROVAL), domain.ERR_REFUSED)
+    assert_eq(ntfy_headers(domain.ALERT_LOCKED), "Title: Flint\nPriority: high\nContent-Type: text/plain; charset=utf-8")
+    assert_eq(publish_code(n, base, "flint-denied", domain.ALERT_APPROVAL), domain.ERR_REFUSED)
+    assert_eq(publish_text(n, base, "flint-denied", domain.ALERT_APPROVAL), "refused: the server answered 403")
     // An error names the host, never the topic.
-    assert(!publish_text(n, base, "flint-denied", ALERT_APPROVAL).contains("flint-denied"))
+    assert(!publish_text(n, base, "flint-denied", domain.ALERT_APPROVAL).contains("flint-denied"))
     slow := NtfyNotifier{ connect_ms: 500, request_ms: 500 }
-    assert_eq(publish_text(slow, base, "flint-slow", ALERT_APPROVAL), "timeout: couldn't reach 127.0.0.1:{server.port()} (timed out)")
+    assert_eq(publish_text(slow, base, "flint-slow", domain.ALERT_APPROVAL), "timeout: couldn't reach 127.0.0.1:{server.port()} (timed out)")
     // Nothing listens on port 1.
-    assert_eq(publish_text(n, "http://127.0.0.1:1", "flint-topic", ALERT_APPROVAL), "network: couldn't reach 127.0.0.1:1")
+    assert_eq(publish_text(n, "http://127.0.0.1:1", "flint-topic", domain.ALERT_APPROVAL), "network: couldn't reach 127.0.0.1:1")
     // Refused before any request.
-    assert_eq(publish_code(n, base, "a/b", ALERT_APPROVAL), ERR_INVALID)
-    assert_eq(publish_code(n, base, "flint-topic", "prod-db"), ERR_INVALID)
-    assert_eq(publish_code(n, "ntfy.sh", "flint-topic", ALERT_APPROVAL), ERR_INVALID)
+    assert_eq(publish_code(n, base, "a/b", domain.ALERT_APPROVAL), domain.ERR_INVALID)
+    assert_eq(publish_code(n, base, "flint-topic", "prod-db"), domain.ERR_INVALID)
+    assert_eq(publish_code(n, "ntfy.sh", "flint-topic", domain.ALERT_APPROVAL), domain.ERR_INVALID)
 }

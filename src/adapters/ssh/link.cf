@@ -14,7 +14,7 @@ import cpp "flint_ssh.hpp"
 import "../../domain"
 
 // A chain of sessions: the SshTransport adapter.
-type SshLink struct {
+pub type SshLink struct {
     hops: []SshConn
     // Shared by every copy of this value; owns the tunnel threads (CF-026, CF-043).
     tunnels: shared[cpp.flint_ssh::Tunnels]
@@ -26,7 +26,7 @@ type SshLink struct {
     label: str
 }
 
-fn new_ssh_link() -> SshLink {
+pub fn new_ssh_link() -> SshLink {
     mut link := SshLink{ hops: [], timeout_secs: 0, label: "" }
     // CFIRE-UPSTREAM: CF-026
     cpp {
@@ -37,14 +37,14 @@ fn new_ssh_link() -> SshLink {
 
 fn (self: SshLink) last_hop() -> SshConn! {
     if self.hops.len() == 0 {
-        return error(coded(ERR_INTERNAL, "ssh: no hop is connected"))
+        return error(domain.coded(domain.ERR_INTERNAL, "ssh: no hop is connected"))
     }
     return self.hops[self.hops.len() - 1]
 }
 
 fn (mut self: SshLink) link_dial(hostname: str, port: i64, user: str, timeout_secs: i64, host_key_algos: str) -> void! {
     if port <= 0 || port > 65535 {
-        return error(coded(ERR_INVALID, "port {port} is out of range"))
+        return error(domain.coded(domain.ERR_INVALID, "port {port} is out of range"))
     }
     self.timeout_secs = timeout_secs
     if self.hops.len() == 0 {
@@ -67,7 +67,7 @@ fn (mut self: SshLink) link_dial(hostname: str, port: i64, user: str, timeout_se
         }
     }
     if fd < 0 {
-        return error(core_msg(MSG_SSH_JUMP_DIAL_FAILED, [hostname, "{port}", msg]))
+        return error(domain.core_msg(domain.MSG_SSH_JUMP_DIAL_FAILED, [hostname, "{port}", msg]))
     }
     self.hops.push(try ssh_dial_over(hostname, i32(port), user, timeout_secs, fd, host_key_algos))
 }
@@ -88,10 +88,10 @@ fn (self: SshLink) link_server_key() -> domain.ServerKey! {
         }
     }
     if rc != 0 || key_type.len() == 0 {
-        return error(core_msg(MSG_SSH_HOST_KEY_UNREADABLE, []))
+        return error(domain.core_msg(domain.MSG_SSH_HOST_KEY_UNREADABLE, []))
     }
     fp := conn.host_key_sha256() or err {
-        return error(core_msg(MSG_SSH_HOST_KEY_UNREADABLE, []))
+        return error(domain.core_msg(domain.MSG_SSH_HOST_KEY_UNREADABLE, []))
     }
     return domain.ServerKey{ key_type: key_type, fingerprint: fp }
 }
@@ -101,12 +101,12 @@ fn auth_result(rc: i32, method: str, conn: SshConn) -> void! {
         return
     }
     if rc == 3 {
-        return error(core_msg(MSG_SSH_NO_AGENT, []))
+        return error(domain.core_msg(domain.MSG_SSH_NO_AGENT, []))
     }
     if rc == 1 {
-        return error(core_msg(MSG_SSH_AUTH_REJECTED, [method]))
+        return error(domain.core_msg(domain.MSG_SSH_AUTH_REJECTED, [method]))
     }
-    return error(core_msg(MSG_SSH_AUTH_FAILED, [method, conn.last_error()]))
+    return error(domain.core_msg(domain.MSG_SSH_AUTH_FAILED, [method, conn.last_error()]))
 }
 
 fn (mut self: SshLink) link_auth_key(private_key: str, passphrase: str) -> void! {
@@ -119,7 +119,7 @@ fn (mut self: SshLink) link_auth_key(private_key: str, passphrase: str) -> void!
         rc = flint_ssh::auth_key(conn.session, private_key, passphrase, unreadable);
     }
     if unreadable {
-        return error(core_msg(MSG_SSH_KEY_UNREADABLE, []))
+        return error(domain.core_msg(domain.MSG_SSH_KEY_UNREADABLE, []))
     }
     try auth_result(rc, "public-key", conn)
 }
@@ -148,11 +148,11 @@ fn (mut self: SshLink) link_auth_agent() -> void! {
 
 fn (mut self: SshLink) link_shell_open(term: str, cols: i32, rows: i32, command: str) -> void! {
     if self.hops.len() == 0 {
-        return error(coded(ERR_INTERNAL, "ssh: no hop is connected"))
+        return error(domain.coded(domain.ERR_INTERNAL, "ssh: no hop is connected"))
     }
     mut conn := self.hops[self.hops.len() - 1]
     conn.open_pty_shell(term, cols, rows, command) or err {
-        return error(coded(ERR_NETWORK, "{err.message()}"))
+        return error(domain.coded(domain.ERR_NETWORK, "{err.message()}"))
     }
     self.hops[self.hops.len() - 1] = conn
 }
@@ -171,7 +171,7 @@ fn (mut self: SshLink) link_exec_open(command: str) -> void! {
 
 fn (mut self: SshLink) exec_open(command: str, close_stdin: bool) -> void! {
     if self.hops.len() == 0 {
-        return error(coded(ERR_INTERNAL, "ssh: no hop is connected"))
+        return error(domain.coded(domain.ERR_INTERNAL, "ssh: no hop is connected"))
     }
     mut conn := self.hops[self.hops.len() - 1]
     mut channel: cpp.flint_ssh::SshChannel
@@ -187,7 +187,7 @@ fn (mut self: SshLink) exec_open(command: str, close_stdin: bool) -> void! {
         if (rc != SSH_OK && ch) { ssh_channel_free(ch); channel = nullptr; }
     }
     if rc != 0 {
-        return error(coded(ERR_NETWORK, "cannot start the command: {conn.last_error()}"))
+        return error(domain.coded(domain.ERR_NETWORK, "cannot start the command: {conn.last_error()}"))
     }
     conn.channel = channel
     self.hops[self.hops.len() - 1] = conn
@@ -203,7 +203,7 @@ fn (mut self: SshLink) link_channel_eof() -> void! {
         rc = conn.channel ? ssh_channel_send_eof(conn.channel) : -1;
     }
     if rc != 0 {
-        return error(core_msg(MSG_SSH_CONNECTION_LOST, []))
+        return error(domain.core_msg(domain.MSG_SSH_CONNECTION_LOST, []))
     }
 }
 
@@ -227,22 +227,22 @@ fn (mut self: SshLink) link_channel_read(timeout_ms: i32) -> domain.ExecChunk! {
         }
     }
     if !ok {
-        return error(core_msg(MSG_SSH_CONNECTION_LOST_REASON, [conn.last_error()]))
+        return error(domain.core_msg(domain.MSG_SSH_CONNECTION_LOST_REASON, [conn.last_error()]))
     }
     return domain.ExecChunk{ stdout: out_text, stderr: err_text, done: done, exit_code: exit_code, signal: signal }
 }
 
 fn (mut self: SshLink) link_channel_write(data: str) -> void! {
     conn := try self.last_hop()
-    conn.write(data) or err {
-        return error(core_msg(MSG_SSH_CONNECTION_LOST, []))
+    conn.write(data) or {
+        return error(domain.core_msg(domain.MSG_SSH_CONNECTION_LOST, []))
     }
 }
 
 fn (mut self: SshLink) link_channel_resize(cols: i32, rows: i32) -> void! {
     conn := try self.last_hop()
-    conn.resize(cols, rows) or err {
-        return error(coded(ERR_NETWORK, "resize failed"))
+    conn.resize(cols, rows) or {
+        return error(domain.coded(domain.ERR_NETWORK, "resize failed"))
     }
 }
 
@@ -258,13 +258,13 @@ fn (mut self: SshLink) link_keepalive() -> void! {
         rc = conn.session ? flint_ssh::send_keepalive(conn.session) : -1;
     }
     if rc != 0 {
-        return error(core_msg(MSG_SSH_CONNECTION_LOST_REASON, [conn.last_error()]))
+        return error(domain.core_msg(domain.MSG_SSH_CONNECTION_LOST_REASON, [conn.last_error()]))
     }
 }
 
 // A plain link has no Files view to lend its session to (adapters/ssh/shared.cf).
 fn (mut self: SshLink) link_lend() -> void! {
-    return error(coded(ERR_INTERNAL, "this link cannot lend its session"))
+    return error(domain.coded(domain.ERR_INTERNAL, "this link cannot lend its session"))
 }
 
 // Closes every hop, innermost first. Tunnel i runs over hop i and carries hop

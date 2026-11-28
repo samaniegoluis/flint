@@ -4,7 +4,7 @@ import "core:os"
 import "../../ports"
 import "../../domain"
 
-fn accepts_clipboard[B: ports.Clipboard](mut b: B) -> bool {
+fn accepts_clipboard[B: ports.Clipboard](mut _b: B) -> bool {
     return true
 }
 
@@ -23,7 +23,7 @@ test "a copied secret is concealed, and cleared only if nothing was copied since
     mut r := ""
     c.clipboard_copy_secret("s3cret-value", 0) or err { r = "{err.message()}" }
     if r.len() > 0 {
-        assert_eq(error_code_of("{r}"), "io")
+        assert_eq(domain.error_code_of("{r}"), "io")
         println("SKIP: no clipboard here (no display)")
         return
     }
@@ -70,7 +70,7 @@ test "text a remote program copied (OSC 52) is plain, not concealed" {
     mut r := ""
     c.clipboard_copy_text("from neovim ✓") or err { r = "{err.message()}" }
     if r.len() > 0 {
-        assert_eq(error_code_of("{r}"), "io")
+        assert_eq(domain.error_code_of("{r}"), "io")
         println("SKIP: no clipboard here (no display)")
         return
     }

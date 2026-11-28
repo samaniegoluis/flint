@@ -7,7 +7,7 @@ import "../domain"
 import "../ports"
 
 // What the GUI reads and writes: the sidebar, and the open vault's collapsed groups.
-type UiStateView struct {
+pub type UiStateView struct {
     sidebar_open:  bool  `json:"sidebar_open"`
     sidebar_width: i64   `json:"sidebar_width"`
     files_width:   i64   `json:"files_width"`
@@ -19,10 +19,10 @@ type UiStateView struct {
 
 // The stored state, cleaned (a damaged or hand-edited file never stops the app).
 fn load_ui_state[U: ports.UiStateStore](store: U) -> domain.UiState {
-    loaded := store.ui_state_load() or err {
-        return default_ui_state()
+    loaded := store.ui_state_load() or {
+        return domain.default_ui_state()
     }
-    return clean_ui_state(loaded)
+    return domain.clean_ui_state(loaded)
 }
 
 // The view for vault `vault` ("" when no vault is open: no collapsed groups).
@@ -44,8 +44,8 @@ fn save_ui_state[U: ports.UiStateStore](mut store: U, vault: str, view: UiStateV
     current := load_ui_state(store)
     mut next := domain.UiState{ sidebar_open: view.sidebar_open, sidebar_width: view.sidebar_width, files_width: view.files_width, fullscreen_note_seen: view.fullscreen_note_seen, monitors: view.monitors, monitors_note_seen: view.monitors_note_seen, vaults: [], rdp_pipeline_hosts: current.rdp_pipeline_hosts }
     if vault.len() > 0 {
-        if !is_hex_id(vault) {
-            return error(coded(ERR_INVALID, "internal: bad vault id"))
+        if !domain.is_hex_id(vault) {
+            return error(domain.coded(domain.ERR_INVALID, "internal: bad vault id"))
         }
         next.vaults.push(domain.VaultUiState{ vault: vault, collapsed: view.collapsed })
     }
@@ -54,7 +54,7 @@ fn save_ui_state[U: ports.UiStateStore](mut store: U, vault: str, view: UiStateV
             next.vaults.push(v)
         }
     }
-    cleaned := clean_ui_state(next)
+    cleaned := domain.clean_ui_state(next)
     try store.ui_state_save(cleaned)
     mut res := UiStateView{ sidebar_open: cleaned.sidebar_open, sidebar_width: cleaned.sidebar_width, files_width: cleaned.files_width, fullscreen_note_seen: cleaned.fullscreen_note_seen, monitors: cleaned.monitors, monitors_note_seen: cleaned.monitors_note_seen, collapsed: [] }
     if vault.len() > 0 {
@@ -70,7 +70,7 @@ fn save_ui_state[U: ports.UiStateStore](mut store: U, vault: str, view: UiStateV
 
 // The open vault's view, collapsed groups as paths. Ids of groups that no longer
 // exist are left out.
-fn ui_state_paths[U: ports.UiStateStore, S: ports.VaultStore](ui: U, store: S, vault: str) -> UiStateView! {
+pub fn ui_state_paths[U: ports.UiStateStore, S: ports.VaultStore](ui: U, store: S, vault: str) -> UiStateView! {
     mut view := ui_state_for(ui, vault)
     if vault.len() == 0 {
         return view
@@ -89,7 +89,7 @@ fn ui_state_paths[U: ports.UiStateStore, S: ports.VaultStore](ui: U, store: S, v
 
 // Stores a view whose collapsed groups are paths; paths that name no group are
 // dropped. Returns the view as stored, in paths.
-fn save_ui_state_paths[U: ports.UiStateStore, S: ports.VaultStore](mut ui: U, store: S, vault: str, view: UiStateView) -> UiStateView! {
+pub fn save_ui_state_paths[U: ports.UiStateStore, S: ports.VaultStore](mut ui: U, store: S, vault: str, view: UiStateView) -> UiStateView! {
     mut by_id := view
     by_id.collapsed = []
     if vault.len() > 0 {

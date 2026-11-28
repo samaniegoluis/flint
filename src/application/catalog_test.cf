@@ -18,7 +18,7 @@ fn err_code(msg: str) -> str {
     if msg.len() == 0 {
         return "ok"
     }
-    return error_code_of(msg)
+    return domain.error_code_of(msg)
 }
 
 test "groups nest, list by path and refuse removal while in use" {
@@ -29,7 +29,7 @@ test "groups nest, list by path and refuse removal while in use" {
     g := try add_group(crypto, mut store, "homelab/proxmox")
     assert_eq(g.path, "homelab/proxmox")
     got_code = "ok"
-    add_group(crypto, mut store, "HomeLab/Proxmox") or err { got_code = error_code_of("{err.message()}") }
+    add_group(crypto, mut store, "HomeLab/Proxmox") or err { got_code = domain.error_code_of("{err.message()}") }
     assert_eq(got_code, "conflict")
     _ = try add_group(crypto, mut store, "homelab/nas")
     views := try list_groups(store)
@@ -43,17 +43,17 @@ test "groups nest, list by path and refuse removal while in use" {
     p.set_group = true
     _ = try add_host(crypto, mut store, s, p)
     got_code = "ok"
-    remove_group(mut store, "homelab/proxmox") or err { got_code = error_code_of("{err.message()}") }
+    remove_group(mut store, "homelab/proxmox") or err { got_code = domain.error_code_of("{err.message()}") }
     assert_eq(got_code, "conflict")
     got_code = "ok"
-    remove_group(mut store, "homelab") or err { got_code = error_code_of("{err.message()}") }
+    remove_group(mut store, "homelab") or err { got_code = domain.error_code_of("{err.message()}") }
     assert_eq(got_code, "conflict")
     _ = try remove_group(mut store, "homelab/nas")
     renamed := try rename_group(mut store, "homelab", "lab")
     assert_eq(renamed.path, "lab")
     assert_eq((try show_host(store, "pve1")).group, "lab/proxmox")
     got_code = "ok"
-    remove_group(mut store, "nope") or err { got_code = error_code_of("{err.message()}") }
+    remove_group(mut store, "nope") or err { got_code = domain.error_code_of("{err.message()}") }
     assert_eq(got_code, "not_found")
 }
 
@@ -91,22 +91,22 @@ test "hosts: add, edit, filter, references and removal" {
     }
 
     got_code = "ok"
-    add_host(crypto, mut store, s, host_patch("WEB", "x")) or err { got_code = error_code_of("{err.message()}") }
+    add_host(crypto, mut store, s, host_patch("WEB", "x")) or err { got_code = domain.error_code_of("{err.message()}") }
     assert_eq(got_code, "conflict")
     got_code = "ok"
-    add_host(crypto, mut store, s, host_patch("bad alias", "x")) or err { got_code = error_code_of("{err.message()}") }
+    add_host(crypto, mut store, s, host_patch("bad alias", "x")) or err { got_code = domain.error_code_of("{err.message()}") }
     assert_eq(got_code, "invalid")
     mut no_host := empty_host_patch()
     no_host.alias = "x"
     no_host.set_alias = true
     got_code = "ok"
-    add_host(crypto, mut store, s, no_host) or err { got_code = error_code_of("{err.message()}") }
+    add_host(crypto, mut store, s, no_host) or err { got_code = domain.error_code_of("{err.message()}") }
     assert_eq(got_code, "usage")
     mut bad_ref := host_patch("x", "x")
     bad_ref.credential = "nope"
     bad_ref.set_credential = true
     got_code = "ok"
-    add_host(crypto, mut store, s, bad_ref) or err { got_code = error_code_of("{err.message()}") }
+    add_host(crypto, mut store, s, bad_ref) or err { got_code = domain.error_code_of("{err.message()}") }
     assert_eq(got_code, "not_found")
     assert_eq((try list_hosts(store, "", "")).len(), 2, "a failed add must leave nothing behind")
 
@@ -115,7 +115,7 @@ test "hosts: add, edit, filter, references and removal" {
     loop.jump = "web"
     loop.set_jump = true
     got_code = "ok"
-    edit_host(crypto, mut store, s, "bastion", loop) or err { got_code = error_code_of("{err.message()}") }
+    edit_host(crypto, mut store, s, "bastion", loop) or err { got_code = domain.error_code_of("{err.message()}") }
     assert_eq(got_code, "invalid")
 
     // Edit changes only what is given.
@@ -132,11 +132,11 @@ test "hosts: add, edit, filter, references and removal" {
     assert_eq((try list_hosts(store, "prod", "")).len(), 1)
     assert_eq((try list_hosts(store, "", "EDGE")).len(), 1)
     got_code = "ok"
-    list_hosts(store, "nope", "") or err { got_code = error_code_of("{err.message()}") }
+    list_hosts(store, "nope", "") or err { got_code = domain.error_code_of("{err.message()}") }
     assert_eq(got_code, "not_found")
 
     got_code = "ok"
-    remove_host(mut store, "bastion") or err { got_code = error_code_of("{err.message()}") }
+    remove_host(mut store, "bastion") or err { got_code = domain.error_code_of("{err.message()}") }
     assert_eq(got_code, "conflict")
     _ = try remove_host(mut store, "web")
     _ = try remove_host(mut store, "bastion")
@@ -153,10 +153,10 @@ test "keys are stored by content and refused while in use" {
     assert_eq(k.fingerprint, "SHA256:fake")
     assert(!k.has_passphrase)
     got_code = "ok"
-    add_key(crypto, mut store, ins, s, "LAPTOP", "PRIVATE x", "") or err { got_code = error_code_of("{err.message()}") }
+    add_key(crypto, mut store, ins, s, "LAPTOP", "PRIVATE x", "") or err { got_code = domain.error_code_of("{err.message()}") }
     assert_eq(got_code, "conflict")
     got_code = "ok"
-    add_key(crypto, mut store, ins, s, "enc", "PRIVATE ENCRYPTED", "") or err { got_code = error_code_of("{err.message()}") }
+    add_key(crypto, mut store, ins, s, "enc", "PRIVATE ENCRYPTED", "") or err { got_code = domain.error_code_of("{err.message()}") }
     assert_eq(got_code, "invalid")
     enc := try add_key(crypto, mut store, ins, s, "enc", "PRIVATE ENCRYPTED", "pp")
     assert(enc.has_passphrase)
@@ -168,7 +168,7 @@ test "keys are stored by content and refused while in use" {
     p.set_key = true
     _ = try add_host(crypto, mut store, s, p)
     got_code = "ok"
-    remove_key(mut store, "laptop") or err { got_code = error_code_of("{err.message()}") }
+    remove_key(mut store, "laptop") or err { got_code = domain.error_code_of("{err.message()}") }
     assert_eq(got_code, "conflict")
     renamed := try rename_key(mut store, "laptop", "work-laptop")
     assert_eq(renamed.name, "work-laptop")
@@ -196,7 +196,7 @@ test "credentials link a user, a password and a key" {
     assert(v.has_password)
     assert_eq(v.key, "deploy")
     got_code = "ok"
-    add_cred(crypto, mut store, s, c) or err { got_code = error_code_of("{err.message()}") }
+    add_cred(crypto, mut store, s, c) or err { got_code = domain.error_code_of("{err.message()}") }
     assert_eq(got_code, "conflict")
 
     mut p := host_patch("dc1", "dc1.corp")
@@ -205,10 +205,10 @@ test "credentials link a user, a password and a key" {
     _ = try add_host(crypto, mut store, s, p)
     assert_eq((try show_host(store, "dc1")).credential, "domain")
     got_code = "ok"
-    remove_cred(mut store, "domain") or err { got_code = error_code_of("{err.message()}") }
+    remove_cred(mut store, "domain") or err { got_code = domain.error_code_of("{err.message()}") }
     assert_eq(got_code, "conflict")
     got_code = "ok"
-    remove_key(mut store, "deploy") or err { got_code = error_code_of("{err.message()}") }
+    remove_key(mut store, "deploy") or err { got_code = domain.error_code_of("{err.message()}") }
     assert_eq(got_code, "conflict")
 
     mut e := empty_cred_patch()
@@ -287,7 +287,7 @@ test "RDP hosts: type, default port, fixed type, password-only logins, refused f
     flip.host_type = "ssh"
     flip.set_host_type = true
     got_code = "ok"
-    edit_host(crypto, mut store, s, "win", flip) or err { got_code = error_code_of("{err.message()}") }
+    edit_host(crypto, mut store, s, "win", flip) or err { got_code = domain.error_code_of("{err.message()}") }
     assert_eq(got_code, "invalid")
 
     // A credential with only a key cannot log in to an RDP host.
@@ -295,23 +295,23 @@ test "RDP hosts: type, default port, fixed type, password-only logins, refused f
     cred.credential = "keyonly"
     cred.set_credential = true
     got_code = "ok"
-    edit_host(crypto, mut store, s, "win", cred) or err { got_code = error_code_of("{err.message()}") }
+    edit_host(crypto, mut store, s, "win", cred) or err { got_code = domain.error_code_of("{err.message()}") }
     assert_eq(got_code, "invalid")
     cred.credential = "domain"
     assert_eq((try edit_host(crypto, mut store, s, "win", cred)).credential, "domain")
 
     // Work only SSH does is refused with its own code, before anything else runs.
     got_code = "ok"
-    sudo_ask_for(store, "win", ["true"]) or err { got_code = error_code_of("{err.message()}") }
+    sudo_ask_for(store, "win", ["true"]) or err { got_code = domain.error_code_of("{err.message()}") }
     assert_eq(got_code, "wrong_host_type")
     got_code = "ok"
-    require_ssh_alias(store, "win", "a tunnel") or err { got_code = error_code_of("{err.message()}") }
+    require_ssh_alias(store, "win", "a tunnel") or err { got_code = domain.error_code_of("{err.message()}") }
     assert_eq(got_code, "wrong_host_type")
     try require_ssh_alias(store, "web", "a tunnel")
     mut jump := empty_host_patch()
     jump.jump = "win"
     jump.set_jump = true
     got_code = "ok"
-    edit_host(crypto, mut store, s, "web", jump) or err { got_code = error_code_of("{err.message()}") }
+    edit_host(crypto, mut store, s, "web", jump) or err { got_code = domain.error_code_of("{err.message()}") }
     assert_eq(got_code, "wrong_host_type")
 }

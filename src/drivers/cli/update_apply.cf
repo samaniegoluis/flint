@@ -15,12 +15,12 @@ import "../../domain"
 import "../clicmd"
 
 fn update_apply_usage() -> str {
-    return coded(ERR_USAGE, "usage: flint update-apply --wait <pid> (--from <folder> | --start --staging <folder>) --to <folder> [--json]")
+    return domain.coded(domain.ERR_USAGE, "usage: flint update-apply --wait <pid> (--from <folder> | --start --staging <folder>) --to <folder> [--json]")
 }
 
 fn parse_apply_request(args: []str) -> domain.ApplyRequest! {
     // The end-to-end run keeps the started app's output (scripts/gui-e2e.sh, selfupdate).
-    mut r := domain.ApplyRequest{ wait_pid: 0, from: "", to: "", os: os_name(), app_log: (os.getenv("FLINT_UPDATE_APP_LOG") or ""), start_only: false, staging: "" }
+    mut r := domain.ApplyRequest{ wait_pid: 0, from: "", to: "", os: process.os_name(), app_log: (os.getenv("FLINT_UPDATE_APP_LOG") or ""), start_only: false, staging: "" }
     mut i: usize = 1
     for i < args.len() {
         a := args[i]
@@ -42,11 +42,11 @@ fn parse_apply_request(args: []str) -> domain.ApplyRequest! {
                 return error(update_apply_usage())
             }
         } else if a == "--from" {
-            r.from = local_slashes(v)
+            r.from = process.local_slashes(v)
         } else if a == "--to" {
-            r.to = local_slashes(v)
+            r.to = process.local_slashes(v)
         } else if a == "--staging" {
-            r.staging = local_slashes(v)
+            r.staging = process.local_slashes(v)
         } else {
             return error(update_apply_usage())
         }
@@ -86,44 +86,44 @@ test "a request of absolute folders lets update-apply leave its current director
 
 fn run_update_apply(args: []str, as_json: bool) -> i32 {
     r := parse_apply_request(args) or err {
-        return report_error("{err.message()}", as_json)
+        return clicmd.report_error("{err.message()}", as_json)
     }
     // Out of the folder it inherited as its current directory, which may be the very
     // folder it renames: the app opened from its Start menu shortcut starts in it, and
     // Windows renames no folder that is a process's current directory (error 32). The
     // app passes absolute paths, so moving does not change what they name.
-    here := executable_dir()
+    here := process.executable_dir()
     if here.len() > 0 && apply_paths_absolute(r) {
-        set_working_dir(here) or err {
-            write_stderr("flint update-apply: {err.message()}; staying in {os.cwd()}\n")
+        process.set_working_dir(here) or err {
+            process.write_stderr("flint update-apply: {err.message()}; staying in {os.cwd()}\n")
         }
     }
-    mut files := new_os_update_files()
-    mut procs := new_os_update_processes()
-    mut o := apply_ok()
+    mut files := process.new_os_update_files()
+    mut procs := process.new_os_update_processes()
+    mut o := domain.apply_ok()
     if r.start_only {
         // Only the folder this CLI runs from: --start never starts another program.
-        if trim_slashes(r.to) != trim_slashes(executable_dir()) {
-            return report_error(coded(ERR_INVALID, "update-apply --start starts only the Flint beside this flint ({executable_dir()})"), as_json)
+        if domain.trim_slashes(r.to) != domain.trim_slashes(process.executable_dir()) {
+            return clicmd.report_error(domain.coded(domain.ERR_INVALID, "update-apply --start starts only the Flint beside this flint ({executable_dir()})"), as_json)
         }
-        write_stderr("flint update-apply: starting {r.to} once process {r.wait_pid} quits\n")
-        o = apply_package_start(mut files, mut procs, r)
+        process.write_stderr("flint update-apply: starting {r.to} once process {r.wait_pid} quits\n")
+        o = application.apply_package_start(mut files, mut procs, r)
     } else {
-        write_stderr("flint update-apply: {r.from} -> {r.to} once process {r.wait_pid} quits\n")
-        o = apply_update(mut files, mut procs, r)
+        process.write_stderr("flint update-apply: {r.from} -> {r.to} once process {r.wait_pid} quits\n")
+        o = application.apply_update(mut files, mut procs, r)
     }
     if o.applied {
-        write_stderr("flint update-apply: applied; the new Flint started\n")
+        process.write_stderr("flint update-apply: applied; the new Flint started\n")
         if as_json {
-            say(json.stringify(o))
+            clicmd.say(json.stringify(o))
         } else {
-            say("Flint was updated.")
+            clicmd.say("Flint was updated.")
         }
         return 0
     }
-    write_stderr("flint update-apply: not applied at step {o.step}: {o.message}\n")
+    process.write_stderr("flint update-apply: not applied at step {o.step}: {o.message}\n")
     if as_json {
-        say(json.stringify(o))
+        clicmd.say(json.stringify(o))
     }
-    return report_error(coded(o.code, o.message), as_json)
+    return clicmd.report_error(domain.coded(o.code, o.message), as_json)
 }

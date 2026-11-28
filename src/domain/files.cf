@@ -3,23 +3,23 @@ package domain
 // Files on a host and on this machine (milestone 16): entries, paths, and what
 // `flint cp` copies where. Pure: no I/O.
 
-FILE_KIND_FILE: str = "file"
-FILE_KIND_DIR: str = "dir"
-FILE_KIND_LINK: str = "link"
-FILE_KIND_OTHER: str = "other"
+pub FILE_KIND_FILE: str = "file"
+pub FILE_KIND_DIR: str = "dir"
+pub FILE_KIND_LINK: str = "link"
+pub FILE_KIND_OTHER: str = "other"
 
-COPY_UPLOAD: str = "upload"
-COPY_DOWNLOAD: str = "download"
+pub COPY_UPLOAD: str = "upload"
+pub COPY_DOWNLOAD: str = "download"
 // From one host to another, through Flint (milestone 18): the bytes go host → Flint
 // → host, so no credential ever reaches a host.
-COPY_RELAY: str = "relay"
+pub COPY_RELAY: str = "relay"
 
 // What a partial download (or upload) is called while it is written, in the folder
 // it lands in; renamed to its name once complete.
-PART_SUFFIX: str = ".flint-part"
+pub PART_SUFFIX: str = ".flint-part"
 
 // A file or folder. `mtime` is Unix seconds, `mode` the permission bits.
-type FileEntry struct {
+pub type FileEntry struct {
     name:  str `json:"name"`
     path:  str `json:"path"`
     kind:  str `json:"kind"`
@@ -39,14 +39,14 @@ fn (self: FileEntry) is_file() -> bool {
 }
 
 // `alias:/path` as `flint cp` takes it. `alias:` alone is the login folder.
-type RemotePath struct {
+pub type RemotePath struct {
     alias: str
     path:  str
 }
 
 // Whether a `flint cp` argument names a host: `alias:` before any `/`. A local path
 // with a colon is written `./a:b`, as with scp.
-fn is_remote_arg(arg: str) -> bool {
+pub fn is_remote_arg(arg: str) -> bool {
     colon := arg.index_of(":") or 0
     if colon == 0 {
         return false
@@ -55,7 +55,7 @@ fn is_remote_arg(arg: str) -> bool {
     return colon < slash
 }
 
-fn parse_remote_arg(arg: str) -> RemotePath! {
+pub fn parse_remote_arg(arg: str) -> RemotePath! {
     colon := arg.index_of(":") or 0
     if colon == 0 {
         return error(coded(ERR_USAGE, "'{arg}' is not alias:/path"))
@@ -69,7 +69,7 @@ fn parse_remote_arg(arg: str) -> RemotePath! {
 }
 
 // Drops trailing slashes but the root's.
-fn trim_slashes(p: str) -> str {
+pub fn trim_slashes(p: str) -> str {
     mut s := p
     for s.len() > 1 && s.ends_with("/") {
         s = str(s[..s.len() - 1])
@@ -78,7 +78,7 @@ fn trim_slashes(p: str) -> str {
 }
 
 // The last element of a `/` path: "/var/log/" -> "log", "/" -> "/".
-fn remote_base(p: str) -> str {
+pub fn remote_base(p: str) -> str {
     s := trim_slashes(p)
     if s == "/" {
         return s
@@ -90,7 +90,7 @@ fn remote_base(p: str) -> str {
 }
 
 // The folder of a `/` path: "/a/b" -> "/a", "b" -> ".", "/a" -> "/".
-fn remote_dir(p: str) -> str {
+pub fn remote_dir(p: str) -> str {
     s := trim_slashes(p)
     i := s.last_index_of("/") or {
         return "."
@@ -101,7 +101,7 @@ fn remote_dir(p: str) -> str {
     return str(s[..i])
 }
 
-fn remote_join(dir: str, name: str) -> str {
+pub fn remote_join(dir: str, name: str) -> str {
     if dir.len() == 0 || dir == "." {
         return name
     }
@@ -113,19 +113,19 @@ fn remote_join(dir: str, name: str) -> str {
 
 // The name a file is written under until it is complete: ".<name>.flint-part" in
 // the same folder, hidden from a plain `ls`.
-fn part_path(target: str) -> str {
+pub fn part_path(target: str) -> str {
     return remote_join(remote_dir(target), "." + remote_base(target) + PART_SUFFIX)
 }
 
 // One file `flint cp` copies, and how much of it went.
-type CopiedFile struct {
+pub type CopiedFile struct {
     source: str `json:"source"`
     target: str `json:"target"`
     bytes:  i64 `json:"bytes"`
 }
 
 // What `flint cp` reports.
-type CopyResult struct {
+pub type CopyResult struct {
     host:        str          `json:"host"`
     // The destination host of a relay copy; "" for an upload or a download.
     to_host:     str          `json:"to_host"`
@@ -139,7 +139,7 @@ type CopyResult struct {
 }
 
 // What a copy reports while it runs: the file at hand, and the whole copy so far.
-type TransferProgress struct {
+pub type TransferProgress struct {
     id:          str `json:"id"`
     file:        str `json:"file"`
     file_bytes:  i64 `json:"file_bytes"`
@@ -149,7 +149,7 @@ type TransferProgress struct {
 }
 
 // A byte count as people read it: "512 B", "1.5 KB", "12.0 MB" (powers of 1024).
-fn human_bytes(n: i64) -> str {
+pub fn human_bytes(n: i64) -> str {
     if n < 1024 {
         return "{n} B"
     }
@@ -166,7 +166,7 @@ fn human_bytes(n: i64) -> str {
 }
 
 // The line `flint cp` keeps updating on stderr for the file at hand.
-fn progress_line(p: TransferProgress) -> str {
+pub fn progress_line(p: TransferProgress) -> str {
     mut pct := ""
     if p.file_size > 0 {
         pct = "  {p.file_bytes * 100 / p.file_size}%"
@@ -180,7 +180,7 @@ fn progress_line(p: TransferProgress) -> str {
 // `to_host`; `local` is then "", and `host_allowed` / `to_allowed` say whether the
 // caller's own live grant already runs commands there, until `*_until_ms` (0 = until
 // the vault locks), so the window can say which host the grant adds (design 16g3).
-type CopyAsk struct {
+pub type CopyAsk struct {
     direction: str  `json:"direction"`
     host:      str  `json:"host"`
     local:     str  `json:"local"`
@@ -202,7 +202,7 @@ fn no_copy_ask() -> CopyAsk {
 // A path that does not depend on a working folder: "/..." everywhere, and "C:/..."
 // for a Windows local path (kept with forward slashes, which Windows accepts; the CLI
 // turns backslashes into them at the boundary). windows-port.
-fn is_absolute_path(path: str) -> bool {
+pub fn is_absolute_path(path: str) -> bool {
     if path.starts_with("/") {
         return true
     }
@@ -211,7 +211,7 @@ fn is_absolute_path(path: str) -> bool {
 
 // "C:/..." with a drive letter (windows-port). Callers decide whether the OS makes
 // that a local path: on POSIX, "c:/x" is host `c`.
-fn is_drive_path(path: str) -> bool {
+pub fn is_drive_path(path: str) -> bool {
     if path.len() < 3 || byte_slice(path, 1, 3) != ":/" {
         return false
     }
@@ -220,7 +220,7 @@ fn is_drive_path(path: str) -> bool {
 }
 
 // `path` as seen from folder `cwd`: unchanged when absolute.
-fn absolute_from(cwd: str, path: str) -> str {
+pub fn absolute_from(cwd: str, path: str) -> str {
     if is_absolute_path(path) || cwd.len() == 0 {
         return path
     }
@@ -236,7 +236,7 @@ fn absolute_from(cwd: str, path: str) -> str {
 
 // A dropped file's path inside its drop: relative, with no empty, "." or ".."
 // element, so it can never leave the drop's folder.
-fn valid_drop_path(rel: str) -> bool {
+pub fn valid_drop_path(rel: str) -> bool {
     if rel.len() == 0 || rel.len() > 4096 || rel.starts_with("/") {
         return false
     }
@@ -249,7 +249,7 @@ fn valid_drop_path(rel: str) -> bool {
 }
 
 // A drop id the page minted: letters, digits and '-', at most 64.
-fn valid_drop_id(id: str) -> bool {
+pub fn valid_drop_id(id: str) -> bool {
     if id.len() == 0 || id.len() > 64 {
         return false
     }

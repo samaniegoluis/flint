@@ -12,15 +12,15 @@ package domain
 // multiplexer may read the path long after.
 
 // The paste folder, under the login folder.
-PASTE_HOME_DIRS: []str = [".cache", ".cache/flint", ".cache/flint/paste"]
+pub PASTE_HOME_DIRS: []str = [".cache", ".cache/flint", ".cache/flint/paste"]
 // What a paste leaves behind is removed after this long (seconds), by the next one.
-PASTE_MAX_AGE: i64 = 86400
+pub PASTE_MAX_AGE: i64 = 86400
 // Settings → Terminal → Largest file to paste, in MB. Anything bigger goes through the
 // Files view, which has a progress bar and no limit.
 PASTE_LIMITS_MB: []i64 = [10, 20, 50, 100]
-PASTE_LIMIT_DEFAULT_MB: i64 = 20
-PASTE_DIR_MODE: i64 = 448   // 0700
-PASTE_FILE_MODE: i64 = 384  // 0600
+pub PASTE_LIMIT_DEFAULT_MB: i64 = 20
+pub PASTE_DIR_MODE: i64 = 448   // 0700
+pub PASTE_FILE_MODE: i64 = 384  // 0600
 // A cleaned name keeps at most this many bytes, its extension included.
 PASTE_NAME_MAX: usize = 100
 
@@ -34,14 +34,14 @@ fn paste_limit_valid(mb: i64) -> bool {
 }
 
 // Refused when `size` bytes is over `limit_mb`, naming both and the way around it.
-fn check_paste_size(name: str, size: i64, limit_mb: i64) -> void! {
+pub fn check_paste_size(name: str, size: i64, limit_mb: i64) -> void! {
     if size > limit_mb * 1048576 {
         return error(coded(ERR_INVALID, "{name} is {human_bytes(size)}, over the {limit_mb} MB paste limit. Use Files to upload it"))
     }
 }
 
 // The fallback folder when the home folder is not writable.
-fn paste_tmp_folder(uid: i64) -> str {
+pub fn paste_tmp_folder(uid: i64) -> str {
     return "/tmp/flint-{uid}"
 }
 
@@ -54,7 +54,7 @@ fn is_paste_name_byte(c: u8) -> bool {
 // hidden, never empty: a name with nothing left is "paste" plus the extension of
 // `fallback_ext` ("png" when that is not usable either). Long names are cut, the
 // extension kept.
-fn paste_file_name(name: str, fallback_ext: str) -> str {
+pub fn paste_file_name(name: str, fallback_ext: str) -> str {
     mut acc := ""
     mut dash := false
     for b in name.bytes() {
@@ -124,7 +124,7 @@ fn paste_ext(hint: str) -> str {
 
 // Whether a paste folder entry modified at `mtime` is old enough to go, by the host's
 // own clock (`now` is the mtime of the folder this paste just made).
-fn paste_stale(mtime: i64, now: i64) -> bool {
+pub fn paste_stale(mtime: i64, now: i64) -> bool {
     return now - mtime > PASTE_MAX_AGE
 }
 
@@ -134,7 +134,7 @@ fn is_shell_safe_byte(c: u8) -> bool {
 
 // `path` as a shell word, the way a terminal writes a dropped file: every byte a
 // shell would read specially gets a backslash ("/home/a b/x.png" -> "/home/a\ b/x.png").
-fn shell_escape_path(path: str) -> str {
+pub fn shell_escape_path(path: str) -> str {
     mut acc := ""
     for b in path.bytes() {
         c := u8(b)
@@ -149,7 +149,7 @@ fn shell_escape_path(path: str) -> str {
 // What the system clipboard holds, as a paste would take it: its text, else an image
 // (`image` is the raw bytes of `mime`, "image/png"). Read by the core when the webview's
 // paste event arrives empty, as WebKitGTK's does (milestone 25 on Linux).
-type ClipboardContent struct {
+pub type ClipboardContent struct {
     text:  str
     mime:  str
     image: str

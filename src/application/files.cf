@@ -15,7 +15,7 @@ import "../ports"
 // What `copy_files` copies: `local` and `remote` paths, the direction, `-r` and
 // `--force`. A copy between two hosts (`COPY_RELAY`, milestone 18) reads `remote` on
 // `alias` and writes `local`, which is then a path on `to_alias`.
-type CopyRequest struct {
+pub type CopyRequest struct {
     id:        str
     alias:     str
     direction: str
@@ -28,37 +28,33 @@ type CopyRequest struct {
 
 // ---- Thin use cases (the Files view) ----------------------------------------------
 
-fn list_dir[T: ports.SftpTransport](sftp: T, path: str) -> []domain.FileEntry! {
+pub fn list_dir[T: ports.SftpTransport](sftp: T, path: str) -> []domain.FileEntry! {
     return try sftp.sftp_list(path)
 }
 
 // The absolute form of `path` on the host: "." is the login folder, where the Files
 // view starts.
-fn real_path[T: ports.SftpTransport](sftp: T, path: str) -> str! {
+pub fn real_path[T: ports.SftpTransport](sftp: T, path: str) -> str! {
     return try sftp.sftp_realpath(path)
 }
 
-fn stat_path[T: ports.SftpTransport](sftp: T, path: str) -> domain.FileEntry! {
-    return try sftp.sftp_stat(path)
-}
-
-fn rename_path[T: ports.SftpTransport](mut sftp: T, from: str, to: str) -> void! {
-    if remote_base(to).len() == 0 || remote_base(to) == "." || remote_base(to) == ".." {
-        return error(coded(ERR_INVALID, "'{to}' is not a name a file can have"))
+pub fn rename_path[T: ports.SftpTransport](mut sftp: T, from: str, to: str) -> void! {
+    if domain.remote_base(to).len() == 0 || domain.remote_base(to) == "." || domain.remote_base(to) == ".." {
+        return error(domain.coded(domain.ERR_INVALID, "'{to}' is not a name a file can have"))
     }
     mut taken := true
     sftp.sftp_stat(to) or {
         taken = false
     }
     if taken {
-        return error(coded(ERR_EXISTS, "{to} already exists on the host"))
+        return error(domain.coded(domain.ERR_EXISTS, "{to} already exists on the host"))
     }
     try sftp.sftp_rename(from, to)
 }
 
 // Removes a file, or a folder with everything in it: the tree is walked breadth
 // first, its files removed on the way, then its folders deepest first.
-fn remove_remote[T: ports.SftpTransport](mut sftp: T, path: str) -> void! {
+pub fn remove_remote[T: ports.SftpTransport](mut sftp: T, path: str) -> void! {
     entry := try sftp.sftp_stat(path)
     if !entry.is_dir() {
         try sftp.sftp_remove(path, false)
@@ -84,7 +80,7 @@ fn remove_remote[T: ports.SftpTransport](mut sftp: T, path: str) -> void! {
     }
 }
 
-fn make_dir[T: ports.SftpTransport](mut sftp: T, path: str) -> void! {
+pub fn make_dir[T: ports.SftpTransport](mut sftp: T, path: str) -> void! {
     try sftp.sftp_mkdir(path)
 }
 
@@ -182,7 +178,7 @@ fn side_mkdir[T: ports.SftpTransport, L: ports.LocalFiles](remote: bool, mut sft
 // How messages name a side: " on the host" and "" (this machine); in a copy between
 // two hosts, each by its alias.
 fn side_name(req: CopyRequest, remote: bool) -> str {
-    if req.direction == COPY_RELAY {
+    if req.direction == domain.COPY_RELAY {
         if remote {
             return " on {req.alias}"
         }
@@ -204,35 +200,35 @@ fn copy_target[T: ports.SftpTransport, L: ports.LocalFiles](remote: bool, sftp: 
     msg := side_stat_into(remote, sftp, local, dst, mut st)
     if msg.len() == 0 {
         if st.is_dir() {
-            return remote_join(trim_slashes(dst), name)
+            return domain.remote_join(domain.trim_slashes(dst), name)
         }
         if src_is_dir {
-            return error(coded(ERR_NOT_DIR, "{dst}{on} is a file, not a folder"))
+            return error(domain.coded(domain.ERR_NOT_DIR, "{dst}{on} is a file, not a folder"))
         }
         return dst
     }
-    if error_code_of(msg) != ERR_NOT_FOUND {
+    if domain.error_code_of(msg) != domain.ERR_NOT_FOUND {
         return error(msg)
     }
     if dst.ends_with("/") {
-        return error(coded(ERR_NOT_FOUND, "{dst}{on}: no such folder"))
+        return error(domain.coded(domain.ERR_NOT_FOUND, "{dst}{on}: no such folder"))
     }
-    parent := remote_dir(dst)
+    parent := domain.remote_dir(dst)
     up := side_stat(remote, sftp, local, parent) or err {
         pmsg := "{err.message()}"
-        if error_code_of(pmsg) == ERR_NOT_FOUND {
-            return error(coded(ERR_NOT_FOUND, "{parent}{on}: no such folder"))
+        if domain.error_code_of(pmsg) == domain.ERR_NOT_FOUND {
+            return error(domain.coded(domain.ERR_NOT_FOUND, "{parent}{on}: no such folder"))
         }
         return error(pmsg)
     }
     if !up.is_dir() {
-        return error(coded(ERR_NOT_DIR, "{parent}{on} is not a folder"))
+        return error(domain.coded(domain.ERR_NOT_DIR, "{parent}{on} is not a folder"))
     }
     return dst
 }
 
 fn copy_cancelled() -> str {
-    return coded(ERR_IO, "the copy was cancelled")
+    return domain.coded(domain.ERR_IO, "the copy was cancelled")
 }
 
 // Copies one regular file `src` (of `size` bytes) to `target`, through its part file.
@@ -243,13 +239,13 @@ fn copy_one[T: ports.SftpTransport, L: ports.LocalFiles, K: ports.TransferSink](
     existed := side_stat_into(dst_remote, sftp, local, target, mut existing).len() == 0
     if existed {
         if existing.is_dir() {
-            return error(coded(ERR_EXISTS, "{target}{side_name(req, dst_remote)} is a folder; a file cannot replace it"))
+            return error(domain.coded(domain.ERR_EXISTS, "{target}{side_name(req, dst_remote)} is a folder; a file cannot replace it"))
         }
         if !req.force {
-            return error(coded(ERR_EXISTS, "{target}{side_name(req, dst_remote)} already exists; pass --force to replace it"))
+            return error(domain.coded(domain.ERR_EXISTS, "{target}{side_name(req, dst_remote)} already exists; pass --force to replace it"))
         }
     }
-    part := part_path(target)
+    part := domain.part_path(target)
     // A part file a cut copy left (a dropped channel, a killed CLI) goes first.
     mut stale_part := domain.FileEntry{ name: "", path: "", kind: "", size: 0, mtime: 0, mode: 0, uid: 0 }
     if side_stat_into(dst_remote, sftp, local, part, mut stale_part).len() == 0 {
@@ -312,7 +308,7 @@ fn copy_one[T: ports.SftpTransport, L: ports.LocalFiles, K: ports.TransferSink](
     }
     if failure.len() > 0 {
         left := side_remove(dst_remote, mut sftp, mut local, part)
-        if left.len() > 0 && error_code_of(left) != ERR_NOT_FOUND {
+        if left.len() > 0 && domain.error_code_of(left) != domain.ERR_NOT_FOUND {
             // The channel that would remove it is gone: say where it is.
             return error("{failure} ({remote_base(part)} may be left in {remote_dir(part)}{side_name(req, dst_remote)}; the next copy of this file removes it)")
         }
@@ -330,7 +326,7 @@ fn copy_one[T: ports.SftpTransport, L: ports.LocalFiles, K: ports.TransferSink](
 // special files are skipped and reported.
 fn copy_tree[T: ports.SftpTransport, L: ports.LocalFiles, K: ports.TransferSink](upload: bool, mut sftp: T, mut local: L, mut sink: K, req: CopyRequest, src: str, target: str, mut res: domain.CopyResult, mut prog: domain.TransferProgress, depth: i64) -> void! {
     if depth > 64 {
-        return error(coded(ERR_INVALID, "{src} is nested more than 64 folders deep"))
+        return error(domain.coded(domain.ERR_INVALID, "{src} is nested more than 64 folders deep"))
     }
     dst_remote := upload
     src_remote := !upload
@@ -338,10 +334,10 @@ fn copy_tree[T: ports.SftpTransport, L: ports.LocalFiles, K: ports.TransferSink]
     msg := side_stat_into(dst_remote, sftp, local, target, mut existing)
     if msg.len() == 0 {
         if !existing.is_dir() {
-            return error(coded(ERR_NOT_DIR, "{target}{side_name(req, dst_remote)} is a file, not a folder"))
+            return error(domain.coded(domain.ERR_NOT_DIR, "{target}{side_name(req, dst_remote)} is a file, not a folder"))
         }
     } else {
-        if error_code_of(msg) != ERR_NOT_FOUND {
+        if domain.error_code_of(msg) != domain.ERR_NOT_FOUND {
             return error(msg)
         }
         try side_mkdir(dst_remote, mut sftp, mut local, target)
@@ -351,12 +347,12 @@ fn copy_tree[T: ports.SftpTransport, L: ports.LocalFiles, K: ports.TransferSink]
         if sink.transfer_cancelled() {
             return error(copy_cancelled())
         }
-        if e.name.ends_with(PART_SUFFIX) {
+        if e.name.ends_with(domain.PART_SUFFIX) {
             continue
         }
-        child_target := remote_join(target, e.name)
+        child_target := domain.remote_join(target, e.name)
         mut entry := e
-        if e.kind == FILE_KIND_LINK {
+        if e.kind == domain.FILE_KIND_LINK {
             mut followed := domain.FileEntry{ name: "", path: "", kind: "", size: 0, mtime: 0, mode: 0, uid: 0 }
             if side_stat_into(src_remote, sftp, local, e.path, mut followed).len() == 0 && followed.is_file() {
                 entry = followed
@@ -375,12 +371,12 @@ fn copy_tree[T: ports.SftpTransport, L: ports.LocalFiles, K: ports.TransferSink]
 // Copies `req.local` to `req.remote` (upload) or back (download) over an open SFTP
 // channel. A folder needs `recursive`; an existing file needs `force`.
 fn copy_files[T: ports.SftpTransport, L: ports.LocalFiles, K: ports.TransferSink, C: ports.Clock](mut sftp: T, mut local: L, mut sink: K, mut clock: C, req: CopyRequest) -> domain.CopyResult! {
-    if req.direction != COPY_UPLOAD && req.direction != COPY_DOWNLOAD && req.direction != COPY_RELAY {
-        return error(coded(ERR_INTERNAL, "copy: unknown direction '{req.direction}'"))
+    if req.direction != domain.COPY_UPLOAD && req.direction != domain.COPY_DOWNLOAD && req.direction != domain.COPY_RELAY {
+        return error(domain.coded(domain.ERR_INTERNAL, "copy: unknown direction '{req.direction}'"))
     }
     start := clock.clock_now_ms()
     // A relay copy runs as a download whose "local" side is the destination host.
-    upload := req.direction == COPY_UPLOAD
+    upload := req.direction == domain.COPY_UPLOAD
     mut src := req.remote
     mut dst := req.local
     if upload {
@@ -388,24 +384,24 @@ fn copy_files[T: ports.SftpTransport, L: ports.LocalFiles, K: ports.TransferSink
         dst = req.remote
     }
     src_remote := !upload
-    mut name := remote_base(src)
+    mut name := domain.remote_base(src)
     if name == "/" || name == "." || name == ".." {
         if !src_remote {
-            return error(coded(ERR_INVALID, "name the folder to copy, not '{src}'"))
+            return error(domain.coded(domain.ERR_INVALID, "name the folder to copy, not '{src}'"))
         }
         // The host's login folder (`web:`) or its parent: copied under its own name.
         src = try sftp.sftp_realpath(src)
-        name = remote_base(src)
+        name = domain.remote_base(src)
         if name == "/" {
-            return error(coded(ERR_INVALID, "the host's root folder cannot be copied whole"))
+            return error(domain.coded(domain.ERR_INVALID, "the host's root folder cannot be copied whole"))
         }
     }
     entry := try side_stat(src_remote, sftp, local, src)
     if !entry.is_dir() && !entry.is_file() {
-        return error(coded(ERR_INVALID, "{src}{side_name(req, src_remote)} is not a regular file or a folder"))
+        return error(domain.coded(domain.ERR_INVALID, "{src}{side_name(req, src_remote)} is not a regular file or a folder"))
     }
     if entry.is_dir() && !req.recursive {
-        return error(coded(ERR_INVALID, "{src}{side_name(req, src_remote)} is a folder; pass -r to copy it"))
+        return error(domain.coded(domain.ERR_INVALID, "{src}{side_name(req, src_remote)} is a folder; pass -r to copy it"))
     }
     target := try copy_target(upload, sftp, local, dst, name, entry.is_dir(), side_name(req, upload))
     mut res := domain.CopyResult{ host: req.alias, to_host: req.to_alias, direction: req.direction, files: [], folders: 0, bytes: 0, skipped: [], duration_ms: 0 }
@@ -425,7 +421,7 @@ fn open_sftp[T: ports.SftpTransport](mut sftp: T) -> void! {
 
 // The Files view's transfers (milestone 17): a copy over a session that is already
 // logged in (a tab's), on an SFTP channel of its own.
-fn transfer_files[T: ports.SftpTransport, L: ports.LocalFiles, K: ports.TransferSink, C: ports.Clock](mut sftp: T, mut local: L, mut sink: K, mut clock: C, req: CopyRequest) -> domain.CopyResult! {
+pub fn transfer_files[T: ports.SftpTransport, L: ports.LocalFiles, K: ports.TransferSink, C: ports.Clock](mut sftp: T, mut local: L, mut sink: K, mut clock: C, req: CopyRequest) -> domain.CopyResult! {
     try sftp.sftp_open()
     return try copy_files(mut sftp, mut local, mut sink, mut clock, req)
 }
@@ -433,7 +429,7 @@ fn transfer_files[T: ports.SftpTransport, L: ports.LocalFiles, K: ports.Transfer
 // `flint cp`: connects to `req.alias` (verifying and logging in as `exec` does),
 // opens SFTP on that session, copies, and hangs up. `link` serves both
 // `SshTransport` and `SftpTransport`, both named in its bound (CF-100).
-fn copy_with_host[C: ports.Crypto, S: ports.VaultStore, T: ports.SshTransport + ports.SftpTransport, P: ports.Prompter, L: ports.LocalFiles, K: ports.TransferSink, M: ports.Clock](crypto: C, mut store: S, session: VaultSession, mut link: T, prompter: P, mut local: L, mut sink: K, mut clock: M, req: CopyRequest, opts: ConnectOptions) -> domain.CopyResult! {
+pub fn copy_with_host[C: ports.Crypto, S: ports.VaultStore, T: ports.SshTransport + ports.SftpTransport, P: ports.Prompter, L: ports.LocalFiles, K: ports.TransferSink, M: ports.Clock](crypto: C, mut store: S, session: VaultSession, mut link: T, prompter: P, mut local: L, mut sink: K, mut clock: M, req: CopyRequest, opts: ConnectOptions) -> domain.CopyResult! {
     try require_ssh_alias(store, req.alias, "copying files")
     target := try open_link(crypto, mut store, session, mut link, prompter, req.alias, opts)
     open_sftp(mut link) or err {
@@ -456,9 +452,9 @@ fn label_sftp[T: ports.SftpTransport](mut sftp: T, name: str) {
 // is written to this machine's disk and no credential reaches either host. Both
 // links are hung up whatever happens. `to` serves `LocalFiles` over its own SFTP
 // channel (adapters/ssh/sftp_far.cf), so its bound names all three ports (CF-100).
-fn relay_with_hosts[C: ports.Crypto, S: ports.VaultStore, T: ports.SshTransport + ports.SftpTransport + ports.LocalFiles, P: ports.Prompter, K: ports.TransferSink, M: ports.Clock](crypto: C, mut store: S, session: VaultSession, mut from: T, mut to: T, prompter: P, mut sink: K, mut clock: M, req: CopyRequest, opts: ConnectOptions) -> domain.CopyResult! {
-    if req.direction != COPY_RELAY {
-        return error(coded(ERR_INTERNAL, "relay: not a copy between two hosts"))
+pub fn relay_with_hosts[C: ports.Crypto, S: ports.VaultStore, T: ports.SshTransport + ports.SftpTransport + ports.LocalFiles, P: ports.Prompter, K: ports.TransferSink, M: ports.Clock](crypto: C, mut store: S, session: VaultSession, mut from: T, mut to: T, prompter: P, mut sink: K, mut clock: M, req: CopyRequest, opts: ConnectOptions) -> domain.CopyResult! {
+    if req.direction != domain.COPY_RELAY {
+        return error(domain.coded(domain.ERR_INTERNAL, "relay: not a copy between two hosts"))
     }
     try require_ssh_alias(store, req.alias, "copying files")
     try require_ssh_alias(store, req.to_alias, "copying files")
@@ -494,9 +490,9 @@ fn relay_with_hosts[C: ports.Crypto, S: ports.VaultStore, T: ports.SshTransport 
 // `from` to `to` through this process as `flint cp a:/x b:/y` does (D-057), with
 // nothing on this machine's disk. `to` serves `LocalFiles` over its channel
 // (adapters/ssh/sftp_far.cf), named in its bound (CF-100). Not logged (D-055).
-fn relay_between_sessions[T: ports.SftpTransport + ports.LocalFiles, K: ports.TransferSink, C: ports.Clock](mut from: T, mut to: T, mut sink: K, mut clock: C, req: CopyRequest) -> domain.CopyResult! {
-    if req.direction != COPY_RELAY {
-        return error(coded(ERR_INTERNAL, "relay: not a copy between two hosts"))
+pub fn relay_between_sessions[T: ports.SftpTransport + ports.LocalFiles, K: ports.TransferSink, C: ports.Clock](mut from: T, mut to: T, mut sink: K, mut clock: C, req: CopyRequest) -> domain.CopyResult! {
+    if req.direction != domain.COPY_RELAY {
+        return error(domain.coded(domain.ERR_INTERNAL, "relay: not a copy between two hosts"))
     }
     try open_sftp(mut from)
     try open_sftp(mut to)
@@ -510,20 +506,20 @@ fn relay_between_sessions[T: ports.SftpTransport + ports.LocalFiles, K: ports.Tr
 // Appends a chunk of dropped file `rel` to drop `drop_id`, and returns where the
 // drop's top element (`rel`'s first part) is on this machine: what the upload
 // then copies.
-fn stage_dropped[D: ports.DropStage](mut stage: D, drop_id: str, rel: str, data: str) -> str! {
-    if !valid_drop_id(drop_id) {
-        return error(coded(ERR_INVALID, "'{drop_id}' is not a drop id"))
+pub fn stage_dropped[D: ports.DropStage](mut stage: D, drop_id: str, rel: str, data: str) -> str! {
+    if !domain.valid_drop_id(drop_id) {
+        return error(domain.coded(domain.ERR_INVALID, "'{drop_id}' is not a drop id"))
     }
-    if !valid_drop_path(rel) {
-        return error(coded(ERR_INVALID, "'{rel}' is not a path inside a drop"))
+    if !domain.valid_drop_path(rel) {
+        return error(domain.coded(domain.ERR_INVALID, "'{rel}' is not a path inside a drop"))
     }
     try stage.stage_append(drop_id, rel, data)
     top := rel.split("/")[0]
-    return remote_join(stage.stage_folder(drop_id), top)
+    return domain.remote_join(stage.stage_folder(drop_id), top)
 }
 
-fn discard_dropped[D: ports.DropStage](mut stage: D, drop_id: str) {
-    if valid_drop_id(drop_id) {
+pub fn discard_dropped[D: ports.DropStage](mut stage: D, drop_id: str) {
+    if domain.valid_drop_id(drop_id) {
         stage.stage_discard(drop_id)
     }
 }
