@@ -235,6 +235,22 @@ plays the owner in the approval window, with the master password as presence
 (`FLINT_PRESENCE=password`): it denies one request, leaves one unanswered, allows one host
 only, and checks that a lock ends every grant.
 
+### The checks a change needs
+
+```sh
+scripts/checks-for-diff.sh          # against main: your branch's commits and the working tree
+scripts/checks-for-diff.sh --json   # the same, for a script
+```
+
+It reads your diff and prints, per system, the suites, builds, end-to-end runs and site
+checks the changed lines can reach, each with the file that asked for it, ready to paste.
+A changed function runs the suites of the packages that call it, directly or through
+others, and the end-to-end runs of the commands and screens that reach it; a line under
+`#if defined(_WIN32)` asks for the Windows checks, portable code for the Mac's. Keys, the
+vault format, the socket, the window, migrations, `build.cf`, cfire's version, and any path
+the script does not know ask for everything on all three systems.
+`scripts/checks-for-diff.sh --self-test` runs its own fixed cases.
+
 ## Install your build
 
 To use the build you just made every day, install the app and the CLI together, so they
