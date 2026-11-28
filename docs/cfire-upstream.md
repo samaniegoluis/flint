@@ -3995,7 +3995,7 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
 - **Ideal:** discovery reports the parse error with its location and the run fails, as
   `cfire test repro_test.cf` does.
 
-### CF-218 · bug · `confirmed`: the runtime's fingerprint is its headers' mtimes, so a reinstall of the same cfire recompiles everything
+### CF-218 · bug · `confirmed`: the runtime's and local headers' fingerprints are their mtimes, so a reinstall or a fresh checkout recompiles everything
 - **Seen (milestone 83) [ran, `v0.12.7`, GitHub's ubuntu-24.04 runners]:** the release's
   Linux jobs kept their build between runs (`actions/cache`, the same `/cache/work` path,
   the same image). The second run restored 300 MB and still compiled every unit: the `.rpm`
@@ -4005,12 +4005,19 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   and every PCH key. The image installs the runtime with `cp -R`, which dates each header
   at the image's build, and the image is built in every run: a new fingerprint each time,
   every object renamed. `compiler_binary_fingerprint` is the same (`file_fingerprint_string`:
-  path, mtime, size).
+  path, mtime, size), and so are **the workspace's own C++ headers** (`local_cpp_hdr_fp` in
+  `src/buildsys.hpp`: every `import cpp` header found locally, as path, mtime and size, fed
+  into every unit as `cpp_hdr`). With the runtime fixed, the next run still compiled all
+  284 objects: a fresh checkout dates every file at the checkout, `rsync -a` carried those
+  dates into the cache, and Flint's adapter headers (`flint_ssh.hpp`, …) changed every
+  unit's hash.
 - **Repro:** install cfire's runtime, build a workspace, `touch` every header under the
   runtime (same content), build again: every unit compiles again.
 - **Workaround:** every install copies the runtime with `cp -Rp`, keeping the release
   archive's mtimes (`scripts/linux/package-tools.sh`, `scripts/linux/Dockerfile`,
-  `scripts/install-cfire.sh`).
+  `scripts/install-cfire.sh`); the tree is copied into a kept cache by content
+  (`rsync -rlpcD`, no `-t`), so an unchanged header keeps the cached copy's mtime
+  (`scripts/package.sh`, `scripts/linux/inside.sh`).
 - **Ideal:** fingerprint the runtime and the compiler by content (a hash of the headers,
   or of the release's version and build id) rather than by mtime, as the units already are.
 

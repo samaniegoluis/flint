@@ -105,7 +105,10 @@ if [[ "$system" == linux ]]; then
         set -euo pipefail
         mkdir -p /cache/work /cache/cfire
         rc=0
-        rsync -a --delete --exclude=/site/node_modules --exclude=/ui/node_modules \
+        # By content (-c), keeping no times (no -t): a file the same as the cached copy keeps
+        # the cached copy'"'"'s mtime, and only a changed one gets a new one. cfire fingerprints
+        # local C++ headers by mtime (CF-218), and a fresh checkout dates every file now.
+        rsync -rlpcD --delete --exclude=/site/node_modules --exclude=/ui/node_modules \
           --exclude=/.git --exclude=/dist --exclude=build/ --exclude=.cfire/ /src/ /cache/work/ || rc=$?
         [[ $rc == 0 || $rc == 24 ]] || exit "$rc"
         export CFIRE_CACHE_DIR=/cache/cfire
