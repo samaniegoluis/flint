@@ -68,6 +68,9 @@ added to the current spec as its own milestone when it starts, as 78 and 79 were
 owner then moved v19's milestone 77 (`flint agent-guide`) ahead of them (2026-11-27), so
 the order is 77, then 80 (the keychain by signed identity), 81 (Touch ID), 82 (the loose
 ends).
+After 77 the owner put the checks first (2026-11-27, D-161): 83 (checks measured, domain
+once, the Linux release in parallel), 84 (suites in parallel, caches kept), 85 (the checks a
+diff needs), all in v19's `docs/spec.md`; then 80, 81 and 82.
 
 ### Later · Signing and an installer on Windows (tentative)
 
