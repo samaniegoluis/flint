@@ -5,7 +5,7 @@
 #
 #   scripts/check-times.sh                      # warm: every suite, the build, every e2e run
 #   scripts/check-times.sh --cold               # cold: the workspace's caches removed first
-#   scripts/check-times.sh --only suites        # suites | build | e2e (comma-separated)
+#   scripts/check-times.sh --only suites        # suites | build | e2e | gui (comma-separated)
 #   scripts/check-times.sh --label docker       # the system's name in the section (default: uname)
 #   scripts/check-times.sh --no-gui             # e2e without gui-e2e (its window takes the Mac's screen)
 #   scripts/check-times.sh src/domain src/adapters/ssh   # these suites only
@@ -22,14 +22,14 @@
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
-cold=0 cold_user=0 no_gui=0 only="suites,build,e2e" label="" suites=()
+cold=0 cold_user=0 no_gui=0 only="suites,build,e2e,gui" label="" suites=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --cold) cold=1; shift ;;
     --cold-user) cold=1; cold_user=1; shift ;;
     --only) only="$2"; shift 2 ;;
     --label) label="$2"; shift 2 ;;
-    --no-gui) no_gui=1; shift ;;
+    --no-gui) no_gui=1; shift ;;  # the same as leaving gui out of --only
     -h|--help) sed -n '2,20p' "$0"; exit 0 ;;
     -*) echo "check-times: unknown flag $1" >&2; exit 2 ;;
     *) suites+=("${1%/}"); shift ;;
@@ -122,9 +122,12 @@ if want e2e; then
   for e in cli-e2e serve-e2e server-e2e sync-e2e; do
     echo "check-times: $e" >&2
     t0="$(now)"; st=pass
-    "scripts/$e.sh" >"$work/$e.txt" 2>&1 || st=fail
+    "scripts/$e.sh" >"$work/$e.txt" 2>&1 || { st=fail; cp "$work/$e.txt" "$outdir/$label-$mode-$e.log"; }
     printf 'e2e\t%s\t%s\t%s\t\t\t\n' "$e" "$(since "$t0")" "$st" >>"$rows"
   done
+  :
+fi
+if want gui; then
   [[ $no_gui == 1 ]] && gui_skip=1 || gui_skip=0
   # gui-e2e's runs, from its own list (`runs=(...)` and the `known` extras it skips).
   if [[ $gui_skip == 0 ]]; then
@@ -133,7 +136,7 @@ if want e2e; then
   for r in $gui_runs; do
     echo "check-times: gui-e2e $r" >&2
     t0="$(now)"; st=pass
-    FLINT_E2E_ONLY="$r" FLINT_E2E_NOBUILD=1 scripts/gui-e2e.sh >"$work/gui-$r.txt" 2>&1 || st=fail
+    FLINT_E2E_ONLY="$r" FLINT_E2E_NOBUILD=1 scripts/gui-e2e.sh >"$work/gui-$r.txt" 2>&1 || { st=fail; cp "$work/gui-$r.txt" "$outdir/$label-$mode-gui-$r.log"; }
     printf 'e2e\tgui-e2e %s\t%s\t%s\t\t\t\n' "$r" "$(since "$t0")" "$st" >>"$rows"
   done
   fi
