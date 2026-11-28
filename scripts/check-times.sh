@@ -94,10 +94,16 @@ if want suites; then
     st=pass
     cfire test --release --no-cache --json "$s" >"$work/out.json" 2>"$work/err.txt" || st=fail
     secs="$(since "$t0")"
-    all="$(grep -o '"name": "[^"]*"' "$work/out.json" | wc -l | tr -d ' ')"
-    auto="$(grep -o '"name": "\[auto\][^"]*"' "$work/out.json" | wc -l | tr -d ' ')"
-    if grep -q 'compilation failed\|error:' "$work/err.txt" && [[ "$all" == 0 ]]; then st="did not build"; fi
-    objs="$(find "$s/.cfire/obj" -name '*.o' 2>/dev/null | wc -l | tr -d ' ')"
+    # `|| true`: grep finds no test in a suite that did not build, and pipefail would end the run.
+    all="$( (grep -o '"name": "[^"]*"' "$work/out.json" || true) | wc -l | tr -d ' ')"
+    auto="$( (grep -o '"name": "\[auto\][^"]*"' "$work/out.json" || true) | wc -l | tr -d ' ')"
+    if [[ "$all" == 0 ]] && grep -q 'compilation failed\|error:' "$work/err.txt"; then st="did not build"; fi
+    # A suite that failed keeps its output beside the rows, to be read.
+    if [[ "$st" != pass ]]; then
+      cp "$work/err.txt" "$outdir/$label-$mode-$(echo "$s" | tr / _).err"
+      cp "$work/out.json" "$outdir/$label-$mode-$(echo "$s" | tr / _).json"
+    fi
+    objs="$( (find "$s/.cfire/obj" -name '*.o' 2>/dev/null || true) | wc -l | tr -d ' ')"
     printf 'suite\t%s\t%s\t%s\t%s\t%s\t%s\n' "$s" "$secs" "$st" "$((all - auto))" "$auto" "$objs" >>"$rows"
   done
 fi
