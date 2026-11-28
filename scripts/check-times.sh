@@ -7,6 +7,7 @@
 #   scripts/check-times.sh --cold               # cold: the workspace's caches removed first
 #   scripts/check-times.sh --only suites        # suites | build | e2e (comma-separated)
 #   scripts/check-times.sh --label docker       # the system's name in the section (default: uname)
+#   scripts/check-times.sh --no-gui             # e2e without gui-e2e (its window takes the Mac's screen)
 #   scripts/check-times.sh src/domain src/adapters/ssh   # these suites only
 #
 # Cold removes every .cfire/ folder of the workspace (each suite's objects and test
@@ -20,14 +21,15 @@
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
-cold=0 cold_user=0 only="suites,build,e2e" label="" suites=()
+cold=0 cold_user=0 no_gui=0 only="suites,build,e2e" label="" suites=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --cold) cold=1; shift ;;
     --cold-user) cold=1; cold_user=1; shift ;;
     --only) only="$2"; shift 2 ;;
     --label) label="$2"; shift 2 ;;
-    -h|--help) sed -n '2,19p' "$0"; exit 0 ;;
+    --no-gui) no_gui=1; shift ;;
+    -h|--help) sed -n '2,20p' "$0"; exit 0 ;;
     -*) echo "check-times: unknown flag $1" >&2; exit 2 ;;
     *) suites+=("${1%/}"); shift ;;
   esac
@@ -47,6 +49,7 @@ if [[ -z "${FLINT_TEST_SSH_PORT:-}" ]]; then
   args=()
   [[ $cold == 1 ]] && args+=(--cold)
   [[ $cold_user == 1 ]] && args+=(--cold-user)
+  [[ $no_gui == 1 ]] && args+=(--no-gui)
   args+=(--only "$only")
   [[ -n "$label" ]] && args+=(--label "$label")
   quoted="$(printf '%q ' "$root/scripts/check-times.sh" ${args[@]+"${args[@]}"} ${suites[@]+"${suites[@]}"})"
@@ -113,7 +116,9 @@ if want e2e; then
     "scripts/$e.sh" >"$work/$e.txt" 2>&1 || st=fail
     printf 'e2e\t%s\t%s\t%s\t\t\t\n' "$e" "$(since "$t0")" "$st" >>"$rows"
   done
+  [[ $no_gui == 1 ]] && gui_skip=1 || gui_skip=0
   # gui-e2e's runs, from its own list (`runs=(...)` and the `known` extras it skips).
+  if [[ $gui_skip == 0 ]]; then
   [[ -x build/gui/Flint || -d build/gui/Flint.app || -f build/gui/Flint.exe ]] || scripts/build-gui.sh >/dev/null
   gui_runs="$(FLINT_E2E_ONLY=__list__ FLINT_E2E_NOBUILD=1 scripts/gui-e2e.sh 2>&1 | sed -n 's/.*FLINT_E2E_ONLY takes \(.*\), not.*/\1/p' | tr ' ' '\n' | grep -v -e '^multimon$' -e '^rdpbench$' || true)"
   for r in $gui_runs; do
@@ -122,6 +127,7 @@ if want e2e; then
     FLINT_E2E_ONLY="$r" FLINT_E2E_NOBUILD=1 scripts/gui-e2e.sh >"$work/gui-$r.txt" 2>&1 || st=fail
     printf 'e2e\tgui-e2e %s\t%s\t%s\t\t\t\n' "$r" "$(since "$t0")" "$st" >>"$rows"
   done
+  fi
 fi
 
 total="$(since "$total_start")"
