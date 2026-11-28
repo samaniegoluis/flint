@@ -111,6 +111,16 @@ if [[ "$system" == linux ]]; then
         rsync -rlpcD --delete --exclude=/site/node_modules --exclude=/ui/node_modules \
           --exclude=/.git --exclude=/dist --exclude=build/ --exclude=.cfire/ /src/ /cache/work/ || rc=$?
         [[ $rc == 0 || $rc == 24 ]] || exit "$rc"
+        # Each source folder listed in name order: cfire reads an imported package'"'"'s files
+        # in the order the folder lists them and generates its header in that order
+        # (CF-220), and on Linux that order is the order the entries were made, which a
+        # restored cache and rsync change from run to run. Moved into a new folder in name
+        # order, deepest first; mv keeps every file'"'"'s mtime (CF-218).
+        find /cache/work/src -name .cfire -prune -o -type d -print | LC_ALL=C sort -r | while IFS= read -r d; do
+          t="$d.sorting"; mkdir "$t"
+          ls -A "$d" | LC_ALL=C sort | while IFS= read -r e; do mv "$d/$e" "$t/"; done
+          rmdir "$d"; mv "$t" "$d"
+        done
         export CFIRE_CACHE_DIR=/cache/cfire
         mkdir -p /tmp/out
         # What the cache held and what the build compiled again, per folder: an object is

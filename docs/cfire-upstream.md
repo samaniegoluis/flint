@@ -4071,3 +4071,24 @@ The entries below were found moving Flint to cfire `43431f2` (milestone 11c, 202
   than three.
 - **Ideal:** match a unit's objects exactly (`{stem}__u_{id}_` followed by 16 hex digits and
   `.o`), or keep a manifest of the live objects per target and prune against it.
+
+### CF-220 · bug · `confirmed`: a package's generated header follows the folder's listing order, so the same code recompiles everything
+- **Seen (milestone 83) [ran, `v0.12.7`, GitHub's ubuntu-24.04 runners and Docker]:**
+  with CF-218 and CF-219 worked around, the release's kept build cache still compiled
+  every unit in one of the two Linux jobs, now one, now the other, with the compiler, the
+  runtime, the local headers and the system packages all unchanged. The diagnostics showed
+  the generated `pkg_domain.hpp` changed with its size the same. The loader lists an
+  imported package's `.cf` files with `std::filesystem::directory_iterator` and does not
+  sort them (`src/build/package_loader.hpp`, `pkg_dir = target;`; still so at `v0.13.1`), and
+  the declarations are emitted in that order. On Linux the listing order is the order the
+  entries were made, which a restored cache and rsync change between runs; every unit
+  includes the header, so every unit compiles again. The Mac (APFS lists by name) never
+  sees it.
+- **Repro [ran, Docker]:** the same tree copied twice, once with files made in name order
+  and once in reverse; `cfire build FlintUpdateRoot` in each: `pkg_domain.hpp` differs
+  (`struct CallerProc, Caller, …` against another order). Re-made in name order, the two
+  are identical once their folder paths are normalised.
+- **Workaround:** `scripts/package.sh` re-makes every source folder in name order after the
+  copy (`mv` into a new folder, deepest first; mtimes kept, CF-218).
+- **Ideal:** sort a package's files (and anything else read from a directory listing) before
+  generating code, so the output depends on the code only.
